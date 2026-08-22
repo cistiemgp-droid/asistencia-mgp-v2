@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f2f55">
+<title>Asistencia MGP</title>
+<link rel="stylesheet" href="css/styles.css">
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+<main class="app">
+<header class="topbar">
+  <div class="brand">
+    <div class="insignia-placeholder">MGP</div>
+    <div><small>IE JEC MANUEL GONZALES PRADA</small><h1>Control de Asistencia</h1></div>
+  </div>
+  <button id="homeBtn" class="icon-btn">⌂</button>
+</header>
+
+<section id="portal" class="view active">
+  <div class="hero"><h2>Portal institucional</h2><p>Control de asistencia, consulta y servicios institucionales.</p></div>
+  <div class="grid">
+    <button class="module" data-view="consulta">🔎<strong>Consulta pública</strong><small>Consulta autorizada de asistencia del estudiante.</small></button>
+    <button class="module" data-view="login">🔐<strong>Acceso institucional</strong><small>Registro, reportes, carnets y administración.</small></button>
+  </div>
+</section>
+
+<section id="consulta" class="view">
+<button class="back" data-view="portal">← Portal</button>
+<div class="card"><h2>🔎 Consulta pública</h2><p>El apoderado solo verá la información autorizada.</p>
+<input id="dniConsulta" inputmode="numeric" maxlength="8" placeholder="DNI del estudiante">
+<input id="claveConsulta" placeholder="Código de consulta">
+<button id="consultarBtn" class="primary">Consultar</button><div id="consultaMsg" class="message"></div></div>
+</section>
+
+<section id="login" class="view">
+<button class="back" data-view="portal">← Portal</button>
+<div class="card"><h2>🔐 Acceso institucional</h2>
+<input id="usuario" autocomplete="username" placeholder="Usuario">
+<input id="password" type="password" autocomplete="current-password" placeholder="Contraseña">
+<button id="entrarBtn" class="primary">Ingresar</button><div id="loginMsg" class="message"></div></div>
+</section>
+
+<section id="panel" class="view">
+<div class="title-row"><h2>Panel institucional</h2><button id="salirBtn" class="danger-outline">Cerrar sesión</button></div>
+<div class="grid">
+<button class="module" data-view="registro">📝<strong>Registro</strong><small>QR o DNI excepcional.</small></button>
+<button class="module" data-view="reportes">📊<strong>Reportes</strong><small>Asistencia, tardanzas, faltas y alertas.</small></button>
+<button class="module" data-view="carnets">🪪<strong>Carnets</strong><small>Identificación, QR e impresión.</small></button>
+<button class="module" data-view="admin">⚙️<strong>Administración</strong><small>Personas, usuarios, QR y justificaciones.</small></button>
+</div></section>
+
+<section id="registro" class="view">
+<button class="back" data-view="panel">← Panel</button>
+<div class="card"><h2>📝 Registro de asistencia</h2>
+<div class="seg"><button class="seg-btn active" data-tipo="estudiante">Estudiante</button><button class="seg-btn" data-tipo="personal">Personal</button></div>
+<div class="seg"><button class="seg-btn active" data-estado="INGRESO">INGRESO</button><button class="seg-btn" data-estado="SALIDA">SALIDA</button></div>
+<div id="camMsg" class="message">Cámara detenida.</div><div id="reader"></div>
+<button id="camBtn" class="primary">📷 Activar cámara</button><button id="stopCamBtn" class="secondary">Detener cámara</button>
+<details><summary>Registro excepcional por DNI — estudiante sin carnet</summary>
+<p>El sistema registrará el método DNI para aplicar las reglas mensuales.</p>
+<input id="dniManual" inputmode="numeric" maxlength="8" placeholder="DNI">
+<button id="dniBtn" class="primary">Registrar por DNI</button></details>
+<div id="regMsg" class="message"></div></div>
+</section>
+
+<section id="reportes" class="view"><button class="back" data-view="panel">← Panel</button><div class="card"><h2>📊 Reportes</h2><p>Módulo preparado para reportes diarios, mensuales, tardanzas, faltas y alertas.</p></div></section>
+<section id="carnets" class="view"><button class="back" data-view="panel">← Panel</button><div class="card"><h2>🪪 Carnets</h2><p>El QR nuevo utilizará un ID único MGP. Aquí se integrará la generación e impresión.</p></div></section>
+<section id="admin" class="view"><button class="back" data-view="panel">← Panel</button><div class="card"><h2>⚙️ Administración</h2><p>Gestión de estudiantes, personal, usuarios, roles, QR, justificaciones y configuración.</p><div class="alert">🚨 2 registros por DNI en un mes → justificación con apoderado.<br>🚨 3 tardanzas injustificadas en un mes → 1 falta.</div></div></section>
+<footer>Asistencia MGP · V2</footer>
+</main>
+<script src="js/app.js"></script>
+</body>
+</html>
