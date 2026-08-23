@@ -56,8 +56,37 @@
 <div class="card"><h2>📝 Registro de asistencia</h2>
 <div class="seg"><button class="seg-btn active" data-tipo="estudiante">Estudiante</button><button class="seg-btn" data-tipo="personal">Personal</button></div>
 <div class="seg"><button class="seg-btn active" data-estado="INGRESO">INGRESO</button><button class="seg-btn" data-estado="SALIDA">SALIDA</button></div>
-<div id="camMsg" class="message">Cámara detenida.</div><div id="reader"></div>
-<button id="camBtn" class="primary">📷 Activar cámara</button><button id="stopCamBtn" class="secondary">Detener cámara</button>
+<div id="camMsg" class="message">
+  Cámara detenida.
+</div>
+
+<div id="reader"></div>
+
+<div id="camera-controls" style="display:none; margin-top:10px;">
+
+  <select id="cameraSelect"
+          style="width:100%; padding:11px; margin-bottom:8px;">
+  </select>
+
+  <button id="switchCamBtn"
+          class="secondary"
+          type="button">
+    🔄 Cambiar cámara
+  </button>
+
+</div>
+
+<button id="camBtn"
+        class="primary"
+        type="button">
+  📷 Activar cámara
+</button>
+
+<button id="stopCamBtn"
+        class="secondary"
+        type="button">
+  ⏹ Detener cámara
+</button>
 <details><summary>Registro excepcional por DNI — estudiante sin carnet</summary>
 <p>El sistema registrará el método DNI para aplicar las reglas mensuales.</p>
 <input id="dniManual" inputmode="numeric" maxlength="8" placeholder="DNI">
