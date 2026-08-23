@@ -177,15 +177,9 @@ if (salirBtn) {
 // LOGIN
 // =====================================================
 
-// =====================================================
-// LOGIN
-// COMPATIBLE CON LOS DOS IDs
-// =====================================================
-
 const entrarBtn =
   document.getElementById('entrar') ||
   document.getElementById('entrarBtn');
-
 
 if (entrarBtn) {
 
@@ -202,7 +196,6 @@ if (entrarBtn) {
       const mensaje =
         document.getElementById('loginMsg');
 
-
       const usuario =
         usuarioElemento
           ? usuarioElemento.value.trim()
@@ -213,28 +206,20 @@ if (entrarBtn) {
           ? passwordElemento.value.trim()
           : '';
 
-
       if (!usuario || !password) {
 
         if (mensaje) {
-
           mensaje.textContent =
             'Ingrese usuario y contraseña.';
-
         }
 
         return;
-
       }
-
 
       if (mensaje) {
-
         mensaje.textContent =
           'Acceso de prueba V2.';
-
       }
-
 
       mostrarVista('panel');
 
@@ -242,47 +227,6 @@ if (entrarBtn) {
   );
 
 }
-
-      const usuario =
-        document
-          .getElementById('usuario')
-          .value
-          .trim();
-
-
-      const password =
-        document
-          .getElementById('password')
-          .value
-          .trim();
-
-
-      const mensaje =
-        document.getElementById(
-          'loginMsg'
-        );
-
-
-      if (!usuario || !password) {
-
-        mensaje.textContent =
-          'Ingrese usuario y contraseña.';
-
-        return;
-
-      }
-
-
-      mensaje.textContent =
-        'Acceso de prueba V2. El backend se conectará posteriormente.';
-
-      mostrarVista('panel');
-
-    }
-  );
-
-}
-
 
 // =====================================================
 // TIPO DE PERSONA
