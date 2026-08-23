@@ -1,13 +1,37 @@
 // =====================================================
 // ASISTENCIA MGP V2
-// FRONTEND - GITHUB PAGES
+// FRONTEND - GITHUB
+// =====================================================
+
+
+// =====================================================
+// CONFIGURACIÓN
+// =====================================================
+
+const CONFIG = {
+
+  API_URL:
+    'https://script.google.com/macros/s/AKfycbxN9HfZTc4fpp3YIqUGh0kz4mc8xoo1doAD8ilbCJOVS_31m1rX0o1xg77p6jjzhFdn/exec'
+
+};
+
+
+// =====================================================
+// ESTADO GENERAL
 // =====================================================
 
 const state = {
+
   tipo: 'estudiante',
+
   estado: 'INGRESO',
+
   qr: null,
-  camara: false
+
+  camara: false,
+
+  persona: null
+
 };
 
 
@@ -16,44 +40,73 @@ const state = {
 // =====================================================
 
 const cameraState = {
+
   reader: null,
+
   cameras: [],
+
   currentIndex: 0,
+
   activa: false
+
 };
-
-
-// =====================================================
-// MOSTRAR VISTA
-// =====================================================
-
-function mostrarVista(id) {
-
-  document
-    .querySelectorAll('.view')
-    .forEach(function(vista) {
-
-      vista.classList.toggle(
-        'active',
-        vista.id === id
-      );
-
-    });
-
-  if (id !== 'registro') {
-    detenerCamara();
-  }
-
-  window.scrollTo(0, 0);
-}
 
 
 // =====================================================
 // NAVEGACIÓN
 // =====================================================
 
+const vistas = [
+
+  'portal',
+  'consulta',
+  'login',
+  'panel',
+  'registro',
+  'reportes',
+  'carnets',
+  'admin'
+
+];
+
+
+function mostrarVista(nombre) {
+
+  vistas.forEach(function(vista) {
+
+    const elemento =
+      document.getElementById(vista);
+
+    if (elemento) {
+
+      elemento.classList.toggle(
+        'active',
+        vista === nombre
+      );
+
+    }
+
+  });
+
+
+  if (nombre !== 'registro') {
+
+    detenerCamara();
+
+  }
+
+
+  window.scrollTo(0, 0);
+
+}
+
+
+// =====================================================
+// NAVEGACIÓN DATA-V
+// =====================================================
+
 document
-  .querySelectorAll('[data-view]')
+  .querySelectorAll('[data-v]')
   .forEach(function(boton) {
 
     boton.addEventListener(
@@ -61,7 +114,7 @@ document
       function() {
 
         mostrarVista(
-          boton.dataset.view
+          boton.dataset.v
         );
 
       }
@@ -75,7 +128,7 @@ document
 // =====================================================
 
 const homeBtn =
-  document.getElementById('homeBtn');
+  document.getElementById('home');
 
 if (homeBtn) {
 
@@ -96,7 +149,7 @@ if (homeBtn) {
 // =====================================================
 
 const salirBtn =
-  document.getElementById('salirBtn');
+  document.getElementById('salir');
 
 if (salirBtn) {
 
@@ -115,11 +168,11 @@ if (salirBtn) {
 
 
 // =====================================================
-// LOGIN TEMPORAL
+// LOGIN
 // =====================================================
 
 const entrarBtn =
-  document.getElementById('entrarBtn');
+  document.getElementById('entrar');
 
 if (entrarBtn) {
 
@@ -133,14 +186,19 @@ if (entrarBtn) {
           .value
           .trim();
 
+
       const password =
         document
           .getElementById('password')
           .value
           .trim();
 
+
       const mensaje =
-        document.getElementById('loginMsg');
+        document.getElementById(
+          'loginMsg'
+        );
+
 
       if (!usuario || !password) {
 
@@ -151,8 +209,9 @@ if (entrarBtn) {
 
       }
 
+
       mensaje.textContent =
-        'Acceso de prueba V2. La autenticación real se conectará al backend.';
+        'Acceso de prueba V2. El backend se conectará posteriormente.';
 
       mostrarVista('panel');
 
@@ -167,7 +226,7 @@ if (entrarBtn) {
 // =====================================================
 
 document
-  .querySelectorAll('[data-tipo]')
+  .querySelectorAll('[data-t]')
   .forEach(function(boton) {
 
     boton.addEventListener(
@@ -175,17 +234,18 @@ document
       function() {
 
         document
-          .querySelectorAll('[data-tipo]')
+          .querySelectorAll('[data-t]')
           .forEach(function(b) {
 
-            b.classList.remove('active');
+            b.classList.remove('on');
 
           });
 
-        boton.classList.add('active');
+
+        boton.classList.add('on');
 
         state.tipo =
-          boton.dataset.tipo;
+          boton.dataset.t;
 
       }
     );
@@ -194,11 +254,11 @@ document
 
 
 // =====================================================
-// ESTADO INGRESO / SALIDA
+// INGRESO / SALIDA
 // =====================================================
 
 document
-  .querySelectorAll('[data-estado]')
+  .querySelectorAll('[data-e]')
   .forEach(function(boton) {
 
     boton.addEventListener(
@@ -206,17 +266,18 @@ document
       function() {
 
         document
-          .querySelectorAll('[data-estado]')
+          .querySelectorAll('[data-e]')
           .forEach(function(b) {
 
-            b.classList.remove('active');
+            b.classList.remove('on');
 
           });
 
-        boton.classList.add('active');
+
+        boton.classList.add('on');
 
         state.estado =
-          boton.dataset.estado;
+          boton.dataset.e;
 
       }
     );
@@ -231,7 +292,10 @@ document
 function mensajeCamara(texto) {
 
   const elemento =
-    document.getElementById('camMsg');
+    document.getElementById(
+      'camMsg'
+    );
+
 
   if (elemento) {
 
@@ -244,17 +308,17 @@ function mensajeCamara(texto) {
 
 
 // =====================================================
-// OBTENER CÁMARAS
+// CARGAR CÁMARAS
 // =====================================================
 
 async function cargarCamaras() {
 
-  mensajeCamara(
-    '🔍 Detectando cámaras disponibles...'
-  );
-
-
   try {
+
+    mensajeCamara(
+      '🔍 Buscando cámaras disponibles...'
+    );
+
 
     if (
       typeof Html5Qrcode ===
@@ -262,19 +326,19 @@ async function cargarCamaras() {
     ) {
 
       throw new Error(
-        'La biblioteca html5-qrcode no está disponible.'
+        'No se cargó la biblioteca del lector QR.'
       );
 
     }
 
 
-    const camaras =
+    cameraState.cameras =
       await Html5Qrcode.getCameras();
 
 
     if (
-      !camaras ||
-      camaras.length === 0
+      !cameraState.cameras ||
+      cameraState.cameras.length === 0
     ) {
 
       throw new Error(
@@ -282,10 +346,6 @@ async function cargarCamaras() {
       );
 
     }
-
-
-    cameraState.cameras =
-      camaras;
 
 
     const selector =
@@ -298,20 +358,24 @@ async function cargarCamaras() {
 
       selector.innerHTML = '';
 
-      camaras.forEach(
-        function(camara, indice) {
+
+      cameraState.cameras.forEach(
+        function(camera, index) {
 
           const opcion =
             document.createElement(
               'option'
             );
 
+
           opcion.value =
-            indice;
+            index;
+
 
           opcion.textContent =
-            camara.label ||
-            `Cámara ${indice + 1}`;
+            camera.label ||
+            `Cámara ${index + 1}`;
+
 
           selector.appendChild(
             opcion
@@ -324,7 +388,7 @@ async function cargarCamaras() {
 
 
     // =================================================
-    // BUSCAR CÁMARA TRASERA
+    // PREFERIR CÁMARA TRASERA
     // =================================================
 
     let indicePreferido = 0;
@@ -332,13 +396,13 @@ async function cargarCamaras() {
 
     for (
       let i = 0;
-      i < camaras.length;
+      i < cameraState.cameras.length;
       i++
     ) {
 
       const nombre =
         String(
-          camaras[i].label || ''
+          cameraState.cameras[i].label || ''
         ).toLowerCase();
 
 
@@ -349,8 +413,7 @@ async function cargarCamaras() {
         nombre.includes('posterior')
       ) {
 
-        indicePreferido =
-          i;
+        indicePreferido = i;
 
         break;
 
@@ -386,7 +449,7 @@ async function cargarCamaras() {
 
 
     mensajeCamara(
-      `${camaras.length} cámara(s) disponible(s).`
+      `${cameraState.cameras.length} cámara(s) disponible(s).`
     );
 
 
@@ -396,15 +459,13 @@ async function cargarCamaras() {
   catch (error) {
 
     console.error(
-      'Error obteniendo cámaras:',
+      'Error enumerando cámaras:',
       error
     );
 
 
     mensajeCamara(
       '❌ No fue posible obtener las cámaras: ' +
-      error.name +
-      ' — ' +
       error.message
     );
 
@@ -417,7 +478,242 @@ async function cargarCamaras() {
 
 
 // =====================================================
-// ACTIVAR CÁMARA
+// IDENTIFICAR QR EN BACKEND
+// =====================================================
+
+async function identificarQRBackend(
+  codigoQR
+) {
+
+  const mensaje =
+    document.getElementById(
+      'regMsg'
+    );
+
+
+  try {
+
+    if (!codigoQR) {
+
+      throw new Error(
+        'El código QR está vacío.'
+      );
+
+    }
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '🔄 Consultando estudiante...';
+
+    }
+
+
+    const parametros =
+      new URLSearchParams({
+
+        accion:
+          'identificarQR',
+
+        codigoQR:
+          codigoQR
+
+      });
+
+
+    const url =
+      CONFIG.API_URL +
+      '?' +
+      parametros.toString();
+
+
+    console.log(
+      'Consultando API:',
+      url
+    );
+
+
+    const respuesta =
+      await fetch(
+        url,
+        {
+          method: 'GET',
+          cache: 'no-store'
+        }
+      );
+
+
+    if (!respuesta.ok) {
+
+      throw new Error(
+        'El servidor respondió HTTP ' +
+        respuesta.status
+      );
+
+    }
+
+
+    const resultado =
+      await respuesta.json();
+
+
+    console.log(
+      'Respuesta API QR V2:',
+      resultado
+    );
+
+
+    // =================================================
+    // QR NO IDENTIFICADO
+    // =================================================
+
+    if (!resultado.ok) {
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '❌ ' +
+          (
+            resultado.mensaje ||
+            'No se pudo identificar el QR.'
+          );
+
+      }
+
+
+      return resultado;
+
+    }
+
+
+    // =================================================
+    // GUARDAR PERSONA IDENTIFICADA
+    // =================================================
+
+    state.persona =
+      resultado;
+
+
+    // =================================================
+    // LEGACY 2026
+    // =================================================
+
+    if (
+      resultado.tipoQR ===
+      'LEGACY_2026'
+      &&
+      resultado.estudiante
+    ) {
+
+      const estudiante =
+        resultado.estudiante;
+
+
+      if (mensaje) {
+
+        mensaje.innerHTML =
+
+          '<strong>✅ ESTUDIANTE IDENTIFICADO</strong><br>' +
+
+          'DNI: ' +
+          estudiante.dni +
+          '<br>' +
+
+          estudiante.apellidoPaterno +
+          ' ' +
+
+          estudiante.apellidoMaterno +
+          ' ' +
+
+          estudiante.nombres +
+          '<br>' +
+
+          'Grado: ' +
+          estudiante.grado +
+          ' ' +
+          estudiante.seccion +
+          '<br>' +
+
+          'Turno: ' +
+          estudiante.turno;
+
+      }
+
+    }
+
+
+    // =================================================
+    // QR V2
+    // =================================================
+
+    else if (
+      resultado.tipoQR ===
+      'MGP_V2'
+    ) {
+
+      if (mensaje) {
+
+        mensaje.innerHTML =
+
+          '<strong>✅ QR V2 IDENTIFICADO</strong><br>' +
+
+          'ID: ' +
+          resultado.identificador;
+
+      }
+
+    }
+
+
+    else {
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '✅ QR identificado correctamente.';
+
+      }
+
+    }
+
+
+    return resultado;
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error consultando API QR V2:',
+      error
+    );
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '❌ No se pudo comunicar con el servidor: ' +
+        error.message;
+
+    }
+
+
+    return {
+
+      ok: false,
+
+      mensaje:
+        error.message
+
+    };
+
+  }
+
+}
+
+
+// =====================================================
+// INICIAR CÁMARA
 // =====================================================
 
 async function iniciarCamara() {
@@ -433,11 +729,11 @@ async function iniciarCamara() {
   }
 
 
-  const correcto =
+  const camarasOK =
     await cargarCamaras();
 
 
-  if (!correcto) {
+  if (!camarasOK) {
 
     return;
 
@@ -455,7 +751,7 @@ async function iniciarCamara() {
     if (!camara) {
 
       throw new Error(
-        'No se pudo seleccionar una cámara.'
+        'No se pudo seleccionar la cámara.'
       );
 
     }
@@ -467,21 +763,20 @@ async function iniciarCamara() {
       );
 
 
-    mensajeCamara(
-      '📷 Iniciando cámara...'
-    );
-
-
     await cameraState.reader.start(
 
       camara.id,
 
       {
+
         fps: 10,
 
         qrbox: {
-          width: 250,
-          height: 250
+
+          width: 240,
+
+          height: 240
+
         },
 
         aspectRatio: 1.0
@@ -489,41 +784,64 @@ async function iniciarCamara() {
       },
 
 
-      function(decodedText) {
+      // =================================================
+      // QR LEÍDO
+      // =================================================
+
+      async function(decodedText) {
+
+        // Evitamos procesar múltiples
+        // lecturas simultáneas.
+
+        if (cameraState.procesandoQR) {
+
+          return;
+
+        }
+
+
+        cameraState.procesandoQR =
+          true;
+
 
         state.qr =
           decodedText;
 
 
         mensajeCamara(
-          '✅ QR leído correctamente.'
+          '✅ QR leído. Consultando servidor...'
         );
 
 
-        const mensaje =
-          document.getElementById(
-            'regMsg'
-          );
+        // Detener cámara antes de
+        // consultar el backend.
+
+        await detenerCamara();
 
 
-        if (mensaje) {
+        // =================================================
+        // ENVIAR QR AL BACKEND
+        // =================================================
 
-          mensaje.textContent =
-            'QR leído: ' +
-            decodedText;
-
-        }
+        await identificarQRBackend(
+          decodedText
+        );
 
 
-        detenerCamara();
+        cameraState.procesandoQR =
+          false;
 
       },
 
 
+      // =================================================
+      // ERRORES NORMALES DEL LECTOR
+      // =================================================
+
       function(errorMessage) {
 
-        // Los errores normales de búsqueda
-        // de QR no se muestran.
+        // No mostramos los errores normales
+        // de búsqueda de QR continuamente.
 
       }
 
@@ -532,6 +850,11 @@ async function iniciarCamara() {
 
     cameraState.activa =
       true;
+
+
+    cameraState.procesandoQR =
+      false;
+
 
     state.camara =
       true;
@@ -581,6 +904,11 @@ async function iniciarCamara() {
     cameraState.activa =
       false;
 
+
+    cameraState.procesandoQR =
+      false;
+
+
     state.camara =
       false;
 
@@ -591,26 +919,6 @@ async function iniciarCamara() {
       ' — ' +
       error.message
     );
-
-
-    if (cameraState.reader) {
-
-      try {
-
-        await cameraState.reader.clear();
-
-      }
-      catch (e) {
-
-        console.warn(e);
-
-      }
-
-    }
-
-
-    cameraState.reader =
-      null;
 
   }
 
@@ -636,21 +944,12 @@ async function cambiarCamara() {
   }
 
 
-  const estabaActiva =
-    cameraState.activa;
-
-
-  if (estabaActiva) {
-
-    await detenerCamara();
-
-  }
-
-
   cameraState.currentIndex =
+
     (
       cameraState.currentIndex + 1
     ) %
+
     cameraState.cameras.length;
 
 
@@ -668,24 +967,31 @@ async function cambiarCamara() {
   }
 
 
-  const camara =
-    cameraState.cameras[
-      cameraState.currentIndex
-    ];
+  if (cameraState.activa) {
 
-
-  mensajeCamara(
-    '🔄 Cámara seleccionada: ' +
-    (
-      camara.label ||
-      `Cámara ${cameraState.currentIndex + 1}`
-    )
-  );
-
-
-  if (estabaActiva) {
+    await detenerCamara();
 
     await iniciarCamara();
+
+  }
+  else {
+
+    mensajeCamara(
+
+      'Cámara seleccionada: ' +
+
+      (
+        cameraState.cameras[
+          cameraState.currentIndex
+        ].label ||
+
+        `Cámara ${
+          cameraState.currentIndex + 1
+        }`
+
+      )
+
+    );
 
   }
 
@@ -693,7 +999,7 @@ async function cambiarCamara() {
 
 
 // =====================================================
-// CAMBIAR CÁMARA DESDE SELECTOR
+// SELECTOR DE CÁMARA
 // =====================================================
 
 const cameraSelect =
@@ -705,33 +1011,25 @@ const cameraSelect =
 if (cameraSelect) {
 
   cameraSelect.addEventListener(
+
     'change',
+
     async function() {
 
-      const estabaActiva =
-        cameraState.activa;
+      cameraState.currentIndex =
+        Number(this.value);
 
 
-      if (estabaActiva) {
+      if (cameraState.activa) {
 
         await detenerCamara();
-
-      }
-
-
-      cameraState.currentIndex =
-        Number(
-          this.value
-        );
-
-
-      if (estabaActiva) {
 
         await iniciarCamara();
 
       }
 
     }
+
   );
 
 }
@@ -772,8 +1070,14 @@ async function detenerCamara() {
   cameraState.reader =
     null;
 
+
   cameraState.activa =
     false;
+
+
+  cameraState.procesandoQR =
+    false;
+
 
   state.camara =
     false;
@@ -801,7 +1105,7 @@ async function detenerCamara() {
 
 
 // =====================================================
-// BOTÓN ACTIVAR
+// BOTÓN ACTIVAR CÁMARA
 // =====================================================
 
 const camBtn =
@@ -821,7 +1125,7 @@ if (camBtn) {
 
 
 // =====================================================
-// BOTÓN DETENER
+// BOTÓN DETENER CÁMARA
 // =====================================================
 
 const stopCamBtn =
@@ -866,7 +1170,7 @@ if (switchCamBtn) {
 
 const consultarBtn =
   document.getElementById(
-    'consultarBtn'
+    'consultar'
   );
 
 
@@ -911,7 +1215,7 @@ if (consultarBtn) {
 
 
       mensaje.textContent =
-        'Consulta frontend lista para conectarse al backend.';
+        'Consulta V2 preparada para conexión segura al servidor.';
 
     }
   );
@@ -968,12 +1272,3 @@ if (dniBtn) {
   );
 
 }
-
-
-// =====================================================
-// INICIO
-// =====================================================
-
-console.log(
-  'Asistencia MGP V2 - Frontend cargado correctamente.'
-);
