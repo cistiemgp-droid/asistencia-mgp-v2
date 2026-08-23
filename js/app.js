@@ -1,12 +1,18 @@
-const state={tipo:'estudiante',estado:'INGRESO',qr:null,camara:false};
-function mostrarVista(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));if(id!=='registro')detenerCamara();window.scrollTo(0,0)}
-document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>mostrarVista(b.dataset.view)));
-homeBtn.addEventListener('click',()=>mostrarVista('portal'));salirBtn.addEventListener('click',()=>mostrarVista('portal'));
-entrarBtn.addEventListener('click',()=>{const m=loginMsg;if(!usuario.value.trim()||!password.value.trim()){m.textContent='Ingrese usuario y contraseña.';return}m.textContent='Acceso de prueba V2. La autenticación real se conectará al backend.';mostrarVista('panel')});
-document.querySelectorAll('[data-tipo]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('[data-tipo]').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.tipo=b.dataset.tipo}));
-document.querySelectorAll('[data-estado]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('[data-estado]').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.estado=b.dataset.estado}));
 // =====================================================
-// SISTEMA DE CÁMARA V2
+// ASISTENCIA MGP V2
+// FRONTEND - GITHUB PAGES
+// =====================================================
+
+const state = {
+  tipo: 'estudiante',
+  estado: 'INGRESO',
+  qr: null,
+  camara: false
+};
+
+
+// =====================================================
+// ESTADO DE CÁMARA
 // =====================================================
 
 const cameraState = {
@@ -18,7 +24,208 @@ const cameraState = {
 
 
 // =====================================================
-// MOSTRAR MENSAJE DE CÁMARA
+// MOSTRAR VISTA
+// =====================================================
+
+function mostrarVista(id) {
+
+  document
+    .querySelectorAll('.view')
+    .forEach(function(vista) {
+
+      vista.classList.toggle(
+        'active',
+        vista.id === id
+      );
+
+    });
+
+  if (id !== 'registro') {
+    detenerCamara();
+  }
+
+  window.scrollTo(0, 0);
+}
+
+
+// =====================================================
+// NAVEGACIÓN
+// =====================================================
+
+document
+  .querySelectorAll('[data-view]')
+  .forEach(function(boton) {
+
+    boton.addEventListener(
+      'click',
+      function() {
+
+        mostrarVista(
+          boton.dataset.view
+        );
+
+      }
+    );
+
+  });
+
+
+// =====================================================
+// BOTÓN INICIO
+// =====================================================
+
+const homeBtn =
+  document.getElementById('homeBtn');
+
+if (homeBtn) {
+
+  homeBtn.addEventListener(
+    'click',
+    function() {
+
+      mostrarVista('portal');
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// BOTÓN SALIR
+// =====================================================
+
+const salirBtn =
+  document.getElementById('salirBtn');
+
+if (salirBtn) {
+
+  salirBtn.addEventListener(
+    'click',
+    function() {
+
+      detenerCamara();
+
+      mostrarVista('portal');
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// LOGIN TEMPORAL
+// =====================================================
+
+const entrarBtn =
+  document.getElementById('entrarBtn');
+
+if (entrarBtn) {
+
+  entrarBtn.addEventListener(
+    'click',
+    function() {
+
+      const usuario =
+        document
+          .getElementById('usuario')
+          .value
+          .trim();
+
+      const password =
+        document
+          .getElementById('password')
+          .value
+          .trim();
+
+      const mensaje =
+        document.getElementById('loginMsg');
+
+      if (!usuario || !password) {
+
+        mensaje.textContent =
+          'Ingrese usuario y contraseña.';
+
+        return;
+
+      }
+
+      mensaje.textContent =
+        'Acceso de prueba V2. La autenticación real se conectará al backend.';
+
+      mostrarVista('panel');
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// TIPO DE PERSONA
+// =====================================================
+
+document
+  .querySelectorAll('[data-tipo]')
+  .forEach(function(boton) {
+
+    boton.addEventListener(
+      'click',
+      function() {
+
+        document
+          .querySelectorAll('[data-tipo]')
+          .forEach(function(b) {
+
+            b.classList.remove('active');
+
+          });
+
+        boton.classList.add('active');
+
+        state.tipo =
+          boton.dataset.tipo;
+
+      }
+    );
+
+  });
+
+
+// =====================================================
+// ESTADO INGRESO / SALIDA
+// =====================================================
+
+document
+  .querySelectorAll('[data-estado]')
+  .forEach(function(boton) {
+
+    boton.addEventListener(
+      'click',
+      function() {
+
+        document
+          .querySelectorAll('[data-estado]')
+          .forEach(function(b) {
+
+            b.classList.remove('active');
+
+          });
+
+        boton.classList.add('active');
+
+        state.estado =
+          boton.dataset.estado;
+
+      }
+    );
+
+  });
+
+
+// =====================================================
+// MENSAJE DE CÁMARA
 // =====================================================
 
 function mensajeCamara(texto) {
@@ -27,30 +234,47 @@ function mensajeCamara(texto) {
     document.getElementById('camMsg');
 
   if (elemento) {
-    elemento.textContent = texto;
+
+    elemento.textContent =
+      texto;
+
   }
 
 }
 
 
 // =====================================================
-// CARGAR CÁMARAS DISPONIBLES
+// OBTENER CÁMARAS
 // =====================================================
 
 async function cargarCamaras() {
 
+  mensajeCamara(
+    '🔍 Detectando cámaras disponibles...'
+  );
+
+
   try {
 
-    mensajeCamara(
-      '🔍 Buscando cámaras disponibles...'
-    );
+    if (
+      typeof Html5Qrcode ===
+      'undefined'
+    ) {
 
-    cameraState.cameras =
+      throw new Error(
+        'La biblioteca html5-qrcode no está disponible.'
+      );
+
+    }
+
+
+    const camaras =
       await Html5Qrcode.getCameras();
 
+
     if (
-      !cameraState.cameras ||
-      cameraState.cameras.length === 0
+      !camaras ||
+      camaras.length === 0
     ) {
 
       throw new Error(
@@ -60,46 +284,63 @@ async function cargarCamaras() {
     }
 
 
+    cameraState.cameras =
+      camaras;
+
+
     const selector =
-      document.getElementById('cameraSelect');
+      document.getElementById(
+        'cameraSelect'
+      );
 
-    selector.innerHTML = '';
 
+    if (selector) {
 
-    cameraState.cameras.forEach(
-      function(camera, index) {
+      selector.innerHTML = '';
 
-        const opcion =
-          document.createElement('option');
+      camaras.forEach(
+        function(camara, indice) {
 
-        opcion.value = index;
+          const opcion =
+            document.createElement(
+              'option'
+            );
 
-        opcion.textContent =
-          camera.label ||
-          `Cámara ${index + 1}`;
+          opcion.value =
+            indice;
 
-        selector.appendChild(opcion);
+          opcion.textContent =
+            camara.label ||
+            `Cámara ${indice + 1}`;
 
-      }
-    );
+          selector.appendChild(
+            opcion
+          );
+
+        }
+      );
+
+    }
 
 
     // =================================================
-    // INTENTAR SELECCIONAR CÁMARA TRASERA
+    // BUSCAR CÁMARA TRASERA
     // =================================================
 
     let indicePreferido = 0;
 
+
     for (
       let i = 0;
-      i < cameraState.cameras.length;
+      i < camaras.length;
       i++
     ) {
 
       const nombre =
         String(
-          cameraState.cameras[i].label || ''
+          camaras[i].label || ''
         ).toLowerCase();
+
 
       if (
         nombre.includes('back') ||
@@ -108,7 +349,9 @@ async function cargarCamaras() {
         nombre.includes('posterior')
       ) {
 
-        indicePreferido = i;
+        indicePreferido =
+          i;
+
         break;
 
       }
@@ -119,32 +362,52 @@ async function cargarCamaras() {
     cameraState.currentIndex =
       indicePreferido;
 
-    selector.value =
-      indicePreferido;
+
+    if (selector) {
+
+      selector.value =
+        indicePreferido;
+
+    }
 
 
-    document.getElementById(
-      'camera-controls'
-    ).style.display = 'block';
+    const controles =
+      document.getElementById(
+        'camera-controls'
+      );
+
+
+    if (controles) {
+
+      controles.style.display =
+        'block';
+
+    }
 
 
     mensajeCamara(
-      `${cameraState.cameras.length} cámara(s) disponible(s).`
+      `${camaras.length} cámara(s) disponible(s).`
     );
+
 
     return true;
 
-  } catch (error) {
+  }
+  catch (error) {
 
     console.error(
-      'Error enumerando cámaras:',
+      'Error obteniendo cámaras:',
       error
     );
 
+
     mensajeCamara(
       '❌ No fue posible obtener las cámaras: ' +
+      error.name +
+      ' — ' +
       error.message
     );
+
 
     return false;
 
@@ -154,7 +417,7 @@ async function cargarCamaras() {
 
 
 // =====================================================
-// INICIAR LECTOR QR
+// ACTIVAR CÁMARA
 // =====================================================
 
 async function iniciarCamara() {
@@ -170,34 +433,32 @@ async function iniciarCamara() {
   }
 
 
-  if (
-    typeof Html5Qrcode ===
-    'undefined'
-  ) {
-
-    mensajeCamara(
-      '❌ No se cargó la biblioteca del lector QR.'
-    );
-
-    return;
-
-  }
-
-
-  const camarasOK =
+  const correcto =
     await cargarCamaras();
 
-  if (!camarasOK) {
+
+  if (!correcto) {
+
     return;
+
   }
 
 
   try {
 
-    const cameraId =
+    const camara =
       cameraState.cameras[
         cameraState.currentIndex
-      ].id;
+      ];
+
+
+    if (!camara) {
+
+      throw new Error(
+        'No se pudo seleccionar una cámara.'
+      );
+
+    }
 
 
     cameraState.reader =
@@ -206,46 +467,74 @@ async function iniciarCamara() {
       );
 
 
+    mensajeCamara(
+      '📷 Iniciando cámara...'
+    );
+
+
     await cameraState.reader.start(
 
-      cameraId,
+      camara.id,
 
       {
         fps: 10,
 
         qrbox: {
-          width: 240,
-          height: 240
+          width: 250,
+          height: 250
         },
 
         aspectRatio: 1.0
 
       },
 
+
       function(decodedText) {
+
+        state.qr =
+          decodedText;
+
 
         mensajeCamara(
           '✅ QR leído correctamente.'
         );
 
-        detenerCamara();
 
-        regMsg.textContent =
-          'QR leído: ' +
-          decodedText;
+        const mensaje =
+          document.getElementById(
+            'regMsg'
+          );
+
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            'QR leído: ' +
+            decodedText;
+
+        }
+
+
+        detenerCamara();
 
       },
 
+
       function(errorMessage) {
 
-        // No mostramos los errores normales
-        // de búsqueda de QR continuamente.
+        // Los errores normales de búsqueda
+        // de QR no se muestran.
+
       }
 
     );
 
 
-    cameraState.activa = true;
+    cameraState.activa =
+      true;
+
+    state.camara =
+      true;
 
 
     mensajeCamara(
@@ -253,18 +542,35 @@ async function iniciarCamara() {
     );
 
 
-    document.getElementById(
-      'camBtn'
-    ).disabled = true;
+    const boton =
+      document.getElementById(
+        'camBtn'
+      );
 
 
-    document.getElementById(
-      'switchCamBtn'
-    ).disabled =
-      cameraState.cameras.length < 2;
+    if (boton) {
+
+      boton.disabled =
+        true;
+
+    }
 
 
-  } catch (error) {
+    const cambiar =
+      document.getElementById(
+        'switchCamBtn'
+      );
+
+
+    if (cambiar) {
+
+      cambiar.disabled =
+        cameraState.cameras.length < 2;
+
+    }
+
+  }
+  catch (error) {
 
     console.error(
       'Error iniciando cámara:',
@@ -272,7 +578,11 @@ async function iniciarCamara() {
     );
 
 
-    cameraState.activa = false;
+    cameraState.activa =
+      false;
+
+    state.camara =
+      false;
 
 
     mensajeCamara(
@@ -281,6 +591,26 @@ async function iniciarCamara() {
       ' — ' +
       error.message
     );
+
+
+    if (cameraState.reader) {
+
+      try {
+
+        await cameraState.reader.clear();
+
+      }
+      catch (e) {
+
+        console.warn(e);
+
+      }
+
+    }
+
+
+    cameraState.reader =
+      null;
 
   }
 
@@ -306,6 +636,17 @@ async function cambiarCamara() {
   }
 
 
+  const estabaActiva =
+    cameraState.activa;
+
+
+  if (estabaActiva) {
+
+    await detenerCamara();
+
+  }
+
+
   cameraState.currentIndex =
     (
       cameraState.currentIndex + 1
@@ -318,27 +659,33 @@ async function cambiarCamara() {
       'cameraSelect'
     );
 
-  selector.value =
-    cameraState.currentIndex;
+
+  if (selector) {
+
+    selector.value =
+      cameraState.currentIndex;
+
+  }
 
 
-  if (cameraState.activa) {
+  const camara =
+    cameraState.cameras[
+      cameraState.currentIndex
+    ];
 
-    await detenerCamara();
+
+  mensajeCamara(
+    '🔄 Cámara seleccionada: ' +
+    (
+      camara.label ||
+      `Cámara ${cameraState.currentIndex + 1}`
+    )
+  );
+
+
+  if (estabaActiva) {
 
     await iniciarCamara();
-
-  } else {
-
-    mensajeCamara(
-      'Cámara seleccionada: ' +
-      (
-        cameraState.cameras[
-          cameraState.currentIndex
-        ].label ||
-        `Cámara ${cameraState.currentIndex + 1}`
-      )
-    );
 
   }
 
@@ -346,11 +693,14 @@ async function cambiarCamara() {
 
 
 // =====================================================
-// CAMBIAR DESDE EL SELECTOR
+// CAMBIAR CÁMARA DESDE SELECTOR
 // =====================================================
 
 const cameraSelect =
-  document.getElementById('cameraSelect');
+  document.getElementById(
+    'cameraSelect'
+  );
+
 
 if (cameraSelect) {
 
@@ -358,12 +708,24 @@ if (cameraSelect) {
     'change',
     async function() {
 
-      cameraState.currentIndex =
-        Number(this.value);
+      const estabaActiva =
+        cameraState.activa;
 
-      if (cameraState.activa) {
+
+      if (estabaActiva) {
 
         await detenerCamara();
+
+      }
+
+
+      cameraState.currentIndex =
+        Number(
+          this.value
+        );
+
+
+      if (estabaActiva) {
 
         await iniciarCamara();
 
@@ -373,6 +735,7 @@ if (cameraSelect) {
   );
 
 }
+
 
 // =====================================================
 // DETENER CÁMARA
@@ -390,11 +753,13 @@ async function detenerCamara() {
 
       }
 
+
       await cameraState.reader.clear();
 
     }
 
-  } catch (error) {
+  }
+  catch (error) {
 
     console.warn(
       'Error deteniendo cámara:',
@@ -404,9 +769,14 @@ async function detenerCamara() {
   }
 
 
-  cameraState.reader = null;
+  cameraState.reader =
+    null;
 
-  cameraState.activa = false;
+  cameraState.activa =
+    false;
+
+  state.camara =
+    false;
 
 
   const boton =
@@ -414,8 +784,12 @@ async function detenerCamara() {
       'camBtn'
     );
 
+
   if (boton) {
-    boton.disabled = false;
+
+    boton.disabled =
+      false;
+
   }
 
 
@@ -427,11 +801,14 @@ async function detenerCamara() {
 
 
 // =====================================================
-// BOTÓN ACTIVAR CÁMARA
+// BOTÓN ACTIVAR
 // =====================================================
 
 const camBtn =
-  document.getElementById('camBtn');
+  document.getElementById(
+    'camBtn'
+  );
+
 
 if (camBtn) {
 
@@ -444,11 +821,14 @@ if (camBtn) {
 
 
 // =====================================================
-// BOTÓN DETENER CÁMARA
+// BOTÓN DETENER
 // =====================================================
 
 const stopCamBtn =
-  document.getElementById('stopCamBtn');
+  document.getElementById(
+    'stopCamBtn'
+  );
+
 
 if (stopCamBtn) {
 
@@ -465,7 +845,10 @@ if (stopCamBtn) {
 // =====================================================
 
 const switchCamBtn =
-  document.getElementById('switchCamBtn');
+  document.getElementById(
+    'switchCamBtn'
+  );
+
 
 if (switchCamBtn) {
 
@@ -475,5 +858,122 @@ if (switchCamBtn) {
   );
 
 }
-consultarBtn.addEventListener('click',()=>{consultaMsg.textContent=dniConsulta.value.trim()&&claveConsulta.value.trim()?'Consulta frontend lista para conectarse al backend.':'Ingrese DNI y código de consulta.'});
-dniBtn.addEventListener('click',()=>{regMsg.textContent=dniManual.value.trim()?'Registro DNI preparado para backend.':'Ingrese el DNI.'});
+
+
+// =====================================================
+// CONSULTA PÚBLICA
+// =====================================================
+
+const consultarBtn =
+  document.getElementById(
+    'consultarBtn'
+  );
+
+
+if (consultarBtn) {
+
+  consultarBtn.addEventListener(
+    'click',
+    function() {
+
+      const dni =
+        document
+          .getElementById(
+            'dniConsulta'
+          )
+          .value
+          .trim();
+
+
+      const clave =
+        document
+          .getElementById(
+            'claveConsulta'
+          )
+          .value
+          .trim();
+
+
+      const mensaje =
+        document.getElementById(
+          'consultaMsg'
+        );
+
+
+      if (!dni || !clave) {
+
+        mensaje.textContent =
+          'Ingrese DNI y código de consulta.';
+
+        return;
+
+      }
+
+
+      mensaje.textContent =
+        'Consulta frontend lista para conectarse al backend.';
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// REGISTRO EXCEPCIONAL POR DNI
+// =====================================================
+
+const dniBtn =
+  document.getElementById(
+    'dniBtn'
+  );
+
+
+if (dniBtn) {
+
+  dniBtn.addEventListener(
+    'click',
+    function() {
+
+      const dni =
+        document
+          .getElementById(
+            'dniManual'
+          )
+          .value
+          .trim();
+
+
+      const mensaje =
+        document.getElementById(
+          'regMsg'
+        );
+
+
+      if (!dni) {
+
+        mensaje.textContent =
+          'Ingrese el DNI.';
+
+        return;
+
+      }
+
+
+      mensaje.textContent =
+        'Registro excepcional por DNI preparado. ' +
+        'Método: DNI.';
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// INICIO
+// =====================================================
+
+console.log(
+  'Asistencia MGP V2 - Frontend cargado correctamente.'
+);
