@@ -177,14 +177,71 @@ if (salirBtn) {
 // LOGIN
 // =====================================================
 
+// =====================================================
+// LOGIN
+// COMPATIBLE CON LOS DOS IDs
+// =====================================================
+
 const entrarBtn =
-  document.getElementById('entrar');
+  document.getElementById('entrar') ||
+  document.getElementById('entrarBtn');
+
 
 if (entrarBtn) {
 
   entrarBtn.addEventListener(
     'click',
     function() {
+
+      const usuarioElemento =
+        document.getElementById('usuario');
+
+      const passwordElemento =
+        document.getElementById('password');
+
+      const mensaje =
+        document.getElementById('loginMsg');
+
+
+      const usuario =
+        usuarioElemento
+          ? usuarioElemento.value.trim()
+          : '';
+
+      const password =
+        passwordElemento
+          ? passwordElemento.value.trim()
+          : '';
+
+
+      if (!usuario || !password) {
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            'Ingrese usuario y contraseña.';
+
+        }
+
+        return;
+
+      }
+
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          'Acceso de prueba V2.';
+
+      }
+
+
+      mostrarVista('panel');
+
+    }
+  );
+
+}
 
       const usuario =
         document
