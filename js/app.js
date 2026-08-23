@@ -349,15 +349,17 @@ async function cambiarCamara() {
 // CAMBIAR DESDE EL SELECTOR
 // =====================================================
 
-document
-  .getElementById('cameraSelect')
-  .addEventListener(
+const cameraSelect =
+  document.getElementById('cameraSelect');
+
+if (cameraSelect) {
+
+  cameraSelect.addEventListener(
     'change',
     async function() {
 
       cameraState.currentIndex =
         Number(this.value);
-
 
       if (cameraState.activa) {
 
@@ -370,6 +372,7 @@ document
     }
   );
 
+}
 
 // =====================================================
 // DETENER CÁMARA
@@ -424,30 +427,53 @@ async function detenerCamara() {
 
 
 // =====================================================
-// BOTONES
+// BOTÓN ACTIVAR CÁMARA
 // =====================================================
 
-document
-  .getElementById('camBtn')
-  .addEventListener(
+const camBtn =
+  document.getElementById('camBtn');
+
+if (camBtn) {
+
+  camBtn.addEventListener(
     'click',
     iniciarCamara
   );
 
+}
 
-document
-  .getElementById('stopCamBtn')
-  .addEventListener(
+
+// =====================================================
+// BOTÓN DETENER CÁMARA
+// =====================================================
+
+const stopCamBtn =
+  document.getElementById('stopCamBtn');
+
+if (stopCamBtn) {
+
+  stopCamBtn.addEventListener(
     'click',
     detenerCamara
   );
 
+}
 
-document
-  .getElementById('switchCamBtn')
-  .addEventListener(
+
+// =====================================================
+// BOTÓN CAMBIAR CÁMARA
+// =====================================================
+
+const switchCamBtn =
+  document.getElementById('switchCamBtn');
+
+if (switchCamBtn) {
+
+  switchCamBtn.addEventListener(
     'click',
     cambiarCamara
   );
+
+}
 consultarBtn.addEventListener('click',()=>{consultaMsg.textContent=dniConsulta.value.trim()&&claveConsulta.value.trim()?'Consulta frontend lista para conectarse al backend.':'Ingrese DNI y código de consulta.'});
 dniBtn.addEventListener('click',()=>{regMsg.textContent=dniManual.value.trim()?'Registro DNI preparado para backend.':'Ingrese el DNI.'});
