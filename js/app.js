@@ -102,26 +102,32 @@ function mostrarVista(nombre) {
 
 
 // =====================================================
-// NAVEGACIÓN DATA-V
+// NAVEGACIÓN
+// COMPATIBLE CON data-v Y data-view
 // =====================================================
 
 document
-  .querySelectorAll('[data-v]')
+  .querySelectorAll('[data-v], [data-view]')
   .forEach(function(boton) {
 
     boton.addEventListener(
       'click',
       function() {
 
-        mostrarVista(
-          boton.dataset.v
-        );
+        const destino =
+          boton.dataset.v ||
+          boton.dataset.view;
+
+        if (destino) {
+
+          mostrarVista(destino);
+
+        }
 
       }
     );
 
   });
-
 
 // =====================================================
 // BOTÓN INICIO
