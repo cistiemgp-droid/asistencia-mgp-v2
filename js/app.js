@@ -54,7 +54,15 @@ const cameraState = {
   // etiquetas/mapeos incorrectos.
   esMovil: false,
 
-  facingMode: 'environment'
+  facingMode: 'environment',
+
+  // V6: cámara móvil nativa
+  mobileCameras: [],
+  mobileStream: null,
+  mobileVideo: null,
+  mobileDetector: null,
+  mobileScanActivo: false,
+  procesandoQR: false
 
 };
 
@@ -825,6 +833,751 @@ async function identificarQRBackend(
 
 
 // =====================================================
+// CÁMARA MÓVIL NATIVA V6
+// =====================================================
+//
+// En V2-V5 usamos html5-qrcode para abrir la cámara
+// móvil mediante facingMode/deviceId.
+//
+// En este teléfono ya comprobamos que esa ruta no
+// distingue correctamente la cámara frontal.
+//
+// V6 cambia de estrategia:
+// 1. El navegador obtiene los dispositivos reales.
+// 2. Cada dispositivo se prueba con getUserMedia().
+// 3. Se clasifica por track.getSettings().facingMode.
+// 4. La cámara móvil se muestra en un <video> nativo.
+// 5. Si BarcodeDetector existe, se usa para leer QR.
+//
+// El PC conserva html5-qrcode.
+// =====================================================
+
+async function prepararCamarasMovil() {
+
+  if (!cameraState.esMovil) {
+    return true;
+  }
+
+  try {
+
+    mensajeCamara(
+      '🔍 Detectando cámaras reales del teléfono...'
+    );
+
+    // Solicitar permiso una sola vez para que
+    // enumerateDevices() entregue etiquetas.
+    let permisoStream = null;
+
+    try {
+
+      permisoStream =
+        await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+
+    }
+    finally {
+
+      if (permisoStream) {
+
+        permisoStream
+          .getTracks()
+          .forEach(function(track) {
+            track.stop();
+          });
+
+      }
+
+    }
+
+    const dispositivos =
+      await navigator.mediaDevices.enumerateDevices();
+
+    const entradas =
+      dispositivos.filter(function(dispositivo) {
+        return dispositivo.kind === 'videoinput';
+      });
+
+    if (!entradas.length) {
+
+      throw new Error(
+        'El navegador no entregó cámaras de vídeo.'
+      );
+
+    }
+
+    cameraState.mobileCameras = [];
+
+    // Probamos cada deviceId de forma nativa.
+    // No confiamos en el texto "facing front/back".
+    for (let i = 0; i < entradas.length; i++) {
+
+      const dispositivo = entradas[i];
+
+      let stream = null;
+
+      try {
+
+        stream =
+          await navigator.mediaDevices.getUserMedia({
+
+            video: {
+              deviceId: {
+                exact: dispositivo.deviceId
+              }
+            },
+
+            audio: false
+
+          });
+
+        const track =
+          stream.getVideoTracks()[0];
+
+        const settings =
+          track.getSettings();
+
+        const facing =
+          settings.facingMode || '';
+
+        cameraState.mobileCameras.push({
+
+          id:
+            dispositivo.deviceId,
+
+          label:
+            track.label ||
+            dispositivo.label ||
+            `Cámara ${i + 1}`,
+
+          facingMode:
+            facing,
+
+          width:
+            settings.width || 0,
+
+          height:
+            settings.height || 0
+
+        });
+
+      }
+      catch (error) {
+
+        console.warn(
+          'No se pudo probar dispositivo:',
+          dispositivo.label,
+          error
+        );
+
+      }
+      finally {
+
+        if (stream) {
+
+          stream
+            .getTracks()
+            .forEach(function(track) {
+              track.stop();
+            });
+
+        }
+
+      }
+
+    }
+
+    if (!cameraState.mobileCameras.length) {
+
+      throw new Error(
+        'No fue posible abrir ninguna cámara del teléfono.'
+      );
+
+    }
+
+    console.log(
+      'Cámaras móviles detectadas realmente:',
+      cameraState.mobileCameras
+    );
+
+    const selector =
+      document.getElementById('cameraSelect');
+
+    if (selector) {
+
+      selector.innerHTML = '';
+
+      const frontal =
+        cameraState.mobileCameras.find(function(c) {
+          return c.facingMode === 'user';
+        });
+
+      const trasera =
+        cameraState.mobileCameras.find(function(c) {
+          return c.facingMode === 'environment';
+        });
+
+      if (frontal) {
+
+        const opcionFrontal =
+          document.createElement('option');
+
+        opcionFrontal.value =
+          'user';
+
+        opcionFrontal.textContent =
+          '📱 Cámara frontal';
+
+        selector.appendChild(
+          opcionFrontal
+        );
+
+      }
+
+      if (trasera) {
+
+        const opcionTrasera =
+          document.createElement('option');
+
+        opcionTrasera.value =
+          'environment';
+
+        opcionTrasera.textContent =
+          '📷 Cámara trasera';
+
+        selector.appendChild(
+          opcionTrasera
+        );
+
+      }
+
+      // Si el navegador no informa facingMode,
+      // mostramos los dispositivos reales como
+      // alternativa para diagnóstico/compatibilidad.
+      if (!frontal && !trasera) {
+
+        cameraState.mobileCameras.forEach(
+          function(camara, index) {
+
+            const opcion =
+              document.createElement('option');
+
+            opcion.value =
+              'device:' + index;
+
+            opcion.textContent =
+              '📷 ' +
+              (
+                camara.label ||
+                `Cámara ${index + 1}`
+              );
+
+            selector.appendChild(
+              opcion
+            );
+
+          }
+        );
+
+      }
+
+      if (trasera) {
+
+        cameraState.facingMode =
+          'environment';
+
+        selector.value =
+          'environment';
+
+      }
+      else if (frontal) {
+
+        cameraState.facingMode =
+          'user';
+
+        selector.value =
+          'user';
+
+      }
+
+    }
+
+    const controles =
+      document.getElementById(
+        'camera-controls'
+      );
+
+    if (controles) {
+      controles.style.display = 'block';
+    }
+
+    if (
+      !cameraState.mobileCameras.some(function(c) {
+        return c.facingMode === 'user';
+      })
+    ) {
+
+      console.warn(
+        'El navegador no expuso ninguna cámara con facingMode=user.'
+      );
+
+    }
+
+    return true;
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error detectando cámaras móviles:',
+      error
+    );
+
+    mensajeCamara(
+      '❌ No fue posible detectar las cámaras: ' +
+      error.message
+    );
+
+    return false;
+
+  }
+
+}
+
+
+// =====================================================
+// ESCÁNER QR NATIVO PARA MÓVIL
+// =====================================================
+
+async function iniciarCamaraMovil() {
+
+  if (
+    !navigator.mediaDevices ||
+    !navigator.mediaDevices.getUserMedia
+  ) {
+
+    throw new Error(
+      'El navegador no permite acceso nativo a la cámara.'
+    );
+
+  }
+
+  const camarasOK =
+    await prepararCamarasMovil();
+
+  if (!camarasOK) {
+    return;
+  }
+
+  let camaraSeleccionada = null;
+
+  if (
+    cameraState.facingMode === 'user' ||
+    cameraState.facingMode === 'environment'
+  ) {
+
+    camaraSeleccionada =
+      cameraState.mobileCameras.find(
+        function(camara) {
+
+          return (
+            camara.facingMode ===
+            cameraState.facingMode
+          );
+
+        }
+      );
+
+  }
+
+  // Si el navegador no informa facingMode,
+  // usamos el índice seleccionado.
+  if (!camaraSeleccionada) {
+
+    const selector =
+      document.getElementById(
+        'cameraSelect'
+      );
+
+    if (
+      selector &&
+      String(selector.value).indexOf('device:') === 0
+    ) {
+
+      const indice =
+        Number(
+          String(selector.value)
+            .replace('device:', '')
+        );
+
+      camaraSeleccionada =
+        cameraState.mobileCameras[indice];
+
+    }
+
+  }
+
+  if (!camaraSeleccionada) {
+
+    throw new Error(
+      cameraState.facingMode === 'user'
+        ? 'El navegador no expone una cámara frontal utilizable.'
+        : 'El navegador no expone una cámara trasera utilizable.'
+    );
+
+  }
+
+  let stream = null;
+
+  try {
+
+    stream =
+      await navigator.mediaDevices.getUserMedia({
+
+        video: {
+          deviceId: {
+            exact:
+              camaraSeleccionada.id
+          }
+        },
+
+        audio: false
+
+      });
+
+    const track =
+      stream.getVideoTracks()[0];
+
+    const settings =
+      track.getSettings();
+
+    console.log(
+      'Cámara móvil abierta:',
+      {
+        solicitada:
+          cameraState.facingMode,
+
+        label:
+          track.label,
+
+        deviceId:
+          settings.deviceId,
+
+        facingMode:
+          settings.facingMode
+
+      }
+    );
+
+    // Verificación real.
+    // Si pedimos frontal y el navegador informa
+    // environment, no lo aceptamos como frontal.
+    if (
+      cameraState.facingMode === 'user' &&
+      settings.facingMode === 'environment'
+    ) {
+
+      stream
+        .getTracks()
+        .forEach(function(t) {
+          t.stop();
+        });
+
+      throw new Error(
+        'Android abrió una cámara trasera al solicitar la frontal.'
+      );
+
+    }
+
+    if (
+      cameraState.facingMode === 'environment' &&
+      settings.facingMode === 'user'
+    ) {
+
+      stream
+        .getTracks()
+        .forEach(function(t) {
+          t.stop();
+        });
+
+      throw new Error(
+        'Android abrió una cámara frontal al solicitar la trasera.'
+      );
+
+    }
+
+    const reader =
+      document.getElementById('reader');
+
+    if (!reader) {
+
+      throw new Error(
+        'No existe el contenedor reader.'
+      );
+
+    }
+
+    reader.innerHTML = '';
+
+    const video =
+      document.createElement('video');
+
+    video.id =
+      'mobileCameraVideo';
+
+    video.autoplay =
+      true;
+
+    video.playsInline =
+      true;
+
+    video.muted =
+      true;
+
+    video.setAttribute(
+      'playsinline',
+      ''
+    );
+
+    video.style.width =
+      '100%';
+
+    video.style.maxWidth =
+      '100%';
+
+    video.style.display =
+      'block';
+
+    video.style.background =
+      '#000';
+
+    reader.appendChild(
+      video
+    );
+
+    video.srcObject =
+      stream;
+
+    await video.play();
+
+    cameraState.mobileStream =
+      stream;
+
+    cameraState.mobileVideo =
+      video;
+
+    cameraState.mobileDetector =
+      null;
+
+    // =================================================
+    // LECTOR QR NATIVO
+    // =================================================
+
+    if (
+      typeof BarcodeDetector !==
+      'undefined'
+    ) {
+
+      let formatos =
+        ['qr_code'];
+
+      try {
+
+        if (
+          BarcodeDetector.getSupportedFormats
+        ) {
+
+          const disponibles =
+            await BarcodeDetector
+              .getSupportedFormats();
+
+          if (
+            !disponibles.includes('qr_code')
+          ) {
+
+            throw new Error(
+              'BarcodeDetector no admite QR en este navegador.'
+            );
+
+          }
+
+        }
+
+      }
+      catch (errorFormatos) {
+
+        console.warn(
+          'No se pudo comprobar formatos de BarcodeDetector:',
+          errorFormatos
+        );
+
+      }
+
+      cameraState.mobileDetector =
+        new BarcodeDetector({
+          formats: formatos
+        });
+
+      cameraState.mobileScanActivo =
+        true;
+
+      escanearQRMovilNativo();
+
+    }
+    else {
+
+      // No ocultamos el problema.
+      // En este teléfono Chrome Android debería
+      // proporcionar BarcodeDetector.
+      throw new Error(
+        'Este navegador no dispone de BarcodeDetector para el lector QR móvil.'
+      );
+
+    }
+
+    cameraState.activa =
+      true;
+
+    cameraState.procesandoQR =
+      false;
+
+    state.camara =
+      true;
+
+    mensajeCamara(
+      cameraState.facingMode === 'user'
+        ? '📱 Cámara frontal activa.'
+        : '📷 Cámara trasera activa. Apunte al QR del carnet.'
+    );
+
+    const boton =
+      document.getElementById('camBtn');
+
+    if (boton) {
+      boton.disabled = true;
+    }
+
+    const cambiar =
+      document.getElementById(
+        'switchCamBtn'
+      );
+
+    if (cambiar) {
+      cambiar.disabled = false;
+    }
+
+  }
+  catch (error) {
+
+    if (stream) {
+
+      stream
+        .getTracks()
+        .forEach(function(track) {
+          track.stop();
+        });
+
+    }
+
+    throw error;
+
+  }
+
+}
+
+
+// =====================================================
+// BÚSQUEDA QR NATIVA MÓVIL
+// =====================================================
+
+async function escanearQRMovilNativo() {
+
+  if (
+    !cameraState.mobileScanActivo ||
+    !cameraState.mobileDetector ||
+    !cameraState.mobileVideo
+  ) {
+    return;
+  }
+
+  if (
+    !cameraState.activa &&
+    !cameraState.mobileStream
+  ) {
+    return;
+  }
+
+  try {
+
+    const resultados =
+      await cameraState.mobileDetector.detect(
+        cameraState.mobileVideo
+      );
+
+    if (
+      resultados &&
+      resultados.length
+    ) {
+
+      const decodedText =
+        resultados[0].rawValue;
+
+      if (
+        decodedText &&
+        !cameraState.procesandoQR
+      ) {
+
+        cameraState.procesandoQR =
+          true;
+
+        state.qr =
+          decodedText;
+
+        mensajeCamara(
+          '✅ QR leído. Consultando servidor...'
+        );
+
+        await detenerCamara();
+
+        await identificarQRBackend(
+          decodedText
+        );
+
+        cameraState.procesandoQR =
+          false;
+
+        return;
+
+      }
+
+    }
+
+  }
+  catch (error) {
+
+    console.warn(
+      'Error leyendo QR móvil:',
+      error
+    );
+
+  }
+
+  if (
+    cameraState.mobileScanActivo
+  ) {
+
+    setTimeout(
+      escanearQRMovilNativo,
+      250
+    );
+
+  }
+
+}
+
+
+// =====================================================
 // INICIAR CÁMARA
 // =====================================================
 
@@ -840,44 +1593,47 @@ async function iniciarCamara() {
 
   }
 
-
-  const camarasOK =
-    await cargarCamaras();
-
-
-  if (!camarasOK) {
-
-    return;
-
-  }
-
+  cameraState.esMovil =
+    esDispositivoMovil();
 
   try {
+
+    // =================================================
+    // MÓVIL
+    // =================================================
+
+    if (cameraState.esMovil) {
+
+      await iniciarCamaraMovil();
+
+      return;
+
+    }
+
+    // =================================================
+    // PC
+    // =================================================
+
+    const camarasOK =
+      await cargarCamaras();
+
+    if (!camarasOK) {
+      return;
+    }
 
     cameraState.reader =
       new Html5Qrcode(
         'reader'
       );
 
+    const cameraId =
+      (
+        cameraState.cameras[
+          cameraState.currentIndex
+        ] || {}
+      ).id;
 
-    // En móvil usamos facingMode.
-    // En PC mantenemos deviceId.
-    const fuenteCamara =
-      cameraState.esMovil
-        ? {
-            facingMode: {
-              exact:
-                cameraState.facingMode
-            }
-          }
-        : (
-            cameraState.cameras[
-              cameraState.currentIndex
-            ] || {}
-          ).id;
-
-
-    if (!fuenteCamara) {
+    if (!cameraId) {
 
       throw new Error(
         'No se pudo seleccionar la cámara.'
@@ -885,155 +1641,82 @@ async function iniciarCamara() {
 
     }
 
+    await cameraState.reader.start(
 
-    try {
+      cameraId,
 
-      await cameraState.reader.start(
-
-        fuenteCamara,
-
-        {
-
+      {
         fps: 10,
 
         qrbox: {
-
           width: 240,
-
           height: 240
-
         },
 
         aspectRatio: 1.0
 
       },
 
-
-      // =================================================
-      // QR LEÍDO
-      // =================================================
-
       async function(decodedText) {
 
-        // Evitamos procesar múltiples
-        // lecturas simultáneas.
-
         if (cameraState.procesandoQR) {
-
           return;
-
         }
-
 
         cameraState.procesandoQR =
           true;
 
-
         state.qr =
           decodedText;
-
 
         mensajeCamara(
           '✅ QR leído. Consultando servidor...'
         );
 
-
-        // Detener cámara antes de
-        // consultar el backend.
-
         await detenerCamara();
-
-
-        // =================================================
-        // ENVIAR QR AL BACKEND
-        // =================================================
 
         await identificarQRBackend(
           decodedText
         );
-
 
         cameraState.procesandoQR =
           false;
 
       },
 
-
-      // =================================================
-      // ERRORES NORMALES DEL LECTOR
-      // =================================================
-
       function(errorMessage) {
 
-        // No mostramos los errores normales
-        // de búsqueda de QR continuamente.
-
+        // Errores normales de búsqueda QR.
       }
 
     );
 
-    }
-    catch (errorCamara) {
-
-      console.error(
-        'No fue posible abrir la cámara solicitada:',
-        errorCamara
-      );
-
-      throw new Error(
-        cameraState.esMovil
-          ? (cameraState.facingMode === 'user'
-              ? 'El dispositivo no pudo abrir la cámara frontal solicitada.'
-              : 'El dispositivo no pudo abrir la cámara trasera solicitada.')
-          : errorCamara.message
-      );
-
-    }
-
     cameraState.activa =
       true;
-
 
     cameraState.procesandoQR =
       false;
 
-
     state.camara =
       true;
-
 
     mensajeCamara(
       '📷 Cámara activa. Apunte al QR del carnet.'
     );
 
-
     const boton =
-      document.getElementById(
-        'camBtn'
-      );
-
+      document.getElementById('camBtn');
 
     if (boton) {
-
-      boton.disabled =
-        true;
-
+      boton.disabled = true;
     }
 
-
     const cambiar =
-      document.getElementById(
-        'switchCamBtn'
-      );
-
+      document.getElementById('switchCamBtn');
 
     if (cambiar) {
-
       cambiar.disabled =
-        cameraState.esMovil
-          ? false
-          : cameraState.cameras.length < 2;
-
+        cameraState.cameras.length < 2;
     }
 
   }
@@ -1044,18 +1727,14 @@ async function iniciarCamara() {
       error
     );
 
-
     cameraState.activa =
       false;
-
 
     cameraState.procesandoQR =
       false;
 
-
     state.camara =
       false;
-
 
     mensajeCamara(
       '❌ No se pudo iniciar la cámara: ' +
@@ -1075,10 +1754,6 @@ async function iniciarCamara() {
 
 async function cambiarCamara() {
 
-  // ===================================================
-  // MÓVIL / TABLETA
-  // ===================================================
-
   if (cameraState.esMovil) {
 
     cameraState.facingMode =
@@ -1086,12 +1761,10 @@ async function cambiarCamara() {
         ? 'user'
         : 'environment';
 
-
     const selector =
       document.getElementById(
         'cameraSelect'
       );
-
 
     if (selector) {
 
@@ -1099,13 +1772,6 @@ async function cambiarCamara() {
         cameraState.facingMode;
 
     }
-
-
-    const nombre =
-      cameraState.facingMode === 'user'
-        ? '📱 Cámara frontal'
-        : '📷 Cámara trasera';
-
 
     if (cameraState.activa) {
 
@@ -1117,21 +1783,16 @@ async function cambiarCamara() {
     else {
 
       mensajeCamara(
-        'Cámara seleccionada: ' +
-        nombre
+        cameraState.facingMode === 'user'
+          ? '📱 Cámara frontal seleccionada.'
+          : '📷 Cámara trasera seleccionada.'
       );
 
     }
 
-
     return;
 
   }
-
-
-  // ===================================================
-  // PC / ESCRITORIO
-  // ===================================================
 
   if (
     cameraState.cameras.length < 2
@@ -1145,29 +1806,21 @@ async function cambiarCamara() {
 
   }
 
-
   cameraState.currentIndex =
-
     (
       cameraState.currentIndex + 1
     ) %
-
     cameraState.cameras.length;
-
 
   const selector =
     document.getElementById(
       'cameraSelect'
     );
 
-
   if (selector) {
-
     selector.value =
       cameraState.currentIndex;
-
   }
-
 
   if (cameraState.activa) {
 
@@ -1179,20 +1832,13 @@ async function cambiarCamara() {
   else {
 
     mensajeCamara(
-
       'Cámara seleccionada: ' +
-
       (
         cameraState.cameras[
           cameraState.currentIndex
         ].label ||
-
-        `Cámara ${
-          cameraState.currentIndex + 1
-        }`
-
+        `Cámara ${cameraState.currentIndex + 1}`
       )
-
     );
 
   }
@@ -1209,13 +1855,10 @@ const cameraSelect =
     'cameraSelect'
   );
 
-
 if (cameraSelect) {
 
   cameraSelect.addEventListener(
-
     'change',
-
     async function() {
 
       if (cameraState.esMovil) {
@@ -1237,7 +1880,6 @@ if (cameraSelect) {
           Number(this.value);
 
       }
-
 
       if (cameraState.activa) {
 
@@ -1261,7 +1903,6 @@ if (cameraSelect) {
       }
 
     }
-
   );
 
 }
@@ -1273,9 +1914,58 @@ if (cameraSelect) {
 
 async function detenerCamara() {
 
-  try {
+  // ===================================================
+  // MÓVIL NATIVO
+  // ===================================================
 
-    if (cameraState.reader) {
+  if (cameraState.mobileStream) {
+
+    cameraState.mobileScanActivo =
+      false;
+
+    try {
+
+      cameraState.mobileStream
+        .getTracks()
+        .forEach(function(track) {
+          track.stop();
+        });
+
+    }
+    catch (error) {
+
+      console.warn(
+        'Error deteniendo stream móvil:',
+        error
+      );
+
+    }
+
+    cameraState.mobileStream =
+      null;
+
+    cameraState.mobileVideo =
+      null;
+
+    cameraState.mobileDetector =
+      null;
+
+    const reader =
+      document.getElementById('reader');
+
+    if (reader) {
+      reader.innerHTML = '';
+    }
+
+  }
+
+  // ===================================================
+  // PC - HTML5 QR CODE
+  // ===================================================
+
+  if (cameraState.reader) {
+
+    try {
 
       if (cameraState.activa) {
 
@@ -1283,51 +1973,40 @@ async function detenerCamara() {
 
       }
 
-
       await cameraState.reader.clear();
+
+    }
+    catch (error) {
+
+      console.warn(
+        'Error deteniendo lector PC:',
+        error
+      );
 
     }
 
   }
-  catch (error) {
-
-    console.warn(
-      'Error deteniendo cámara:',
-      error
-    );
-
-  }
-
 
   cameraState.reader =
     null;
 
-
   cameraState.activa =
     false;
-
 
   cameraState.procesandoQR =
     false;
 
-
   state.camara =
     false;
-
 
   const boton =
     document.getElementById(
       'camBtn'
     );
 
-
   if (boton) {
-
-    boton.disabled =
-      false;
-
+    boton.disabled = false;
   }
-
 
   mensajeCamara(
     'Cámara detenida.'
