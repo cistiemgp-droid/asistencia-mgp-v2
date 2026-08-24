@@ -1066,11 +1066,6 @@ async function iniciarCamara() {
         'camera-controls'
       );
 
-  const cameraControls =
-    document.getElementById(
-      'camera-controls'
-    );
-
 
   try {
 
