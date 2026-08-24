@@ -1048,17 +1048,17 @@ async function iniciarCamara() {
 
   const camBtn =
     document.getElementById(
-      'btn-camera'
+      'camBtn'
     );
 
   const stopCamBtn =
     document.getElementById(
-      'btn-stop'
+      'stopCamBtn'
     );
 
   const switchCamBtn =
     document.getElementById(
-      'btn-switch-camera'
+      'switchCamBtn'
     );
 
 
@@ -1423,7 +1423,7 @@ async function cambiarCamara() {
 
   const switchCamBtn =
     document.getElementById(
-      'btn-switch-camera'
+      'switchCamBtn'
     );
 
 
@@ -1673,7 +1673,7 @@ async function detenerCamara() {
 
   const camBtn =
     document.getElementById(
-      'btn-camera'
+      'camBtn'
     );
 
   if (camBtn) {
@@ -1686,7 +1686,7 @@ async function detenerCamara() {
 
   const stopCamBtn =
     document.getElementById(
-      'btn-stop'
+      'stopCamBtn'
     );
 
   if (stopCamBtn) {
@@ -1719,7 +1719,7 @@ async function detenerCamara() {
 
 const camBtn =
   document.getElementById(
-    'btn-camera'
+    'camBtn'
   );
 
 
@@ -1739,7 +1739,7 @@ if (camBtn) {
 
 const stopCamBtn =
   document.getElementById(
-    'btn-stop'
+    'stopCamBtn'
   );
 
 
@@ -1764,7 +1764,7 @@ if (stopCamBtn) {
 
 const switchCamBtn =
   document.getElementById(
-    'btn-switch-camera'
+    'switchCamBtn'
   );
 
 
