@@ -966,13 +966,13 @@ async function iniciarCamara() {
 
 
   const reader =
-    document.getElementById('reader');
+    document.getElementById('reader-container');
 
   const camBtn =
-    document.getElementById('camBtn');
+    document.getElementById('btn-camera');
 
   const stopCamBtn =
-    document.getElementById('stopCamBtn');
+    document.getElementById('btn-stop');
 
   // Recuperamos el botón de cambio de cámara de V1.
   const switchCamBtn =
