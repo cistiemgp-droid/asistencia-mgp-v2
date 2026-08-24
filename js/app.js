@@ -1744,3 +1744,13 @@ if (dniBtn) {
   );
 
 }
+
+// =====================================================
+// COMPATIBILIDAD FINAL V1 / V2
+// =====================================================
+// Estos alias garantizan que los botones del HTML puedan
+// llamar directamente a las funciones aunque app.js haya
+// sido cargado antes o después del HTML.
+window.activarCamara = iniciarCamara;
+window.detenerCamara = detenerCamara;
+window.cambiarCamara = cambiarCamara;
