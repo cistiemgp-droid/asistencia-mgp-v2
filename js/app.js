@@ -144,46 +144,13 @@ document
 
   });
 
-
-// =====================================================
-// NAVEGACIÓN DE RESPALDO V2
-// =====================================================
-// El index.html actual usa data-view en los botones del portal.
-// Este listener delegado garantiza que Consulta y Acceso
-// institucional siempre puedan abrirse.
-document.addEventListener(
-  'click',
-  function(event) {
-
-    const boton =
-      event.target.closest(
-        '[data-view]'
-      );
-
-    if (!boton) {
-      return;
-    }
-
-    const destino =
-      boton.getAttribute(
-        'data-view'
-      );
-
-    if (destino) {
-      mostrarVista(
-        destino
-      );
-    }
-
-  }
-);
-
 // =====================================================
 // BOTÓN INICIO
 // =====================================================
 
 const homeBtn =
-  document.getElementById('homeBtn');
+  document.getElementById('homeBtn') ||
+  document.getElementById('home');
 
 if (homeBtn) {
 
@@ -204,7 +171,8 @@ if (homeBtn) {
 // =====================================================
 
 const salirBtn =
-  document.getElementById('salirBtn');
+  document.getElementById('salirBtn') ||
+  document.getElementById('salir');
 
 if (salirBtn) {
 
@@ -282,7 +250,7 @@ if (entrarBtn) {
 // =====================================================
 
 document
-  .querySelectorAll('[data-t]')
+  .querySelectorAll('[data-t], [data-tipo]')
   .forEach(function(boton) {
 
     boton.addEventListener(
@@ -290,7 +258,7 @@ document
       function() {
 
         document
-          .querySelectorAll('[data-t]')
+          .querySelectorAll('[data-t], [data-tipo]')
           .forEach(function(b) {
 
             b.classList.remove('on');
@@ -301,7 +269,9 @@ document
         boton.classList.add('on');
 
         state.tipo =
-          boton.dataset.t;
+          boton.dataset.t ||
+          boton.dataset.tipo ||
+          'estudiante';
 
       }
     );
@@ -314,7 +284,7 @@ document
 // =====================================================
 
 document
-  .querySelectorAll('[data-e]')
+  .querySelectorAll('[data-e], [data-estado]')
   .forEach(function(boton) {
 
     boton.addEventListener(
@@ -322,7 +292,7 @@ document
       function() {
 
         document
-          .querySelectorAll('[data-e]')
+          .querySelectorAll('[data-e], [data-estado]')
           .forEach(function(b) {
 
             b.classList.remove('on');
@@ -333,7 +303,9 @@ document
         boton.classList.add('on');
 
         state.estado =
-          boton.dataset.e;
+          boton.dataset.e ||
+          boton.dataset.estado ||
+          'INGRESO';
 
       }
     );
@@ -748,6 +720,15 @@ async function identificarQRBackend(
     state.persona =
       resultado;
 
+    // =================================================
+    // IMPORTANTE V2
+    // IDENTIFICAR NO ES LO MISMO QUE REGISTRAR
+    //
+    // La cámara ya hizo su trabajo.
+    // Ahora enviamos el DNI identificado al endpoint
+    // apiRegistrar para guardar INGRESO/SALIDA.
+    // =================================================
+
 
     // =================================================
     // LEGACY 2026
@@ -832,6 +813,26 @@ async function identificarQRBackend(
     }
 
 
+    // =================================================
+    // REGISTRAR ASISTENCIA AUTOMÁTICAMENTE
+    // =================================================
+    // Para el QR Legacy 2026 ya tenemos el DNI real.
+    // Ese es el dato que entiende registrarAsistenciaServidor().
+    // =================================================
+
+    if (
+      resultado.tipoQR === 'LEGACY_2026' &&
+      resultado.estudiante &&
+      resultado.estudiante.dni
+    ) {
+
+      await registrarAsistenciaBackend(
+        resultado.estudiante.dni
+      );
+
+    }
+
+
     return resultado;
 
   }
@@ -862,6 +863,165 @@ async function identificarQRBackend(
     };
 
   }
+
+}
+
+
+// =====================================================
+// REGISTRAR ASISTENCIA EN EL SERVIDOR
+// =====================================================
+// Usa JSONP porque GitHub Pages y Google Apps Script
+// están en dominios diferentes.
+// El backend existente recibe:
+// ?action=apiRegistrar&id=...&tipo=...&estado=...
+// =====================================================
+
+let registroScript = null;
+
+function eliminarRegistroScript() {
+
+  if (registroScript && registroScript.parentNode) {
+    registroScript.parentNode.removeChild(registroScript);
+  }
+
+  registroScript = null;
+
+}
+
+
+function registrarAsistenciaBackend(id) {
+
+  return new Promise(function(resolve) {
+
+    const mensaje =
+      document.getElementById('regMsg');
+
+    const idLimpio =
+      String(id || '').trim();
+
+    const tipo =
+      String(state.tipo || 'estudiante').trim();
+
+    const estado =
+      String(state.estado || 'INGRESO').trim().toUpperCase();
+
+    if (!idLimpio) {
+
+      if (mensaje) {
+        mensaje.textContent =
+          '❌ No se obtuvo el DNI para registrar.';
+      }
+
+      resolve({ exito: false });
+      return;
+
+    }
+
+    eliminarRegistroScript();
+
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>⏳ REGISTRANDO ASISTENCIA...</strong><br>' +
+        'DNI: ' + idLimpio + '<br>' +
+        'Tipo: ' + tipo + '<br>' +
+        'Estado: ' + estado;
+    }
+
+    window.respuestaRegistroMGP =
+      function(data) {
+
+        eliminarRegistroScript();
+
+        if (!data) {
+          if (mensaje) {
+            mensaje.textContent =
+              '❌ El servidor no devolvió respuesta.';
+          }
+          resolve({ exito: false });
+          return;
+        }
+
+        console.log(
+          'Respuesta registro asistencia:',
+          data
+        );
+
+        if (data.exito) {
+
+          const datos = data.datos || {};
+
+          const nombre =
+            datos.nombre ||
+            (state.persona && state.persona.estudiante
+              ? (
+                  (state.persona.estudiante.apellidoPaterno || '') + ' ' +
+                  (state.persona.estudiante.apellidoMaterno || '') + ' ' +
+                  (state.persona.estudiante.nombres || '')
+                ).trim()
+              : '');
+
+          const detalle =
+            datos.gradoSeccion ||
+            (state.persona && state.persona.estudiante
+              ? (
+                  (state.persona.estudiante.grado || '') + ' ' +
+                  (state.persona.estudiante.seccion || '')
+                ).trim()
+              : '');
+
+          if (mensaje) {
+            mensaje.innerHTML =
+              '<strong>✅ ASISTENCIA REGISTRADA</strong><br>' +
+              'DNI: ' + idLimpio + '<br>' +
+              (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
+              (detalle ? 'Grado: ' + detalle + '<br>' : '') +
+              'Estado: ' + (data.estado || estado) + '<br>' +
+              'Hora: ' + (data.hora || '--:--:--') + '<br>' +
+              'Puntualidad: ' + (data.puntualidad || 'N/A');
+          }
+
+          resolve(data);
+          return;
+        }
+
+        if (mensaje) {
+          mensaje.innerHTML =
+            '<strong>❌ NO REGISTRADO</strong><br>' +
+            (data.mensaje || 'No fue posible registrar la asistencia.');
+        }
+
+        resolve(data);
+      };
+
+    registroScript =
+      document.createElement('script');
+
+    registroScript.src =
+      CONFIG.API_URL +
+      '?action=apiRegistrar' +
+      '&id=' + encodeURIComponent(idLimpio) +
+      '&tipo=' + encodeURIComponent(tipo) +
+      '&estado=' + encodeURIComponent(estado) +
+      '&callback=respuestaRegistroMGP';
+
+    registroScript.onerror =
+      function() {
+
+        eliminarRegistroScript();
+
+        if (mensaje) {
+          mensaje.textContent =
+            '❌ No se pudo conectar con el servidor para registrar la asistencia.';
+        }
+
+        resolve({ exito: false });
+      };
+
+    document.body.appendChild(
+      registroScript
+    );
+
+  });
 
 }
 
@@ -1260,23 +1420,24 @@ async function iniciarCamara() {
     cameraState.activa =
       true;
 
-  if (cameraControls) {
+    // En V2 el botón ya existe en index.html.
+    // Solo hacemos visible su contenedor.
+    if (cameraControls) {
 
-    cameraControls.style.display =
-      'block';
+      cameraControls.style.display =
+        'block';
 
-  }
+    }
 
-  if (switchCamBtn) {
+    if (switchCamBtn) {
 
-    switchCamBtn.style.display =
-      'block';
+      switchCamBtn.style.display =
+        'block';
 
-    switchCamBtn.disabled =
-      false;
+      switchCamBtn.disabled =
+        false;
 
-  }
-
+    }
 
     state.camara =
       true;
@@ -1314,7 +1475,8 @@ async function iniciarCamara() {
 
     if (switchCamBtn) {
 
-      switchCamBtn.style.display = 'block';
+      switchCamBtn.style.display =
+        'block';
 
     }
 
@@ -1836,9 +1998,8 @@ if (switchCamBtn) {
 // =====================================================
 
 const consultarBtn =
-  document.getElementById(
-    'consultarBtn'
-  );
+  document.getElementById('consultarBtn') ||
+  document.getElementById('consultar');
 
 
 if (consultarBtn) {
