@@ -1061,6 +1061,11 @@ async function iniciarCamara() {
       'switchCamBtn'
     );
 
+    const cameraControls =
+      document.getElementById(
+        'camera-controls'
+      );
+
   const cameraControls =
     document.getElementById(
       'camera-controls'
@@ -1225,6 +1230,25 @@ async function iniciarCamara() {
 
     cameraState.activa =
       true;
+
+    // En V2 el botón ya existe en index.html.
+    // Solo hacemos visible su contenedor.
+    if (cameraControls) {
+
+      cameraControls.style.display =
+        'block';
+
+    }
+
+    if (switchCamBtn) {
+
+      switchCamBtn.style.display =
+        'block';
+
+      switchCamBtn.disabled =
+        false;
+
+    }
 
     state.camara =
       true;
