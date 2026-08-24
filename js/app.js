@@ -871,7 +871,7 @@ function asegurarBotonCambiarCamara() {
 
   let boton =
     document.getElementById(
-      'switchCamBtn'
+      'btn-switch-camera'
     );
 
   if (boton) {
@@ -880,7 +880,7 @@ function asegurarBotonCambiarCamara() {
 
   const stopCamBtn =
     document.getElementById(
-      'stopCamBtn'
+      'btn-stop'
     );
 
   if (!stopCamBtn || !stopCamBtn.parentElement) {
@@ -894,7 +894,7 @@ function asegurarBotonCambiarCamara() {
     'button';
 
   boton.id =
-    'switchCamBtn';
+    'btn-switch-camera';
 
   boton.className =
     'btn';
@@ -966,7 +966,7 @@ async function iniciarCamara() {
 
 
   const reader =
-    document.getElementById('reader-container');
+    document.getElementById('reader');
 
   const camBtn =
     document.getElementById('btn-camera');
@@ -1265,7 +1265,7 @@ async function cambiarCamara() {
 
   const switchCamBtn =
     document.getElementById(
-      'switchCamBtn'
+      'btn-switch-camera'
     );
 
 
@@ -1515,7 +1515,7 @@ async function detenerCamara() {
 
   const camBtn =
     document.getElementById(
-      'camBtn'
+      'btn-camera'
     );
 
   if (camBtn) {
@@ -1528,7 +1528,7 @@ async function detenerCamara() {
 
   const stopCamBtn =
     document.getElementById(
-      'stopCamBtn'
+      'btn-stop'
     );
 
   if (stopCamBtn) {
@@ -1552,7 +1552,7 @@ async function detenerCamara() {
 
 const camBtn =
   document.getElementById(
-    'camBtn'
+    'btn-camera'
   );
 
 
@@ -1572,7 +1572,7 @@ if (camBtn) {
 
 const stopCamBtn =
   document.getElementById(
-    'stopCamBtn'
+    'btn-stop'
   );
 
 
@@ -1597,7 +1597,7 @@ if (stopCamBtn) {
 
 const switchCamBtn =
   document.getElementById(
-    'switchCamBtn'
+    'btn-switch-camera'
   );
 
 
