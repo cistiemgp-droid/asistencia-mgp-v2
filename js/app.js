@@ -945,12 +945,154 @@ function asegurarBotonCambiarCamara() {
 
 
 // =====================================================
+// CARGAR HTML5-QRCODE SI AÚN NO ESTÁ DISPONIBLE
+// =====================================================
+
+function asegurarHtml5QrCode() {
+
+  if (
+    typeof Html5Qrcode !==
+    'undefined'
+  ) {
+
+    return Promise.resolve();
+
+  }
+
+
+  return new Promise(function(resolve, reject) {
+
+    const existente =
+      document.querySelector(
+        'script[data-mgp-html5qr]'
+      );
+
+    if (existente) {
+
+      existente.addEventListener(
+        'load',
+        function() {
+
+          if (
+            typeof Html5Qrcode !==
+            'undefined'
+          ) {
+
+            resolve();
+
+          }
+          else {
+
+            reject(
+              new Error(
+                'html5-qrcode se cargó pero Html5Qrcode no está disponible.'
+              )
+            );
+
+          }
+
+        }
+      );
+
+      existente.addEventListener(
+        'error',
+        function() {
+
+          reject(
+            new Error(
+              'No se pudo cargar html5-qrcode.'
+            )
+          );
+
+        }
+      );
+
+      return;
+
+    }
+
+
+    const script =
+      document.createElement(
+        'script'
+      );
+
+    script.src =
+      'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+
+    script.async =
+      false;
+
+    script.setAttribute(
+      'data-mgp-html5qr',
+      'true'
+    );
+
+
+    script.onload =
+      function() {
+
+        if (
+          typeof Html5Qrcode !==
+          'undefined'
+        ) {
+
+          resolve();
+
+        }
+        else {
+
+          reject(
+            new Error(
+              'html5-qrcode se cargó pero Html5Qrcode no está disponible.'
+            )
+          );
+
+        }
+
+      };
+
+
+    script.onerror =
+      function() {
+
+        reject(
+          new Error(
+            'No se pudo descargar la biblioteca html5-qrcode.'
+          )
+        );
+
+      };
+
+
+    document.head.appendChild(
+      script
+    );
+
+  });
+
+}
+
+
+// =====================================================
 // INICIAR CÁMARA
+// =====================================================
+// Basado directamente en la rutina que funcionó
+// en AsistenciaV1.
+//
+// TRASERA  -> environment
+// FRONTAL  -> user
+//
+// No usa deviceId.
+// No enumera cámaras.
+// No intenta adivinar cuál es frontal.
 // =====================================================
 
 async function iniciarCamara() {
 
-  if (cameraState.activa) {
+  if (
+    cameraState.activa
+  ) {
 
     mensajeCamara(
       '📷 La cámara ya está activa.'
@@ -961,48 +1103,30 @@ async function iniciarCamara() {
   }
 
 
-  cameraState.esMovil =
-    esDispositivoMovil();
-
-
-  // =====================================================
-  // CONTENEDOR QR ROBUSTO
-  // =====================================================
-  // Si #reader no existe en la versión de registro.html que
-  // está cargada, lo reconstruimos dentro de #reader-container.
-  // =====================================================
-
-  let reader =
-    document.getElementById('reader');
-
-  if (!reader) {
-    const contenedor =
-      document.getElementById('reader-container');
-
-    if (contenedor) {
-      reader =
-        document.createElement('div');
-
-      reader.id = 'reader';
-      contenedor.appendChild(reader);
-    }
-  }
-
-  if (!reader) {
-    throw new Error(
-      'No se encontró ni #reader ni #reader-container.'
+  const readerContainer =
+    document.getElementById(
+      'reader-container'
     );
-  }
+
+  const reader =
+    document.getElementById(
+      'reader'
+    );
 
   const camBtn =
-    document.getElementById('btn-camera');
+    document.getElementById(
+      'btn-camera'
+    );
 
   const stopCamBtn =
-    document.getElementById('btn-stop');
+    document.getElementById(
+      'btn-stop'
+    );
 
-  // Recuperamos el botón de cambio de cámara de V1.
   const switchCamBtn =
-    asegurarBotonCambiarCamara();
+    document.getElementById(
+      'btn-switch-camera'
+    );
 
 
   try {
@@ -1016,24 +1140,45 @@ async function iniciarCamara() {
     }
 
 
-    if (
-      typeof Html5Qrcode ===
-      'undefined'
-    ) {
+    if (!readerContainer) {
 
       throw new Error(
-        'No se cargó la biblioteca html5-qrcode.'
+        'No existe el contenedor #reader-container.'
       );
 
     }
 
 
     mensajeCamara(
-      '🔍 Solicitando acceso a la cámara...'
+      'Solicitando acceso a la cámara...'
     );
 
 
-    reader.innerHTML = '';
+    readerContainer.style.display =
+      'block';
+
+
+    if (camBtn) {
+
+      camBtn.disabled =
+        true;
+
+    }
+
+
+    // -------------------------------------------------
+    // Aseguramos la misma biblioteca de V1: 2.3.8
+    // -------------------------------------------------
+
+    await asegurarHtml5QrCode();
+
+
+    // -------------------------------------------------
+    // Limpiamos solamente el lector anterior.
+    // -------------------------------------------------
+
+    reader.innerHTML =
+      '';
 
 
     cameraState.reader =
@@ -1042,14 +1187,18 @@ async function iniciarCamara() {
       );
 
 
-    // =================================================
-    // LA MISMA LÓGICA QUE FUNCIONÓ EN ASISTENCIAV1
-    // =================================================
+    // -------------------------------------------------
+    // MISMA SELECCIÓN DE V1
+    // -------------------------------------------------
 
     const facingMode =
       camaraFrontal
         ? 'user'
         : 'environment';
+
+
+    cameraState.facingMode =
+      facingMode;
 
 
     await cameraState.reader.start(
@@ -1061,7 +1210,8 @@ async function iniciarCamara() {
 
       {
 
-        fps: 10,
+        fps:
+          10,
 
         qrbox:
           function(
@@ -1093,7 +1243,9 @@ async function iniciarCamara() {
 
       },
 
-      async function(decodedText) {
+      async function(
+        decodedText
+      ) {
 
         if (
           cameraState.procesandoQR
@@ -1106,6 +1258,7 @@ async function iniciarCamara() {
 
         cameraState.procesandoQR =
           true;
+
 
         state.qr =
           decodedText;
@@ -1129,10 +1282,12 @@ async function iniciarCamara() {
 
       },
 
-      function(errorMessage) {
+      function(
+        errorMessage
+      ) {
 
-        // Los errores normales de búsqueda QR
-        // no se muestran continuamente.
+        // Error normal mientras busca un QR.
+        // No mostrarlo continuamente.
 
       }
 
@@ -1162,8 +1317,8 @@ async function iniciarCamara() {
 
     if (camBtn) {
 
-      camBtn.disabled =
-        true;
+      camBtn.style.display =
+        'none';
 
     }
 
@@ -1176,13 +1331,10 @@ async function iniciarCamara() {
     }
 
 
-    // El cambio de cámara tiene sentido
-    // principalmente en celulares/tablets.
-
     if (switchCamBtn) {
 
       switchCamBtn.style.display =
-        cameraState.esMovil
+        esDispositivoMovil()
           ? 'block'
           : 'none';
 
@@ -1218,14 +1370,35 @@ async function iniciarCamara() {
       false;
 
 
-    if (cameraState.reader) {
+    if (
+      cameraState.reader
+    ) {
+
+      try {
+
+        await cameraState.reader.stop();
+
+      }
+      catch (
+        stopError
+      ) {
+
+        console.warn(
+          'No fue necesario detener el lector:',
+          stopError
+        );
+
+      }
+
 
       try {
 
         await cameraState.reader.clear();
 
       }
-      catch (clearError) {
+      catch (
+        clearError
+      ) {
 
         console.warn(
           'No fue necesario limpiar el lector:',
@@ -1241,7 +1414,18 @@ async function iniciarCamara() {
       null;
 
 
+    if (readerContainer) {
+
+      readerContainer.style.display =
+        'none';
+
+    }
+
+
     if (camBtn) {
+
+      camBtn.style.display =
+        'block';
 
       camBtn.disabled =
         false;
@@ -1249,13 +1433,37 @@ async function iniciarCamara() {
     }
 
 
+    if (stopCamBtn) {
+
+      stopCamBtn.style.display =
+        'none';
+
+    }
+
+
+    if (switchCamBtn) {
+
+      switchCamBtn.style.display =
+        'none';
+
+    }
+
+
+    cameraState.procesandoQR =
+      false;
+
+
     mensajeCamara(
-
       '❌ No se pudo iniciar la cámara: ' +
-      error.name +
+      (
+        error.name ||
+        'Error'
+      ) +
       ' — ' +
-      error.message
-
+      (
+        error.message ||
+        'Error desconocido.'
+      )
     );
 
   }
@@ -1560,7 +1768,7 @@ async function detenerCamara() {
   if (stopCamBtn) {
 
     stopCamBtn.style.display =
-      'block';
+      'none';
 
   }
 
