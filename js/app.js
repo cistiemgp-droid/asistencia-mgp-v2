@@ -441,13 +441,27 @@ async function cargarCamaras() {
 
 
         // Para asistencia QR dejamos la trasera
-        // como cámara inicial.
-        cameraState.facingMode =
-          'environment';
+        // como cámara inicial SOLO la primera vez.
+        //
+        // IMPORTANTE:
+        // No debemos volver a poner "environment"
+        // cada vez que iniciarCamara() llama a
+        // cargarCamaras(), porque eso anulaba la
+        // selección "user" del botón Cambiar cámara.
+
+        if (
+          cameraState.facingMode !== 'user' &&
+          cameraState.facingMode !== 'environment'
+        ) {
+
+          cameraState.facingMode =
+            'environment';
+
+        }
 
 
         selector.value =
-          'environment';
+          cameraState.facingMode;
 
       }
       else {
