@@ -961,109 +961,20 @@ async function iniciarCamara() {
     }
     catch (errorCamara) {
 
-      // Algunos navegadores móviles no aceptan
-      // facingMode exact aunque sí soporten user/
-      // environment. Reintentamos sin exact.
-      if (
-        cameraState.esMovil &&
-        errorCamara &&
-        (
-          errorCamara.name === 'OverconstrainedError' ||
-          errorCamara.name === 'NotReadableError'
-        )
-      ) {
+      console.error(
+        'No fue posible abrir la cámara solicitada:',
+        errorCamara
+      );
 
-        console.warn(
-          'Reintentando cámara móvil sin exact:',
-          errorCamara
-        );
-
-
-        await cameraState.reader.stop().catch(
-          function() {}
-        );
-
-
-        const fuenteAlternativa = {
-          facingMode:
-            cameraState.facingMode
-        };
-
-
-        await cameraState.reader.start(
-
-          fuenteAlternativa,
-
-          {
-
-            fps: 10,
-
-            qrbox: {
-
-              width: 240,
-
-              height: 240
-
-            },
-
-            aspectRatio: 1.0
-
-          },
-
-
-          async function(decodedText) {
-
-            if (cameraState.procesandoQR) {
-
-              return;
-
-            }
-
-
-            cameraState.procesandoQR =
-              true;
-
-
-            state.qr =
-              decodedText;
-
-
-            mensajeCamara(
-              '✅ QR leído. Consultando servidor...'
-            );
-
-
-            await detenerCamara();
-
-
-            await identificarQRBackend(
-              decodedText
-            );
-
-
-            cameraState.procesandoQR =
-              false;
-
-          },
-
-
-          function(errorMessage) {
-
-            // Errores normales de búsqueda QR.
-
-          }
-
-        );
-
-      }
-      else {
-
-        throw errorCamara;
-
-      }
+      throw new Error(
+        cameraState.esMovil
+          ? (cameraState.facingMode === 'user'
+              ? 'El dispositivo no pudo abrir la cámara frontal solicitada.'
+              : 'El dispositivo no pudo abrir la cámara trasera solicitada.')
+          : errorCamara.message
+      );
 
     }
-
 
     cameraState.activa =
       true;
