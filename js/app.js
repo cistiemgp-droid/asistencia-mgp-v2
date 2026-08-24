@@ -833,872 +833,26 @@ async function identificarQRBackend(
 
 
 // =====================================================
-// CÁMARA MÓVIL NATIVA V6
+// CÁMARA — ARQUITECTURA RECUPERADA DE ASISTENCIAV1
 // =====================================================
 //
-// En V2-V5 usamos html5-qrcode para abrir la cámara
-// móvil mediante facingMode/deviceId.
+// Esta es la arquitectura que ya funcionó en el proyecto
+// anterior:
 //
-// En este teléfono ya comprobamos que esa ruta no
-// distingue correctamente la cámara frontal.
+//   camaraFrontal = false  -> environment (trasera)
+//   camaraFrontal = true   -> user        (frontal)
 //
-// V6 cambia de estrategia:
-// 1. El navegador obtiene los dispositivos reales.
-// 2. Cada dispositivo se prueba con getUserMedia().
-// 3. Se clasifica por track.getSettings().facingMode.
-// 4. La cámara móvil se muestra en un <video> nativo.
-// 5. Si BarcodeDetector existe, se usa para leer QR.
+// En móvil NO usamos:
+//   - getCameras() para decidir frontal/trasera
+//   - deviceId
+//   - enumerateDevices()
+//   - BarcodeDetector
+//   - detección de cámaras
 //
-// El PC conserva html5-qrcode.
+// html5-qrcode recibe directamente el facingMode.
 // =====================================================
 
-function configurarSelectorMovil() {
-
-  const selector =
-    document.getElementById('cameraSelect');
-
-  if (!selector) {
-    return;
-  }
-
-  selector.innerHTML = '';
-
-  const frontal =
-    document.createElement('option');
-
-  frontal.value = 'user';
-  frontal.textContent = '📱 Cámara frontal';
-
-  const trasera =
-    document.createElement('option');
-
-  trasera.value = 'environment';
-  trasera.textContent = '📷 Cámara trasera';
-
-  selector.appendChild(frontal);
-  selector.appendChild(trasera);
-
-  if (
-    cameraState.facingMode !== 'user' &&
-    cameraState.facingMode !== 'environment'
-  ) {
-    cameraState.facingMode = 'environment';
-  }
-
-  selector.value =
-    cameraState.facingMode;
-
-  const controles =
-    document.getElementById('camera-controls');
-
-  if (controles) {
-    controles.style.display = 'block';
-  }
-
-}
-
-
-// =====================================================
-// CÁMARA MÓVIL — CONTROL NATIVO
-// =====================================================
-//
-// ARQUITECTURA V8
-//
-// En móvil NO hacemos:
-//   enumerateDevices()
-//   -> probar cada deviceId
-//   -> adivinar frontal/trasera
-//
-// Eso fue precisamente lo que falló en este teléfono.
-//
-// En su lugar:
-//   selector
-//      ↓
-//   facingMode exact
-//      ↓
-//   navigator.mediaDevices.getUserMedia()
-//      ↓
-//   verificar pista real
-//      ↓
-//   mostrar video
-//
-// PC mantiene el flujo existente con html5-qrcode.
-// =====================================================
-
-async function iniciarCamaraMovil() {
-
-  if (
-    !navigator.mediaDevices ||
-    !navigator.mediaDevices.getUserMedia
-  ) {
-
-    throw new Error(
-      'El navegador no permite acceso nativo a la cámara.'
-    );
-
-  }
-
-
-  configurarSelectorMovil();
-
-
-  const soportadas =
-    navigator.mediaDevices.getSupportedConstraints
-      ? navigator.mediaDevices.getSupportedConstraints()
-      : {};
-
-
-  if (
-    soportadas.facingMode === false
-  ) {
-
-    throw new Error(
-      'El navegador no admite selección frontal/trasera mediante facingMode.'
-    );
-
-  }
-
-
-  const modoSolicitado =
-    cameraState.facingMode;
-
-
-  mensajeCamara(
-    modoSolicitado === 'user'
-      ? '📱 Solicitando cámara frontal...'
-      : '📷 Solicitando cámara trasera...'
-  );
-
-
-  let stream = null;
-
-
-  try {
-
-    // =================================================
-    // SOLICITUD DIRECTA
-    // =================================================
-
-    stream =
-      await navigator.mediaDevices.getUserMedia({
-
-        video: {
-
-          facingMode: {
-            exact:
-              modoSolicitado
-          }
-
-        },
-
-        audio: false
-
-      });
-
-
-    const tracks =
-      stream.getVideoTracks();
-
-
-    if (!tracks.length) {
-
-      throw new Error(
-        'El navegador no entregó una pista de vídeo.'
-      );
-
-    }
-
-
-    const track =
-      tracks[0];
-
-
-    const settings =
-      track.getSettings();
-
-
-    console.log(
-      'MODO SOLICITADO:',
-      modoSolicitado
-    );
-
-
-    console.log(
-      'CONFIGURACIÓN REAL DE LA PISTA:',
-      settings
-    );
-
-
-    // =================================================
-    // VERIFICACIÓN
-    // =================================================
-    //
-    // Si el navegador informa explícitamente el modo
-    // contrario, NO aceptamos la cámara.
-    //
-    // Si facingMode no está informado, conservamos
-    // la pista porque algunos navegadores pueden no
-    // exponer ese dato aunque hayan cumplido la
-    // restricción.
-    // =================================================
-
-    if (
-      settings.facingMode &&
-      settings.facingMode !== modoSolicitado
-    ) {
-
-      throw new Error(
-        modoSolicitado === 'user'
-          ? 'El navegador entregó una cámara trasera en lugar de la frontal.'
-          : 'El navegador entregó una cámara frontal en lugar de la trasera.'
-      );
-
-    }
-
-
-    const reader =
-      document.getElementById('reader');
-
-
-    if (!reader) {
-
-      throw new Error(
-        'No existe el contenedor reader.'
-      );
-
-    }
-
-
-    reader.innerHTML = '';
-
-
-    const video =
-      document.createElement('video');
-
-
-    video.id =
-      'mobileCameraVideo';
-
-
-    video.autoplay =
-      true;
-
-
-    video.playsInline =
-      true;
-
-
-    video.muted =
-      true;
-
-
-    video.setAttribute(
-      'playsinline',
-      ''
-    );
-
-
-    video.style.width =
-      '100%';
-
-
-    video.style.maxWidth =
-      '100%';
-
-
-    video.style.display =
-      'block';
-
-
-    video.style.background =
-      '#000';
-
-
-    reader.appendChild(
-      video
-    );
-
-
-    video.srcObject =
-      stream;
-
-
-    await video.play();
-
-
-    cameraState.mobileStream =
-      stream;
-
-
-    cameraState.mobileVideo =
-      video;
-
-
-    cameraState.mobileDetector =
-      null;
-
-
-    // =================================================
-    // LECTOR QR NATIVO
-    // =================================================
-
-    if (
-      typeof BarcodeDetector ===
-      'undefined'
-    ) {
-
-      throw new Error(
-        'Este navegador no dispone de BarcodeDetector para leer QR.'
-      );
-
-    }
-
-
-    let formatos =
-      ['qr_code'];
-
-
-    if (
-      BarcodeDetector.getSupportedFormats
-    ) {
-
-      const disponibles =
-        await BarcodeDetector
-          .getSupportedFormats();
-
-
-      if (
-        !disponibles.includes('qr_code')
-      ) {
-
-        throw new Error(
-          'Este navegador no admite lectura QR mediante BarcodeDetector.'
-        );
-
-      }
-
-    }
-
-
-    cameraState.mobileDetector =
-      new BarcodeDetector({
-        formats: formatos
-      });
-
-
-    cameraState.mobileScanActivo =
-      true;
-
-
-    cameraState.activa =
-      true;
-
-
-    cameraState.procesandoQR =
-      false;
-
-
-    state.camara =
-      true;
-
-
-    mensajeCamara(
-      modoSolicitado === 'user'
-        ? '📱 Cámara frontal activa.'
-        : '📷 Cámara trasera activa. Apunte al QR del carnet.'
-    );
-
-
-    const boton =
-      document.getElementById('camBtn');
-
-
-    if (boton) {
-      boton.disabled = true;
-    }
-
-
-    const cambiar =
-      document.getElementById('switchCamBtn');
-
-
-    if (cambiar) {
-      cambiar.disabled = false;
-    }
-
-
-    escanearQRMovilNativo();
-
-
-  }
-  catch (error) {
-
-    // Si llegamos aquí con un stream abierto,
-    // lo cerramos antes de informar el error.
-
-    if (stream) {
-
-      stream
-        .getTracks()
-        .forEach(function(track) {
-          track.stop();
-        });
-
-    }
-
-
-    cameraState.mobileStream =
-      null;
-
-
-    cameraState.mobileVideo =
-      null;
-
-
-    cameraState.mobileDetector =
-      null;
-
-
-    cameraState.mobileScanActivo =
-      false;
-
-
-    throw error;
-
-  }
-
-}
-
-
-// =====================================================
-// ESCÁNER QR NATIVO PARA MÓVIL
-// =====================================================
-
-async function iniciarCamaraMovil() {
-
-  if (
-    !navigator.mediaDevices ||
-    !navigator.mediaDevices.getUserMedia
-  ) {
-
-    throw new Error(
-      'El navegador no permite acceso nativo a la cámara.'
-    );
-
-  }
-
-  const camarasOK =
-    await prepararCamarasMovil();
-
-  if (!camarasOK) {
-    return;
-  }
-
-  let camaraSeleccionada = null;
-
-  if (
-    cameraState.facingMode === 'user' ||
-    cameraState.facingMode === 'environment'
-  ) {
-
-    camaraSeleccionada =
-      cameraState.mobileCameras.find(
-        function(camara) {
-
-          return (
-            camara.facingMode ===
-            cameraState.facingMode
-          );
-
-        }
-      );
-
-  }
-
-  // Si el navegador no informa facingMode,
-  // usamos el índice seleccionado.
-  if (!camaraSeleccionada) {
-
-    const selector =
-      document.getElementById(
-        'cameraSelect'
-      );
-
-    if (
-      selector &&
-      String(selector.value).indexOf('device:') === 0
-    ) {
-
-      const indice =
-        Number(
-          String(selector.value)
-            .replace('device:', '')
-        );
-
-      camaraSeleccionada =
-        cameraState.mobileCameras[indice];
-
-    }
-
-  }
-
-  if (!camaraSeleccionada) {
-
-    throw new Error(
-      cameraState.facingMode === 'user'
-        ? 'El navegador no expone una cámara frontal utilizable.'
-        : 'El navegador no expone una cámara trasera utilizable.'
-    );
-
-  }
-
-  let stream = null;
-
-  try {
-
-    stream =
-      await navigator.mediaDevices.getUserMedia({
-
-        video: {
-          deviceId: {
-            exact:
-              camaraSeleccionada.id
-          }
-        },
-
-        audio: false
-
-      });
-
-    const track =
-      stream.getVideoTracks()[0];
-
-    const settings =
-      track.getSettings();
-
-    console.log(
-      'Cámara móvil abierta:',
-      {
-        solicitada:
-          cameraState.facingMode,
-
-        label:
-          track.label,
-
-        deviceId:
-          settings.deviceId,
-
-        facingMode:
-          settings.facingMode
-
-      }
-    );
-
-    // Verificación real.
-    // Si pedimos frontal y el navegador informa
-    // environment, no lo aceptamos como frontal.
-    if (
-      cameraState.facingMode === 'user' &&
-      settings.facingMode === 'environment'
-    ) {
-
-      stream
-        .getTracks()
-        .forEach(function(t) {
-          t.stop();
-        });
-
-      throw new Error(
-        'Android abrió una cámara trasera al solicitar la frontal.'
-      );
-
-    }
-
-    if (
-      cameraState.facingMode === 'environment' &&
-      settings.facingMode === 'user'
-    ) {
-
-      stream
-        .getTracks()
-        .forEach(function(t) {
-          t.stop();
-        });
-
-      throw new Error(
-        'Android abrió una cámara frontal al solicitar la trasera.'
-      );
-
-    }
-
-    const reader =
-      document.getElementById('reader');
-
-    if (!reader) {
-
-      throw new Error(
-        'No existe el contenedor reader.'
-      );
-
-    }
-
-    reader.innerHTML = '';
-
-    const video =
-      document.createElement('video');
-
-    video.id =
-      'mobileCameraVideo';
-
-    video.autoplay =
-      true;
-
-    video.playsInline =
-      true;
-
-    video.muted =
-      true;
-
-    video.setAttribute(
-      'playsinline',
-      ''
-    );
-
-    video.style.width =
-      '100%';
-
-    video.style.maxWidth =
-      '100%';
-
-    video.style.display =
-      'block';
-
-    video.style.background =
-      '#000';
-
-    reader.appendChild(
-      video
-    );
-
-    video.srcObject =
-      stream;
-
-    await video.play();
-
-    cameraState.mobileStream =
-      stream;
-
-    cameraState.mobileVideo =
-      video;
-
-    cameraState.mobileDetector =
-      null;
-
-    // =================================================
-    // LECTOR QR NATIVO
-    // =================================================
-
-    if (
-      typeof BarcodeDetector !==
-      'undefined'
-    ) {
-
-      let formatos =
-        ['qr_code'];
-
-      try {
-
-        if (
-          BarcodeDetector.getSupportedFormats
-        ) {
-
-          const disponibles =
-            await BarcodeDetector
-              .getSupportedFormats();
-
-          if (
-            !disponibles.includes('qr_code')
-          ) {
-
-            throw new Error(
-              'BarcodeDetector no admite QR en este navegador.'
-            );
-
-          }
-
-        }
-
-      }
-      catch (errorFormatos) {
-
-        console.warn(
-          'No se pudo comprobar formatos de BarcodeDetector:',
-          errorFormatos
-        );
-
-      }
-
-      cameraState.mobileDetector =
-        new BarcodeDetector({
-          formats: formatos
-        });
-
-      cameraState.mobileScanActivo =
-        true;
-
-      escanearQRMovilNativo();
-
-    }
-    else {
-
-      // No ocultamos el problema.
-      // En este teléfono Chrome Android debería
-      // proporcionar BarcodeDetector.
-      throw new Error(
-        'Este navegador no dispone de BarcodeDetector para el lector QR móvil.'
-      );
-
-    }
-
-    cameraState.activa =
-      true;
-
-    cameraState.procesandoQR =
-      false;
-
-    state.camara =
-      true;
-
-    mensajeCamara(
-      cameraState.facingMode === 'user'
-        ? '📱 Cámara frontal activa.'
-        : '📷 Cámara trasera activa. Apunte al QR del carnet.'
-    );
-
-    const boton =
-      document.getElementById('camBtn');
-
-    if (boton) {
-      boton.disabled = true;
-    }
-
-    const cambiar =
-      document.getElementById(
-        'switchCamBtn'
-      );
-
-    if (cambiar) {
-      cambiar.disabled = false;
-    }
-
-  }
-  catch (error) {
-
-    if (stream) {
-
-      stream
-        .getTracks()
-        .forEach(function(track) {
-          track.stop();
-        });
-
-    }
-
-    throw error;
-
-  }
-
-}
-
-
-// =====================================================
-// BÚSQUEDA QR NATIVA MÓVIL
-// =====================================================
-
-async function escanearQRMovilNativo() {
-
-  if (
-    !cameraState.mobileScanActivo ||
-    !cameraState.mobileDetector ||
-    !cameraState.mobileVideo
-  ) {
-    return;
-  }
-
-  if (
-    !cameraState.activa &&
-    !cameraState.mobileStream
-  ) {
-    return;
-  }
-
-  try {
-
-    const resultados =
-      await cameraState.mobileDetector.detect(
-        cameraState.mobileVideo
-      );
-
-    if (
-      resultados &&
-      resultados.length
-    ) {
-
-      const decodedText =
-        resultados[0].rawValue;
-
-      if (
-        decodedText &&
-        !cameraState.procesandoQR
-      ) {
-
-        cameraState.procesandoQR =
-          true;
-
-        state.qr =
-          decodedText;
-
-        mensajeCamara(
-          '✅ QR leído. Consultando servidor...'
-        );
-
-        await detenerCamara();
-
-        await identificarQRBackend(
-          decodedText
-        );
-
-        cameraState.procesandoQR =
-          false;
-
-        return;
-
-      }
-
-    }
-
-  }
-  catch (error) {
-
-    console.warn(
-      'Error leyendo QR móvil:',
-      error
-    );
-
-  }
-
-  if (
-    cameraState.mobileScanActivo
-  ) {
-
-    setTimeout(
-      escanearQRMovilNativo,
-      250
-    );
-
-  }
-
-}
+let camaraFrontal = false;
 
 
 // =====================================================
@@ -1717,75 +871,122 @@ async function iniciarCamara() {
 
   }
 
+
   cameraState.esMovil =
     esDispositivoMovil();
 
+
+  const reader =
+    document.getElementById('reader');
+
+  const camBtn =
+    document.getElementById('camBtn');
+
+  const stopCamBtn =
+    document.getElementById('stopCamBtn');
+
+  const switchCamBtn =
+    document.getElementById('switchCamBtn');
+
+
   try {
 
-    // =================================================
-    // MÓVIL
-    // =================================================
+    if (!reader) {
 
-    if (cameraState.esMovil) {
-
-      await iniciarCamaraMovil();
-
-      return;
+      throw new Error(
+        'No existe el contenedor de cámara #reader.'
+      );
 
     }
 
-    // =================================================
-    // PC
-    // =================================================
 
-    const camarasOK =
-      await cargarCamaras();
+    if (
+      typeof Html5Qrcode ===
+      'undefined'
+    ) {
 
-    if (!camarasOK) {
-      return;
+      throw new Error(
+        'No se cargó la biblioteca html5-qrcode.'
+      );
+
     }
+
+
+    mensajeCamara(
+      '🔍 Solicitando acceso a la cámara...'
+    );
+
+
+    reader.innerHTML = '';
+
 
     cameraState.reader =
       new Html5Qrcode(
         'reader'
       );
 
-    const cameraId =
-      (
-        cameraState.cameras[
-          cameraState.currentIndex
-        ] || {}
-      ).id;
 
-    if (!cameraId) {
+    // =================================================
+    // LA MISMA LÓGICA QUE FUNCIONÓ EN ASISTENCIAV1
+    // =================================================
 
-      throw new Error(
-        'No se pudo seleccionar la cámara.'
-      );
+    const facingMode =
+      camaraFrontal
+        ? 'user'
+        : 'environment';
 
-    }
 
     await cameraState.reader.start(
 
-      cameraId,
+      {
+        facingMode:
+          facingMode
+      },
 
       {
+
         fps: 10,
 
-        qrbox: {
-          width: 240,
-          height: 240
-        },
+        qrbox:
+          function(
+            viewfinderWidth,
+            viewfinderHeight
+          ) {
 
-        aspectRatio: 1.0
+            const size =
+              Math.min(
+                viewfinderWidth,
+                viewfinderHeight
+              ) * 0.70;
+
+
+            return {
+
+              width:
+                size,
+
+              height:
+                size
+
+            };
+
+          },
+
+        aspectRatio:
+          1.0
 
       },
 
       async function(decodedText) {
 
-        if (cameraState.procesandoQR) {
+        if (
+          cameraState.procesandoQR
+        ) {
+
           return;
+
         }
+
 
         cameraState.procesandoQR =
           true;
@@ -1793,15 +994,19 @@ async function iniciarCamara() {
         state.qr =
           decodedText;
 
+
         mensajeCamara(
           '✅ QR leído. Consultando servidor...'
         );
 
+
         await detenerCamara();
+
 
         await identificarQRBackend(
           decodedText
         );
+
 
         cameraState.procesandoQR =
           false;
@@ -1810,61 +1015,131 @@ async function iniciarCamara() {
 
       function(errorMessage) {
 
-        // Errores normales de búsqueda QR.
+        // Los errores normales de búsqueda QR
+        // no se muestran continuamente.
+
       }
 
     );
 
+
     cameraState.activa =
+      true;
+
+    state.camara =
       true;
 
     cameraState.procesandoQR =
       false;
 
-    state.camara =
-      true;
 
     mensajeCamara(
-      '📷 Cámara activa. Apunte al QR del carnet.'
+
+      camaraFrontal
+
+        ? '🤳 Cámara frontal activa. Apunte al código QR.'
+
+        : '📷 Cámara trasera activa. Apunte al código QR.'
+
     );
 
-    const boton =
-      document.getElementById('camBtn');
 
-    if (boton) {
-      boton.disabled = true;
+    if (camBtn) {
+
+      camBtn.disabled =
+        true;
+
     }
 
-    const cambiar =
-      document.getElementById('switchCamBtn');
 
-    if (cambiar) {
-      cambiar.disabled =
-        cameraState.cameras.length < 2;
+    if (stopCamBtn) {
+
+      stopCamBtn.style.display =
+        'block';
+
+    }
+
+
+    // El cambio de cámara tiene sentido
+    // principalmente en celulares/tablets.
+
+    if (switchCamBtn) {
+
+      switchCamBtn.style.display =
+        cameraState.esMovil
+          ? 'block'
+          : 'none';
+
+    }
+
+
+    const selector =
+      document.getElementById(
+        'cameraSelect'
+      );
+
+
+    if (selector) {
+
+      selector.value =
+        facingMode;
+
     }
 
   }
   catch (error) {
 
     console.error(
-      'Error iniciando cámara:',
+      'Error al iniciar cámara:',
       error
     );
 
-    cameraState.activa =
-      false;
 
-    cameraState.procesandoQR =
+    cameraState.activa =
       false;
 
     state.camara =
       false;
 
+
+    if (cameraState.reader) {
+
+      try {
+
+        await cameraState.reader.clear();
+
+      }
+      catch (clearError) {
+
+        console.warn(
+          'No fue necesario limpiar el lector:',
+          clearError
+        );
+
+      }
+
+    }
+
+
+    cameraState.reader =
+      null;
+
+
+    if (camBtn) {
+
+      camBtn.disabled =
+        false;
+
+    }
+
+
     mensajeCamara(
+
       '❌ No se pudo iniciar la cámara: ' +
       error.name +
       ' — ' +
       error.message
+
     );
 
   }
@@ -1875,95 +1150,144 @@ async function iniciarCamara() {
 // =====================================================
 // CAMBIAR CÁMARA
 // =====================================================
+//
+// Esta es la lógica utilizada en AsistenciaV1:
+//
+//   false -> true
+//   true  -> false
+//
+// y luego se vuelve a iniciar html5-qrcode con:
+//   environment <-> user
+// =====================================================
 
 async function cambiarCamara() {
 
-  if (cameraState.esMovil) {
+  if (!cameraState.activa) {
 
-    cameraState.facingMode =
-      cameraState.facingMode === 'environment'
-        ? 'user'
-        : 'environment';
+    mensajeCamara(
+      'Primero active la cámara.'
+    );
+
+    return;
+
+  }
+
+
+  const switchCamBtn =
+    document.getElementById(
+      'switchCamBtn'
+    );
+
+
+  try {
+
+    if (switchCamBtn) {
+
+      switchCamBtn.disabled =
+        true;
+
+    }
+
+
+    mensajeCamara(
+      '🔄 Cambiando cámara...'
+    );
+
+
+    if (cameraState.reader) {
+
+      try {
+
+        await cameraState.reader.stop();
+
+      }
+      catch (error) {
+
+        console.log(
+          'La cámara ya estaba detenida.'
+        );
+
+      }
+
+
+      try {
+
+        await cameraState.reader.clear();
+
+      }
+      catch (error) {
+
+        console.log(
+          'No fue necesario limpiar el lector.'
+        );
+
+      }
+
+    }
+
+
+    cameraState.reader =
+      null;
+
+    cameraState.activa =
+      false;
+
+    state.camara =
+      false;
+
+
+    // AQUÍ está la conmutación real V1.
+    camaraFrontal =
+      !camaraFrontal;
+
 
     const selector =
       document.getElementById(
         'cameraSelect'
       );
 
+
     if (selector) {
 
       selector.value =
-        cameraState.facingMode;
+        camaraFrontal
+          ? 'user'
+          : 'environment';
 
     }
 
-    if (cameraState.activa) {
-
-      await detenerCamara();
-
-      await iniciarCamara();
-
-    }
-    else {
-
-      mensajeCamara(
-        cameraState.facingMode === 'user'
-          ? '📱 Cámara frontal seleccionada.'
-          : '📷 Cámara trasera seleccionada.'
-      );
-
-    }
-
-    return;
-
-  }
-
-  if (
-    cameraState.cameras.length < 2
-  ) {
-
-    mensajeCamara(
-      'Solo hay una cámara disponible.'
-    );
-
-    return;
-
-  }
-
-  cameraState.currentIndex =
-    (
-      cameraState.currentIndex + 1
-    ) %
-    cameraState.cameras.length;
-
-  const selector =
-    document.getElementById(
-      'cameraSelect'
-    );
-
-  if (selector) {
-    selector.value =
-      cameraState.currentIndex;
-  }
-
-  if (cameraState.activa) {
-
-    await detenerCamara();
 
     await iniciarCamara();
 
   }
-  else {
+  catch (error) {
+
+    console.error(
+      'Error al cambiar cámara:',
+      error
+    );
+
+
+    cameraState.activa =
+      false;
+
 
     mensajeCamara(
-      'Cámara seleccionada: ' +
-      (
-        cameraState.cameras[
-          cameraState.currentIndex
-        ].label ||
-        `Cámara ${cameraState.currentIndex + 1}`
-      )
+      '❌ No se pudo cambiar la cámara: ' +
+      error.name +
+      ' — ' +
+      error.message
     );
+
+  }
+  finally {
+
+    if (switchCamBtn) {
+
+      switchCamBtn.disabled =
+        false;
+
+    }
 
   }
 
@@ -1979,54 +1303,64 @@ const cameraSelect =
     'cameraSelect'
   );
 
+
 if (cameraSelect) {
 
   cameraSelect.addEventListener(
+
     'change',
+
     async function() {
 
-      if (cameraState.esMovil) {
+      if (
+        this.value !== 'user' &&
+        this.value !== 'environment'
+      ) {
 
-        if (
-          this.value === 'user' ||
-          this.value === 'environment'
-        ) {
-
-          cameraState.facingMode =
-            this.value;
-
-        }
+        return;
 
       }
-      else {
 
-        cameraState.currentIndex =
-          Number(this.value);
+
+      const nuevaCamaraFrontal =
+        this.value === 'user';
+
+
+      if (
+        nuevaCamaraFrontal ===
+        camaraFrontal
+      ) {
+
+        return;
 
       }
+
+
+      camaraFrontal =
+        nuevaCamaraFrontal;
+
 
       if (cameraState.activa) {
 
-        await detenerCamara();
-
-        await iniciarCamara();
+        await cambiarCamara();
 
       }
       else {
 
         mensajeCamara(
-          cameraState.esMovil
-            ? (
-                this.value === 'user'
-                  ? '📱 Cámara frontal seleccionada.'
-                  : '📷 Cámara trasera seleccionada.'
-              )
-            : 'Cámara seleccionada.'
+
+          camaraFrontal
+
+            ? '📱 Cámara frontal seleccionada.'
+
+            : '📷 Cámara trasera seleccionada.'
+
         );
 
       }
 
     }
+
   );
 
 }
@@ -2038,55 +1372,6 @@ if (cameraSelect) {
 
 async function detenerCamara() {
 
-  // ===================================================
-  // MÓVIL NATIVO
-  // ===================================================
-
-  if (cameraState.mobileStream) {
-
-    cameraState.mobileScanActivo =
-      false;
-
-    try {
-
-      cameraState.mobileStream
-        .getTracks()
-        .forEach(function(track) {
-          track.stop();
-        });
-
-    }
-    catch (error) {
-
-      console.warn(
-        'Error deteniendo stream móvil:',
-        error
-      );
-
-    }
-
-    cameraState.mobileStream =
-      null;
-
-    cameraState.mobileVideo =
-      null;
-
-    cameraState.mobileDetector =
-      null;
-
-    const reader =
-      document.getElementById('reader');
-
-    if (reader) {
-      reader.innerHTML = '';
-    }
-
-  }
-
-  // ===================================================
-  // PC - HTML5 QR CODE
-  // ===================================================
-
   if (cameraState.reader) {
 
     try {
@@ -2097,19 +1382,33 @@ async function detenerCamara() {
 
       }
 
+    }
+    catch (error) {
+
+      console.warn(
+        'Error deteniendo lector:',
+        error
+      );
+
+    }
+
+
+    try {
+
       await cameraState.reader.clear();
 
     }
     catch (error) {
 
       console.warn(
-        'Error deteniendo lector PC:',
+        'Error limpiando lector:',
         error
       );
 
     }
 
   }
+
 
   cameraState.reader =
     null;
@@ -2123,14 +1422,32 @@ async function detenerCamara() {
   state.camara =
     false;
 
-  const boton =
+
+  const camBtn =
     document.getElementById(
       'camBtn'
     );
 
-  if (boton) {
-    boton.disabled = false;
+  if (camBtn) {
+
+    camBtn.disabled =
+      false;
+
   }
+
+
+  const stopCamBtn =
+    document.getElementById(
+      'stopCamBtn'
+    );
+
+  if (stopCamBtn) {
+
+    stopCamBtn.style.display =
+      'block';
+
+  }
+
 
   mensajeCamara(
     'Cámara detenida.'
@@ -2197,7 +1514,6 @@ if (switchCamBtn) {
   );
 
 }
-
 
 // =====================================================
 // CONSULTA PÚBLICA
