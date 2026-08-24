@@ -1410,6 +1410,11 @@ async function iniciarCamara() {
 
 async function cambiarCamara() {
 
+  const switchCamBtn =
+    document.getElementById(
+      'switchCamBtn'
+    );
+
   if (!cameraState.activa) {
 
     mensajeCamara(
@@ -1419,12 +1424,6 @@ async function cambiarCamara() {
     return;
 
   }
-
-
-  const switchCamBtn =
-    document.getElementById(
-      'switchCamBtn'
-    );
 
 
   try {
@@ -1438,9 +1437,17 @@ async function cambiarCamara() {
 
 
     mensajeCamara(
-      '🔄 Cambiando cámara...'
+      '🔄 Cambiando a cámara frontal...'
     );
 
+
+    // =================================================
+    // 1. LIBERAR COMPLETAMENTE LA CÁMARA ACTUAL
+    // =================================================
+    // MDN recomienda liberar el recurso antes de pedir
+    // el otro facingMode. Html5Qrcode.stop() detiene
+    // la sesión actual.
+    // =================================================
 
     if (cameraState.reader) {
 
@@ -1451,8 +1458,9 @@ async function cambiarCamara() {
       }
       catch (error) {
 
-        console.log(
-          'La cámara ya estaba detenida.'
+        console.warn(
+          'La cámara ya estaba detenida:',
+          error
         );
 
       }
@@ -1465,8 +1473,9 @@ async function cambiarCamara() {
       }
       catch (error) {
 
-        console.log(
-          'No fue necesario limpiar el lector.'
+        console.warn(
+          'No fue necesario limpiar el lector:',
+          error
         );
 
       }
@@ -1484,9 +1493,204 @@ async function cambiarCamara() {
       false;
 
 
-    // AQUÍ está la conmutación real V1.
+    // =================================================
+    // 2. CAMBIO DETERMINÍSTICO
+    // =================================================
+    // No dependemos de camera IDs.
+    // No dependemos de enumerateDevices().
+    //
+    // V1:
+    // environment = trasera
+    // user        = frontal
+    //
+    // Para evitar que Android elija otra cámara,
+    // solicitamos EXACTAMENTE "user".
+    // =================================================
+
     camaraFrontal =
       !camaraFrontal;
+
+
+    const facingMode =
+      camaraFrontal
+        ? {
+            exact: 'user'
+          }
+        : {
+            exact: 'environment'
+          };
+
+
+    cameraState.facingMode =
+      camaraFrontal
+        ? 'user'
+        : 'environment';
+
+
+    // =================================================
+    // 3. REINICIAR HTML5-QRCODE CON EL NUEVO MODO
+    // =================================================
+
+    const reader =
+      document.getElementById(
+        'reader'
+      );
+
+    const camBtn =
+      document.getElementById(
+        'camBtn'
+      );
+
+    const stopCamBtn =
+      document.getElementById(
+        'stopCamBtn'
+      );
+
+
+    if (!reader) {
+
+      throw new Error(
+        'No existe el visor QR #reader.'
+      );
+
+    }
+
+
+    reader.innerHTML =
+      '';
+
+
+    cameraState.reader =
+      new Html5Qrcode(
+        'reader'
+      );
+
+
+    await cameraState.reader.start(
+
+      {
+        facingMode:
+          facingMode
+      },
+
+      {
+
+        fps:
+          10,
+
+        qrbox:
+          function(
+            viewfinderWidth,
+            viewfinderHeight
+          ) {
+
+            const size =
+              Math.min(
+                viewfinderWidth,
+                viewfinderHeight
+              ) * 0.70;
+
+            return {
+
+              width:
+                size,
+
+              height:
+                size
+
+            };
+
+          },
+
+        aspectRatio:
+          1.0
+
+      },
+
+      async function(
+        decodedText
+      ) {
+
+        if (
+          cameraState.procesandoQR
+        ) {
+
+          return;
+
+        }
+
+
+        cameraState.procesandoQR =
+          true;
+
+        state.qr =
+          decodedText;
+
+
+        mensajeCamara(
+          '✅ QR leído. Consultando servidor...'
+        );
+
+
+        await detenerCamara();
+
+
+        await identificarQRBackend(
+          decodedText
+        );
+
+
+        cameraState.procesandoQR =
+          false;
+
+      },
+
+      function(
+        errorMessage
+      ) {
+
+        // Error normal durante la búsqueda
+        // de un código QR. No mostrarlo.
+
+      }
+
+    );
+
+
+    cameraState.activa =
+      true;
+
+    state.camara =
+      true;
+
+    cameraState.procesandoQR =
+      false;
+
+
+    if (camBtn) {
+
+      camBtn.style.display =
+        'none';
+
+    }
+
+
+    if (stopCamBtn) {
+
+      stopCamBtn.style.display =
+        'block';
+
+    }
+
+
+    if (switchCamBtn) {
+
+      switchCamBtn.style.display =
+        esDispositivoMovil()
+          ? 'block'
+          : 'none';
+
+    }
 
 
     const selector =
@@ -1498,14 +1702,20 @@ async function cambiarCamara() {
     if (selector) {
 
       selector.value =
-        camaraFrontal
-          ? 'user'
-          : 'environment';
+        cameraState.facingMode;
 
     }
 
 
-    await iniciarCamara();
+    mensajeCamara(
+
+      camaraFrontal
+
+        ? '🤳 CÁMARA FRONTAL ACTIVA. Apunte al código QR.'
+
+        : '📷 CÁMARA TRASERA ACTIVA. Apunte al código QR.'
+
+    );
 
   }
   catch (error) {
@@ -1519,12 +1729,38 @@ async function cambiarCamara() {
     cameraState.activa =
       false;
 
+    state.camara =
+      false;
+
+    cameraState.reader =
+      null;
+
+
+    if (switchCamBtn) {
+
+      switchCamBtn.disabled =
+        false;
+
+    }
+
 
     mensajeCamara(
-      '❌ No se pudo cambiar la cámara: ' +
-      error.name +
+      '❌ No se pudo cambiar a la cámara ' +
+      (
+        camaraFrontal
+          ? 'frontal'
+          : 'trasera'
+      ) +
+      ': ' +
+      (
+        error.name ||
+        'Error'
+      ) +
       ' — ' +
-      error.message
+      (
+        error.message ||
+        'Error desconocido.'
+      )
     );
 
   }
@@ -1584,16 +1820,24 @@ if (cameraSelect) {
       }
 
 
-      camaraFrontal =
-        nuevaCamaraFrontal;
-
-
       if (cameraState.activa) {
+
+        // cambiarCamara() conmuta desde el estado actual.
+        // Dejamos el estado actual intacto para evitar doble
+        // conmutación y solo mostramos el resultado después.
 
         await cambiarCamara();
 
       }
       else {
+
+        camaraFrontal =
+          nuevaCamaraFrontal;
+
+        cameraState.facingMode =
+          camaraFrontal
+            ? 'user'
+            : 'environment';
 
         mensajeCamara(
 
