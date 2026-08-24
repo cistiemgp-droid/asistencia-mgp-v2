@@ -856,6 +856,95 @@ let camaraFrontal = false;
 
 
 // =====================================================
+// ASEGURAR BOTÓN CAMBIAR CÁMARA
+// =====================================================
+//
+// V1 tenía este control visible en móvil.
+// En V9 la lógica cambiarCamara() estaba presente,
+// pero el botón no se creó si no existía en el HTML.
+//
+// Para no obligar a modificar index.html, lo creamos
+// automáticamente junto al botón DETENER CÁMARA.
+// =====================================================
+
+function asegurarBotonCambiarCamara() {
+
+  let boton =
+    document.getElementById(
+      'switchCamBtn'
+    );
+
+  if (boton) {
+    return boton;
+  }
+
+  const stopCamBtn =
+    document.getElementById(
+      'stopCamBtn'
+    );
+
+  if (!stopCamBtn || !stopCamBtn.parentElement) {
+    return null;
+  }
+
+  boton =
+    document.createElement('button');
+
+  boton.type =
+    'button';
+
+  boton.id =
+    'switchCamBtn';
+
+  boton.className =
+    'btn';
+
+  boton.textContent =
+    '🔄 CAMBIAR CÁMARA';
+
+  boton.style.background =
+    '#2563eb';
+
+  boton.style.display =
+    'none';
+
+  boton.style.width =
+    '100%';
+
+  boton.style.marginTop =
+    '7px';
+
+  boton.style.padding =
+    '12px';
+
+  boton.style.border =
+    'none';
+
+  boton.style.borderRadius =
+    '7px';
+
+  boton.style.color =
+    'white';
+
+  boton.style.fontWeight =
+    'bold';
+
+  boton.style.cursor =
+    'pointer';
+
+  boton.onclick =
+    cambiarCamara;
+
+  stopCamBtn.parentElement.insertBefore(
+    boton,
+    stopCamBtn.nextSibling
+  );
+
+  return boton;
+}
+
+
+// =====================================================
 // INICIAR CÁMARA
 // =====================================================
 
@@ -885,8 +974,9 @@ async function iniciarCamara() {
   const stopCamBtn =
     document.getElementById('stopCamBtn');
 
+  // Recuperamos el botón de cambio de cámara de V1.
   const switchCamBtn =
-    document.getElementById('switchCamBtn');
+    asegurarBotonCambiarCamara();
 
 
   try {
@@ -1498,6 +1588,11 @@ if (stopCamBtn) {
 
 // =====================================================
 // BOTÓN CAMBIAR CÁMARA
+// =====================================================
+//
+// Si index.html ya lo contiene, conectamos el evento.
+// Si no lo contiene, iniciarCamara() lo creará
+// automáticamente mediante asegurarBotonCambiarCamara().
 // =====================================================
 
 const switchCamBtn =
