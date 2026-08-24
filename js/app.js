@@ -144,12 +144,46 @@ document
 
   });
 
+
+// =====================================================
+// NAVEGACIÓN DE RESPALDO V2
+// =====================================================
+// El index.html actual usa data-view en los botones del portal.
+// Este listener delegado garantiza que Consulta y Acceso
+// institucional siempre puedan abrirse.
+document.addEventListener(
+  'click',
+  function(event) {
+
+    const boton =
+      event.target.closest(
+        '[data-view]'
+      );
+
+    if (!boton) {
+      return;
+    }
+
+    const destino =
+      boton.getAttribute(
+        'data-view'
+      );
+
+    if (destino) {
+      mostrarVista(
+        destino
+      );
+    }
+
+  }
+);
+
 // =====================================================
 // BOTÓN INICIO
 // =====================================================
 
 const homeBtn =
-  document.getElementById('home');
+  document.getElementById('homeBtn');
 
 if (homeBtn) {
 
@@ -170,7 +204,7 @@ if (homeBtn) {
 // =====================================================
 
 const salirBtn =
-  document.getElementById('salir');
+  document.getElementById('salirBtn');
 
 if (salirBtn) {
 
@@ -1243,6 +1277,7 @@ async function iniciarCamara() {
 
   }
 
+
     state.camara =
       true;
 
@@ -1279,8 +1314,7 @@ async function iniciarCamara() {
 
     if (switchCamBtn) {
 
-      switchCamBtn.style.display =
-      'block';
+      switchCamBtn.style.display = 'block';
 
     }
 
@@ -1797,84 +1831,13 @@ if (switchCamBtn) {
 
 }
 
-
-// =====================================================
-// NAVEGACIÓN V2
-// =====================================================
-// El index.html actual usa data-view para portal, login,
-// consulta, panel y módulos. Este enlace es independiente
-// de la cámara.
-// =====================================================
-
-function mostrarVista(viewId) {
-
-  const vistas =
-    document.querySelectorAll(
-      '.view'
-    );
-
-  vistas.forEach(
-    function(vista) {
-
-      vista.classList.remove(
-        'active'
-      );
-
-    }
-  );
-
-  const destino =
-    document.getElementById(
-      viewId
-    );
-
-  if (destino) {
-
-    destino.classList.add(
-      'active'
-    );
-
-  }
-
-}
-
-
-document.querySelectorAll(
-  '[data-view]'
-).forEach(
-  function(boton) {
-
-    boton.addEventListener(
-      'click',
-      function() {
-
-        const viewId =
-          boton.getAttribute(
-            'data-view'
-          );
-
-        if (viewId) {
-
-          mostrarVista(
-            viewId
-          );
-
-        }
-
-      }
-    );
-
-  }
-);
-
-
 // =====================================================
 // CONSULTA PÚBLICA
 // =====================================================
 
 const consultarBtn =
   document.getElementById(
-    'consultar'
+    'consultarBtn'
   );
 
 
