@@ -965,8 +965,34 @@ async function iniciarCamara() {
     esDispositivoMovil();
 
 
-  const reader =
+  // =====================================================
+  // CONTENEDOR QR ROBUSTO
+  // =====================================================
+  // Si #reader no existe en la versión de registro.html que
+  // está cargada, lo reconstruimos dentro de #reader-container.
+  // =====================================================
+
+  let reader =
     document.getElementById('reader');
+
+  if (!reader) {
+    const contenedor =
+      document.getElementById('reader-container');
+
+    if (contenedor) {
+      reader =
+        document.createElement('div');
+
+      reader.id = 'reader';
+      contenedor.appendChild(reader);
+    }
+  }
+
+  if (!reader) {
+    throw new Error(
+      'No se encontró ni #reader ni #reader-container.'
+    );
+  }
 
   const camBtn =
     document.getElementById('btn-camera');
