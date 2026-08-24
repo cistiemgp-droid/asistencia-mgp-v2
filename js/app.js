@@ -869,78 +869,10 @@ let camaraFrontal = false;
 
 function asegurarBotonCambiarCamara() {
 
-  let boton =
-    document.getElementById(
-      'btn-switch-camera'
-    );
-
-  if (boton) {
-    return boton;
-  }
-
-  const stopCamBtn =
-    document.getElementById(
-      'btn-stop'
-    );
-
-  if (!stopCamBtn || !stopCamBtn.parentElement) {
-    return null;
-  }
-
-  boton =
-    document.createElement('button');
-
-  boton.type =
-    'button';
-
-  boton.id =
-    'btn-switch-camera';
-
-  boton.className =
-    'btn';
-
-  boton.textContent =
-    '🔄 CAMBIAR CÁMARA';
-
-  boton.style.background =
-    '#2563eb';
-
-  boton.style.display =
-    'none';
-
-  boton.style.width =
-    '100%';
-
-  boton.style.marginTop =
-    '7px';
-
-  boton.style.padding =
-    '12px';
-
-  boton.style.border =
-    'none';
-
-  boton.style.borderRadius =
-    '7px';
-
-  boton.style.color =
-    'white';
-
-  boton.style.fontWeight =
-    'bold';
-
-  boton.style.cursor =
-    'pointer';
-
-  boton.onclick =
-    cambiarCamara;
-
-  stopCamBtn.parentElement.insertBefore(
-    boton,
-    stopCamBtn.nextSibling
+  return document.getElementById(
+    'switchCamBtn'
   );
 
-  return boton;
 }
 
 
@@ -1103,15 +1035,16 @@ async function iniciarCamara() {
   }
 
 
-  const readerContainer =
-    document.getElementById(
-      'reader-container'
-    );
-
   const reader =
     document.getElementById(
       'reader'
     );
+
+  // En V2 el visor QR (#reader) es el contenedor real.
+  // No dependemos de #reader-container porque no existe
+  // en el index.html actual.
+  const readerContainer =
+    reader;
 
   const camBtn =
     document.getElementById(
@@ -1135,15 +1068,6 @@ async function iniciarCamara() {
 
       throw new Error(
         'No existe el contenedor de cámara #reader.'
-      );
-
-    }
-
-
-    if (!readerContainer) {
-
-      throw new Error(
-        'No existe el contenedor #reader-container.'
       );
 
     }
@@ -1772,6 +1696,15 @@ async function detenerCamara() {
 
   }
 
+
+  const switchCamBtn =
+    document.getElementById(
+      'switchCamBtn'
+    );
+
+  if (switchCamBtn) {
+    switchCamBtn.style.display = 'none';
+  }
 
   mensajeCamara(
     'Cámara detenida.'
