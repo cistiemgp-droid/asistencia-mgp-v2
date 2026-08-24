@@ -47,7 +47,14 @@ const cameraState = {
 
   currentIndex: 0,
 
-  activa: false
+  activa: false,
+
+  // En móviles no confiamos en los deviceId
+  // porque el teléfono puede exponerlos con
+  // etiquetas/mapeos incorrectos.
+  esMovil: false,
+
+  facingMode: 'environment'
 
 };
 
@@ -315,6 +322,18 @@ function mensajeCamara(texto) {
 
 
 // =====================================================
+// DETECTAR DISPOSITIVO MÓVIL
+// =====================================================
+
+function esDispositivoMovil() {
+
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
+    .test(navigator.userAgent);
+
+}
+
+
+// =====================================================
 // CARGAR CÁMARAS
 // =====================================================
 
@@ -338,6 +357,22 @@ async function cargarCamaras() {
 
     }
 
+
+    // =================================================
+    // DETECTAR SI ESTAMOS EN MÓVIL / TABLETA
+    // =================================================
+
+    cameraState.esMovil =
+      esDispositivoMovil();
+
+
+    // =================================================
+    // OBTENER CÁMARAS REALES
+    //
+    // En móvil las consultamos para comprobar que
+    // existe acceso a cámara, pero NO usamos sus IDs
+    // para decidir frontal/trasera.
+    // =================================================
 
     cameraState.cameras =
       await Html5Qrcode.getCameras();
@@ -366,77 +401,131 @@ async function cargarCamaras() {
       selector.innerHTML = '';
 
 
-      cameraState.cameras.forEach(
-        function(camera, index) {
+      if (cameraState.esMovil) {
 
-          const opcion =
-            document.createElement(
-              'option'
-            );
+        // ---------------------------------------------
+        // MÓVIL / TABLETA
+        // ---------------------------------------------
+        // No mostramos camera 0, 1, 2, 3 porque en
+        // nuestro teléfono esos IDs no corresponden
+        // correctamente a frontal/trasera.
+        // Usaremos facingMode.
+        // ---------------------------------------------
 
+        const frontal =
+          document.createElement('option');
 
-          opcion.value =
-            index;
+        frontal.value =
+          'user';
 
+        frontal.textContent =
+          '📱 Cámara frontal';
 
-          opcion.textContent =
-            camera.label ||
-            `Cámara ${index + 1}`;
-
-
-          selector.appendChild(
-            opcion
-          );
-
-        }
-      );
-
-    }
+        selector.appendChild(
+          frontal
+        );
 
 
-    // =================================================
-    // PREFERIR CÁMARA TRASERA
-    // =================================================
+        const trasera =
+          document.createElement('option');
 
-    let indicePreferido = 0;
+        trasera.value =
+          'environment';
 
+        trasera.textContent =
+          '📷 Cámara trasera';
 
-    for (
-      let i = 0;
-      i < cameraState.cameras.length;
-      i++
-    ) {
-
-      const nombre =
-        String(
-          cameraState.cameras[i].label || ''
-        ).toLowerCase();
+        selector.appendChild(
+          trasera
+        );
 
 
-      if (
-        nombre.includes('back') ||
-        nombre.includes('rear') ||
-        nombre.includes('trasera') ||
-        nombre.includes('posterior')
-      ) {
+        // Para asistencia QR dejamos la trasera
+        // como cámara inicial.
+        cameraState.facingMode =
+          'environment';
 
-        indicePreferido = i;
 
-        break;
+        selector.value =
+          'environment';
 
       }
+      else {
 
-    }
+        // ---------------------------------------------
+        // PC / ESCRITORIO
+        // ---------------------------------------------
+        // Aquí conservamos el comportamiento que ya
+        // comprobamos que funciona correctamente:
+        // seleccionar por deviceId.
+        // ---------------------------------------------
+
+        cameraState.cameras.forEach(
+          function(camera, index) {
+
+            const opcion =
+              document.createElement(
+                'option'
+              );
 
 
-    cameraState.currentIndex =
-      indicePreferido;
+            opcion.value =
+              index;
 
 
-    if (selector) {
+            opcion.textContent =
+              camera.label ||
+              `Cámara ${index + 1}`;
 
-      selector.value =
-        indicePreferido;
+
+            selector.appendChild(
+              opcion
+            );
+
+          }
+        );
+
+
+        let indicePreferido = 0;
+
+
+        for (
+          let i = 0;
+          i < cameraState.cameras.length;
+          i++
+        ) {
+
+          const nombre =
+            String(
+              cameraState.cameras[i].label || ''
+            ).toLowerCase();
+
+
+          if (
+            nombre.includes('back') ||
+            nombre.includes('rear') ||
+            nombre.includes('trasera') ||
+            nombre.includes('posterior')
+          ) {
+
+            indicePreferido =
+              i;
+
+            break;
+
+          }
+
+        }
+
+
+        cameraState.currentIndex =
+          indicePreferido;
+
+
+        selector.value =
+          indicePreferido;
+
+      }
 
     }
 
@@ -456,7 +545,9 @@ async function cargarCamaras() {
 
 
     mensajeCamara(
-      `${cameraState.cameras.length} cámara(s) disponible(s).`
+      cameraState.esMovil
+        ? '📱 Cámara móvil lista. Se usará frontal/trasera mediante el modo de cámara.'
+        : `${cameraState.cameras.length} cámara(s) disponible(s).`
     );
 
 
@@ -749,13 +840,30 @@ async function iniciarCamara() {
 
   try {
 
-    const camara =
-      cameraState.cameras[
-        cameraState.currentIndex
-      ];
+    cameraState.reader =
+      new Html5Qrcode(
+        'reader'
+      );
 
 
-    if (!camara) {
+    // En móvil usamos facingMode.
+    // En PC mantenemos deviceId.
+    const fuenteCamara =
+      cameraState.esMovil
+        ? {
+            facingMode: {
+              exact:
+                cameraState.facingMode
+            }
+          }
+        : (
+            cameraState.cameras[
+              cameraState.currentIndex
+            ] || {}
+          ).id;
+
+
+    if (!fuenteCamara) {
 
       throw new Error(
         'No se pudo seleccionar la cámara.'
@@ -764,17 +872,13 @@ async function iniciarCamara() {
     }
 
 
-    cameraState.reader =
-      new Html5Qrcode(
-        'reader'
-      );
+    try {
 
+      await cameraState.reader.start(
 
-    await cameraState.reader.start(
+        fuenteCamara,
 
-      camara.id,
-
-      {
+        {
 
         fps: 10,
 
@@ -854,6 +958,112 @@ async function iniciarCamara() {
 
     );
 
+    }
+    catch (errorCamara) {
+
+      // Algunos navegadores móviles no aceptan
+      // facingMode exact aunque sí soporten user/
+      // environment. Reintentamos sin exact.
+      if (
+        cameraState.esMovil &&
+        errorCamara &&
+        (
+          errorCamara.name === 'OverconstrainedError' ||
+          errorCamara.name === 'NotReadableError'
+        )
+      ) {
+
+        console.warn(
+          'Reintentando cámara móvil sin exact:',
+          errorCamara
+        );
+
+
+        await cameraState.reader.stop().catch(
+          function() {}
+        );
+
+
+        const fuenteAlternativa = {
+          facingMode:
+            cameraState.facingMode
+        };
+
+
+        await cameraState.reader.start(
+
+          fuenteAlternativa,
+
+          {
+
+            fps: 10,
+
+            qrbox: {
+
+              width: 240,
+
+              height: 240
+
+            },
+
+            aspectRatio: 1.0
+
+          },
+
+
+          async function(decodedText) {
+
+            if (cameraState.procesandoQR) {
+
+              return;
+
+            }
+
+
+            cameraState.procesandoQR =
+              true;
+
+
+            state.qr =
+              decodedText;
+
+
+            mensajeCamara(
+              '✅ QR leído. Consultando servidor...'
+            );
+
+
+            await detenerCamara();
+
+
+            await identificarQRBackend(
+              decodedText
+            );
+
+
+            cameraState.procesandoQR =
+              false;
+
+          },
+
+
+          function(errorMessage) {
+
+            // Errores normales de búsqueda QR.
+
+          }
+
+        );
+
+      }
+      else {
+
+        throw errorCamara;
+
+      }
+
+    }
+
 
     cameraState.activa =
       true;
@@ -895,7 +1105,9 @@ async function iniciarCamara() {
     if (cambiar) {
 
       cambiar.disabled =
-        cameraState.cameras.length < 2;
+        cameraState.esMovil
+          ? false
+          : cameraState.cameras.length < 2;
 
     }
 
@@ -937,6 +1149,64 @@ async function iniciarCamara() {
 // =====================================================
 
 async function cambiarCamara() {
+
+  // ===================================================
+  // MÓVIL / TABLETA
+  // ===================================================
+
+  if (cameraState.esMovil) {
+
+    cameraState.facingMode =
+      cameraState.facingMode === 'environment'
+        ? 'user'
+        : 'environment';
+
+
+    const selector =
+      document.getElementById(
+        'cameraSelect'
+      );
+
+
+    if (selector) {
+
+      selector.value =
+        cameraState.facingMode;
+
+    }
+
+
+    const nombre =
+      cameraState.facingMode === 'user'
+        ? '📱 Cámara frontal'
+        : '📷 Cámara trasera';
+
+
+    if (cameraState.activa) {
+
+      await detenerCamara();
+
+      await iniciarCamara();
+
+    }
+    else {
+
+      mensajeCamara(
+        'Cámara seleccionada: ' +
+        nombre
+      );
+
+    }
+
+
+    return;
+
+  }
+
+
+  // ===================================================
+  // PC / ESCRITORIO
+  // ===================================================
 
   if (
     cameraState.cameras.length < 2
@@ -1023,8 +1293,25 @@ if (cameraSelect) {
 
     async function() {
 
-      cameraState.currentIndex =
-        Number(this.value);
+      if (cameraState.esMovil) {
+
+        if (
+          this.value === 'user' ||
+          this.value === 'environment'
+        ) {
+
+          cameraState.facingMode =
+            this.value;
+
+        }
+
+      }
+      else {
+
+        cameraState.currentIndex =
+          Number(this.value);
+
+      }
 
 
       if (cameraState.activa) {
@@ -1032,6 +1319,19 @@ if (cameraSelect) {
         await detenerCamara();
 
         await iniciarCamara();
+
+      }
+      else {
+
+        mensajeCamara(
+          cameraState.esMovil
+            ? (
+                this.value === 'user'
+                  ? '📱 Cámara frontal seleccionada.'
+                  : '📷 Cámara trasera seleccionada.'
+              )
+            : 'Cámara seleccionada.'
+        );
 
       }
 
