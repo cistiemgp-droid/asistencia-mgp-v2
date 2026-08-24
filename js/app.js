@@ -1061,10 +1061,10 @@ async function iniciarCamara() {
       'switchCamBtn'
     );
 
-    const cameraControls =
-      document.getElementById(
-        'camera-controls'
-      );
+  const cameraControls =
+    document.getElementById(
+      'camera-controls'
+    );
 
 
   try {
@@ -1226,12 +1226,22 @@ async function iniciarCamara() {
     cameraState.activa =
       true;
 
-    if (cameraControls) {
+  if (cameraControls) {
 
-      cameraControls.style.display =
-        'block';
+    cameraControls.style.display =
+      'block';
 
-    }
+  }
+
+  if (switchCamBtn) {
+
+    switchCamBtn.style.display =
+      'block';
+
+    switchCamBtn.disabled =
+      false;
+
+  }
 
     state.camara =
       true;
@@ -1270,10 +1280,7 @@ async function iniciarCamara() {
     if (switchCamBtn) {
 
       switchCamBtn.style.display =
-        'block';
-
-      switchCamBtn.disabled =
-        false;
+      'block';
 
     }
 
@@ -1789,6 +1796,77 @@ if (switchCamBtn) {
   );
 
 }
+
+
+// =====================================================
+// NAVEGACIÓN V2
+// =====================================================
+// El index.html actual usa data-view para portal, login,
+// consulta, panel y módulos. Este enlace es independiente
+// de la cámara.
+// =====================================================
+
+function mostrarVista(viewId) {
+
+  const vistas =
+    document.querySelectorAll(
+      '.view'
+    );
+
+  vistas.forEach(
+    function(vista) {
+
+      vista.classList.remove(
+        'active'
+      );
+
+    }
+  );
+
+  const destino =
+    document.getElementById(
+      viewId
+    );
+
+  if (destino) {
+
+    destino.classList.add(
+      'active'
+    );
+
+  }
+
+}
+
+
+document.querySelectorAll(
+  '[data-view]'
+).forEach(
+  function(boton) {
+
+    boton.addEventListener(
+      'click',
+      function() {
+
+        const viewId =
+          boton.getAttribute(
+            'data-view'
+          );
+
+        if (viewId) {
+
+          mostrarVista(
+            viewId
+          );
+
+        }
+
+      }
+    );
+
+  }
+);
+
 
 // =====================================================
 // CONSULTA PÚBLICA
