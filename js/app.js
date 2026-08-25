@@ -249,6 +249,10 @@ if (entrarBtn) {
 // TIPO DE PERSONA
 // =====================================================
 
+// =====================================================
+// TIPO DE PERSONA
+// =====================================================
+
 document
   .querySelectorAll('[data-t], [data-tipo]')
   .forEach(function(boton) {
@@ -261,12 +265,11 @@ document
           .querySelectorAll('[data-t], [data-tipo]')
           .forEach(function(b) {
 
-            b.classList.remove('on');
+            b.classList.remove('active');
 
           });
 
-
-        boton.classList.add('on');
+        boton.classList.add('active');
 
         state.tipo =
           boton.dataset.t ||
@@ -278,6 +281,9 @@ document
 
   });
 
+// =====================================================
+// INGRESO / SALIDA
+// =====================================================
 
 // =====================================================
 // INGRESO / SALIDA
@@ -295,12 +301,11 @@ document
           .querySelectorAll('[data-e], [data-estado]')
           .forEach(function(b) {
 
-            b.classList.remove('on');
+            b.classList.remove('active');
 
           });
 
-
-        boton.classList.add('on');
+        boton.classList.add('active');
 
         state.estado =
           boton.dataset.e ||
