@@ -249,10 +249,6 @@ if (entrarBtn) {
 // TIPO DE PERSONA
 // =====================================================
 
-// =====================================================
-// TIPO DE PERSONA
-// =====================================================
-
 document
   .querySelectorAll('[data-t], [data-tipo]')
   .forEach(function(boton) {
@@ -265,11 +261,12 @@ document
           .querySelectorAll('[data-t], [data-tipo]')
           .forEach(function(b) {
 
-            b.classList.remove('active');
+            b.classList.remove('on');
 
           });
 
-        boton.classList.add('active');
+
+        boton.classList.add('on');
 
         state.tipo =
           boton.dataset.t ||
@@ -281,9 +278,6 @@ document
 
   });
 
-// =====================================================
-// INGRESO / SALIDA
-// =====================================================
 
 // =====================================================
 // INGRESO / SALIDA
@@ -301,11 +295,12 @@ document
           .querySelectorAll('[data-e], [data-estado]')
           .forEach(function(b) {
 
-            b.classList.remove('active');
+            b.classList.remove('on');
 
           });
 
-        boton.classList.add('active');
+
+        boton.classList.add('on');
 
         state.estado =
           boton.dataset.e ||
@@ -976,7 +971,7 @@ function registrarAsistenciaBackend(id) {
 
           if (mensaje) {
             mensaje.innerHTML =
-              '<strong>✅ ASISTENCIA REGISTRADA</strong><br>' +
+              '<strong>✅ ' + (String(data.estado || estado).toUpperCase() === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
               'DNI: ' + idLimpio + '<br>' +
               (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
               (detalle ? 'Grado: ' + detalle + '<br>' : '') +
@@ -1403,13 +1398,6 @@ async function iniciarCamara() {
         await identificarQRBackend(
           decodedText
         );
-
-
-        // Reactivar automáticamente la cámara al terminar el ciclo de registro.
-        // Se conserva íntegramente la arquitectura actual de cámara.
-        if (!cameraState.activa) {
-          await iniciarCamara();
-        }
 
 
         cameraState.procesandoQR =
