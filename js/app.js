@@ -921,7 +921,9 @@ function registrarAsistenciaBackend(id) {
 
     if (mensaje) {
       mensaje.innerHTML =
-        '<strong>⏳ REGISTRANDO ASISTENCIA...</strong><br>' +
+        '<strong>⏳ REGISTRANDO ' +
+        (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO') +
+        '...</strong><br>' +
         'DNI: ' + idLimpio + '<br>' +
         'Tipo: ' + tipo + '<br>' +
         'Estado: ' + estado;
