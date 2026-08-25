@@ -903,7 +903,9 @@ function registrarAsistenciaBackend(id) {
       String(state.tipo || 'estudiante').trim();
 
     const estado =
-      String(state.estado || 'INGRESO').trim().toUpperCase();
+      String(state.estado || 'INGRESO')
+        .trim()
+        .toUpperCase();
 
     if (!idLimpio) {
 
@@ -912,120 +914,359 @@ function registrarAsistenciaBackend(id) {
           '❌ No se obtuvo el DNI para registrar.';
       }
 
-      resolve({ exito: false });
+      resolve({
+        exito: false
+      });
+
       return;
+    }
+
+
+    /*
+     * =====================================================
+     * CALLBACK ÚNICO PARA ESTA PETICIÓN
+     * =====================================================
+     */
+
+    const nombreCallback =
+      'respuestaRegistroMGP_' +
+      Date.now() +
+      '_' +
+      Math.floor(
+        Math.random() * 100000
+      );
+
+
+    let script =
+      document.createElement('script');
+
+
+    let finalizado = false;
+
+
+    function limpiar() {
+
+      if (script && script.parentNode) {
+
+        script.parentNode.removeChild(
+          script
+        );
+
+      }
+
+      if (
+        window[nombreCallback]
+      ) {
+
+        try {
+
+          delete window[nombreCallback];
+
+        }
+        catch (error) {
+
+          window[nombreCallback] =
+            undefined;
+
+        }
+
+      }
+
+      script = null;
 
     }
 
-    eliminarRegistroScript();
+
+    function finalizar(resultado) {
+
+      if (finalizado) {
+        return;
+      }
+
+      finalizado = true;
+
+      limpiar();
+
+      resolve(
+        resultado || {
+          exito: false
+        }
+      );
+
+    }
+
 
     if (mensaje) {
+
       mensaje.innerHTML =
         '<strong>⏳ REGISTRANDO ASISTENCIA...</strong><br>' +
         'DNI: ' + idLimpio + '<br>' +
         'Tipo: ' + tipo + '<br>' +
         'Estado: ' + estado;
+
     }
 
-    window.respuestaRegistroMGP =
+
+    /*
+     * =====================================================
+     * CALLBACK DINÁMICO
+     * =====================================================
+     */
+
+    window[nombreCallback] =
       function(data) {
-
-        eliminarRegistroScript();
-
-        if (!data) {
-          if (mensaje) {
-            mensaje.textContent =
-              '❌ El servidor no devolvió respuesta.';
-          }
-          resolve({ exito: false });
-          return;
-        }
 
         console.log(
           'Respuesta registro asistencia:',
           data
         );
 
+
+        if (!data) {
+
+          if (mensaje) {
+
+            mensaje.textContent =
+              '❌ El servidor no devolvió respuesta.';
+
+          }
+
+          finalizar({
+            exito: false
+          });
+
+          return;
+
+        }
+
+
+        /*
+         * =================================================
+         * REGISTRO CORRECTO
+         * =================================================
+         */
+
         if (data.exito) {
 
-          const datos = data.datos || {};
+          const datos =
+            data.datos || {};
+
 
           const nombre =
             datos.nombre ||
-            (state.persona && state.persona.estudiante
+            (
+              state.persona &&
+              state.persona.estudiante
+            )
               ? (
-                  (state.persona.estudiante.apellidoPaterno || '') + ' ' +
-                  (state.persona.estudiante.apellidoMaterno || '') + ' ' +
-                  (state.persona.estudiante.nombres || '')
-                ).trim()
-              : '');
+                  (
+                    state.persona &&
+                    state.persona.estudiante &&
+                    state.persona.estudiante
+                      .apellidoPaterno
+                  ) || ''
+                ) +
+                ' ' +
+                (
+                  (
+                    state.persona &&
+                    state.persona.estudiante &&
+                    state.persona.estudiante
+                      .apellidoMaterno
+                  ) || ''
+                ) +
+                ' ' +
+                (
+                  (
+                    state.persona &&
+                    state.persona.estudiante &&
+                    state.persona.estudiante
+                      .nombres
+                  ) || ''
+                )
+              : '';
+
 
           const detalle =
             datos.gradoSeccion ||
-            (state.persona && state.persona.estudiante
+            (
+              state.persona &&
+              state.persona.estudiante
+            )
               ? (
-                  (state.persona.estudiante.grado || '') + ' ' +
-                  (state.persona.estudiante.seccion || '')
-                ).trim()
-              : '');
+                  (
+                    state.persona &&
+                    state.persona.estudiante &&
+                    state.persona.estudiante
+                      .grado
+                  ) || ''
+                ) +
+                ' ' +
+                (
+                  (
+                    state.persona &&
+                    state.persona.estudiante &&
+                    state.persona.estudiante
+                      .seccion
+                  ) || ''
+                )
+              : '';
+
 
           if (mensaje) {
+
             mensaje.innerHTML =
               '<strong>✅ ASISTENCIA REGISTRADA</strong><br>' +
               'DNI: ' + idLimpio + '<br>' +
-              (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
-              (detalle ? 'Grado: ' + detalle + '<br>' : '') +
-              'Estado: ' + (data.estado || estado) + '<br>' +
-              'Hora: ' + (data.hora || '--:--:--') + '<br>' +
-              'Puntualidad: ' + (data.puntualidad || 'N/A');
+              (
+                nombre.trim()
+                  ? 'Nombre: ' +
+                    nombre.trim() +
+                    '<br>'
+                  : ''
+              ) +
+              (
+                detalle.trim()
+                  ? 'Grado: ' +
+                    detalle.trim() +
+                    '<br>'
+                  : ''
+              ) +
+              'Estado: ' +
+              (
+                data.estado ||
+                estado
+              ) +
+              '<br>' +
+              'Hora: ' +
+              (
+                data.hora ||
+                '--:--:--'
+              ) +
+              '<br>' +
+              'Puntualidad: ' +
+              (
+                data.puntualidad ||
+                'N/A'
+              );
+
           }
 
-          resolve(data);
+
+          finalizar(data);
+
           return;
+
         }
 
+
+        /*
+         * =================================================
+         * REGISTRO RECHAZADO POR EL SERVIDOR
+         * =================================================
+         */
+
         if (mensaje) {
+
           mensaje.innerHTML =
             '<strong>❌ NO REGISTRADO</strong><br>' +
-            (data.mensaje || 'No fue posible registrar la asistencia.');
+            (
+              data.mensaje ||
+              'No fue posible registrar la asistencia.'
+            );
+
         }
 
-        resolve(data);
+
+        finalizar(data);
+
       };
 
-    registroScript =
-      document.createElement('script');
 
-    registroScript.src =
+    /*
+     * =====================================================
+     * CONSTRUIR URL JSONP
+     * =====================================================
+     */
+
+    const parametros =
+      new URLSearchParams({
+
+        action:
+          'apiRegistrar',
+
+        id:
+          idLimpio,
+
+        tipo:
+          tipo,
+
+        estado:
+          estado,
+
+        callback:
+          nombreCallback
+
+      });
+
+
+    script.src =
       CONFIG.API_URL +
-      '?action=apiRegistrar' +
-      '&id=' + encodeURIComponent(idLimpio) +
-      '&tipo=' + encodeURIComponent(tipo) +
-      '&estado=' + encodeURIComponent(estado) +
-      '&callback=respuestaRegistroMGP';
+      '?' +
+      parametros.toString();
 
-    registroScript.onerror =
+
+    console.log(
+      'URL registro asistencia:',
+      script.src
+    );
+
+
+    /*
+     * =====================================================
+     * ERROR REAL DE CARGA
+     * =====================================================
+     */
+
+    script.onerror =
       function() {
 
-        eliminarRegistroScript();
+        console.error(
+          'Error cargando JSONP de registro:',
+          script.src
+        );
+
 
         if (mensaje) {
+
           mensaje.textContent =
-            '❌ No se pudo conectar con el servidor para registrar la asistencia.';
+            '❌ No se pudo cargar la respuesta del servidor para registrar la asistencia.';
+
         }
 
-        resolve({ exito: false });
+
+        finalizar({
+          exito: false,
+          mensaje:
+            'Error de comunicación JSONP.'
+        });
+
       };
 
+
+    /*
+     * =====================================================
+     * ENVIAR PETICIÓN
+     * =====================================================
+     */
+
     document.body.appendChild(
-      registroScript
+      script
     );
 
   });
 
 }
-
-
 // =====================================================
 // CÁMARA — ARQUITECTURA RECUPERADA DE ASISTENCIAV1
 // =====================================================
