@@ -1396,14 +1396,22 @@ async function iniciarCamara() {
 
         await detenerCamara();
 
+        try {
 
-        await identificarQRBackend(
-          decodedText
-        );
+          await identificarQRBackend(
+            decodedText
+          );
 
+        }
 
-        cameraState.procesandoQR =
-          false;
+        finally {
+
+          cameraState.procesandoQR =
+            false;
+
+          await iniciarCamara();
+
+        }
 
       },
 
