@@ -32,7 +32,9 @@ const state = {
 
   persona: null,
 
-  usuario: null
+  usuario: null,
+
+  permisos: null
 
 };
 
@@ -184,6 +186,11 @@ if (salirBtn) {
 
       detenerCamara();
 
+      state.usuario = null;
+      state.permisos = null;
+      state.persona = null;
+      state.qr = null;
+
       mostrarVista('portal');
 
     }
@@ -247,39 +254,91 @@ if (entrarBtn) {
 
       try {
 
-        const parametros =
-          new URLSearchParams({
+        const nombreCallback =
+          'respuestaLoginMGP_' + Date.now();
 
-            action: 'apiLogin',
+        let terminado = false;
 
-            user: usuario,
+        const limpiar =
+          function() {
 
-            pass: password
+            if (
+              loginScript &&
+              loginScript.parentNode
+            ) {
+              loginScript.parentNode.removeChild(loginScript);
+            }
+
+            loginScript = null;
+
+            try {
+              delete window[nombreCallback];
+            }
+            catch (error) {
+              console.warn(
+                'No fue posible eliminar callback LOGIN:',
+                error
+              );
+            }
+
+          };
+
+        const resultado =
+          await new Promise(function(resolve, reject) {
+
+            loginScript =
+              document.createElement('script');
+
+            window[nombreCallback] =
+              function(data) {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+                resolve(data);
+
+              };
+
+            loginScript.src =
+              CONFIG.API_URL +
+              '?action=apiLogin' +
+              '&user=' + encodeURIComponent(usuario) +
+              '&pass=' + encodeURIComponent(password) +
+              '&callback=' + encodeURIComponent(nombreCallback);
+
+            loginScript.async = true;
+
+            loginScript.onerror =
+              function() {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+
+                reject(
+                  new Error(
+                    'No se pudo comunicar con el servidor.'
+                  )
+                );
+
+              };
+
+            document.head.appendChild(
+              loginScript
+            );
 
           });
 
-        const respuesta =
-          await fetch(
-            CONFIG.API_URL +
-            '?' +
-            parametros.toString(),
-            {
-              method: 'GET',
-              cache: 'no-store'
-            }
-          );
-
-        if (!respuesta.ok) {
-
-          throw new Error(
-            'El servidor respondió HTTP ' +
-            respuesta.status
-          );
-
-        }
-
-        const resultado =
-          await respuesta.json();
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
 
         console.log(
           'Respuesta LOGIN V2:',
@@ -306,9 +365,22 @@ if (entrarBtn) {
         state.usuario =
           resultado.usuario || null;
 
+        state.permisos =
+          (
+            resultado.usuario &&
+            resultado.usuario.permisos
+          ) || null;
+
+        aplicarPermisosPanel();
+
         console.log(
           'Usuario autenticado V2:',
           state.usuario
+        );
+
+        console.log(
+          'Permisos V2:',
+          state.permisos
         );
 
         if (mensaje) {
@@ -340,6 +412,116 @@ if (entrarBtn) {
 
     }
   );
+
+}
+
+
+// =====================================================
+// PERMISOS V2 - PANEL INSTITUCIONAL
+// =====================================================
+
+function aplicarPermisosPanel() {
+
+  const permisos =
+    state.permisos || {};
+
+  const controles = [
+    {
+      vista: 'registro',
+      permiso: 'registrarAsistencia'
+    },
+    {
+      vista: 'reportes',
+      permiso: 'verReportes'
+    },
+    {
+      vista: 'carnets',
+      permiso: 'administrarQR'
+    },
+    {
+      vista: 'admin',
+      permiso: 'administrarPersonas'
+    }
+  ];
+
+  controles.forEach(function(control) {
+
+    const botones =
+      document.querySelectorAll(
+        '[data-view="' +
+        control.vista +
+        '"], [data-v="' +
+        control.vista +
+        '"]'
+      );
+
+    const permitido =
+      permisos[control.permiso] === true;
+
+    botones.forEach(function(boton) {
+
+      boton.style.display =
+        permitido ? '' : 'none';
+
+      boton.disabled =
+        !permitido;
+
+    });
+
+  });
+
+}
+
+
+function tienePermisoV2(permiso) {
+
+  return !!(
+    state.permisos &&
+    state.permisos[permiso] === true
+  );
+
+}
+
+
+const mostrarVistaOriginal =
+  mostrarVista;
+
+mostrarVista = function(nombre) {
+
+  if (
+    nombre !== 'portal' &&
+    nombre !== 'consulta' &&
+    nombre !== 'login' &&
+    nombre !== 'panel'
+  ) {
+
+    const mapa = {
+      registro: 'registrarAsistencia',
+      reportes: 'verReportes',
+      carnets: 'administrarQR',
+      admin: 'administrarPersonas'
+    };
+
+    const permiso =
+      mapa[nombre];
+
+    if (
+      permiso &&
+      !tienePermisoV2(permiso)
+    ) {
+
+      console.warn(
+        'Acceso bloqueado por permisos V2:',
+        nombre
+      );
+
+      return;
+
+    }
+
+  }
+
+  mostrarVistaOriginal(nombre);
 
 }
 
@@ -759,28 +941,81 @@ async function identificarQRBackend(
     );
 
 
-    const respuesta =
-      await fetch(
-        url,
-        {
-          method: 'GET',
-          cache: 'no-store'
-        }
-      );
-
-
-    if (!respuesta.ok) {
-
-      throw new Error(
-        'El servidor respondió HTTP ' +
-        respuesta.status
-      );
-
-    }
-
+    const nombreCallback =
+      'respuestaQR_MGP_' + Date.now();
 
     const resultado =
-      await respuesta.json();
+      await new Promise(function(resolve, reject) {
+
+        const script =
+          document.createElement('script');
+
+        let terminado = false;
+
+        function limpiar() {
+
+          if (
+            script &&
+            script.parentNode
+          ) {
+            script.parentNode.removeChild(script);
+          }
+
+          try {
+            delete window[nombreCallback];
+          }
+          catch (error) {
+            console.warn(
+              'No fue posible eliminar callback QR:',
+              error
+            );
+          }
+
+        }
+
+        window[nombreCallback] =
+          function(data) {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+            resolve(data);
+
+          };
+
+        script.src =
+          url +
+          '&callback=' +
+          encodeURIComponent(nombreCallback);
+
+        script.async = true;
+
+        script.onerror =
+          function() {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+
+            reject(
+              new Error(
+                'No se pudo comunicar con el servidor.'
+              )
+            );
+
+          };
+
+        document.head.appendChild(
+          script
+        );
+
+      });
 
 
     console.log(
