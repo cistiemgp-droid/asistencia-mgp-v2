@@ -30,11 +30,11 @@ const state = {
 
   camara: false,
 
-  persona: null
+  persona: null,
+
+  usuario: null
 
 };
-
-
 // =====================================================
 // ESTADO DE CÁMARA
 // =====================================================
@@ -194,6 +194,10 @@ if (salirBtn) {
 // LOGIN
 // =====================================================
 
+// =====================================================
+// LOGIN V2
+// =====================================================
+
 const entrarBtn =
   document.getElementById('entrar') ||
   document.getElementById('entrarBtn');
@@ -202,7 +206,7 @@ if (entrarBtn) {
 
   entrarBtn.addEventListener(
     'click',
-    function() {
+    async function() {
 
       const usuarioElemento =
         document.getElementById('usuario');
@@ -226,19 +230,283 @@ if (entrarBtn) {
       if (!usuario || !password) {
 
         if (mensaje) {
+
           mensaje.textContent =
             'Ingrese usuario y contraseña.';
+
         }
 
         return;
+
       }
 
       if (mensaje) {
+
         mensaje.textContent =
-          'Acceso de prueba V2.';
+          '🔄 Verificando acceso...';
+
       }
 
-      mostrarVista('panel');
+      try {
+
+        const parametros =
+          new URLSearchParams({
+
+            action: 'apiLogin',
+
+            user: usuario,
+
+            pass: password
+
+          });
+
+        const respuesta =
+          await fetch(
+            CONFIG.API_URL +
+            '?' +
+            parametros.toString(),
+            {
+              method: 'GET',
+              cache: 'no-store'
+            }
+          );
+
+        if (!respuesta.ok) {
+
+          throw new Error(
+            'El servidor respondió HTTP ' +
+            respuesta.status
+          );
+
+        }
+
+        const resultado =
+          await respuesta.json();
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
+
+        if (!resultado.ok) {
+
+          if (mensaje) {
+
+            mensaje.textContent =
+              '❌ ' +
+              (
+                resultado.mensaje ||
+                'Usuario o contraseña incorrectos.'
+              );
+
+          }
+
+          return;
+
+        }
+
+        // =============================================
+        // GUARDAR SESIÓN V2
+        // =============================================
+
+        state.usuario =
+          resultado.usuario || null;
+
+        console.log(
+          'Usuario autenticado V2:',
+          state.usuario
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '✅ Acceso autorizado.';
+
+        }
+
+        // =============================================
+        // ENTRAR AL PANEL
+        // =============================================
+
+        mostrarVista('panel');
+
+      }
+      catch (error) {
+
+        console.error(
+          'Error en LOGIN V2:',
+          error
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '❌ No se pudo comunicar con el servidor: ' +
+            error.message;
+
+        }
+
+      }
+
+    }
+  );
+
+}
+
+// =====================================================
+// LOGIN V2
+// =====================================================
+
+const entrarBtn =
+  document.getElementById('entrar') ||
+  document.getElementById('entrarBtn');
+
+if (entrarBtn) {
+
+  entrarBtn.addEventListener(
+    'click',
+    async function() {
+
+      const usuarioElemento =
+        document.getElementById('usuario');
+
+      const passwordElemento =
+        document.getElementById('password');
+
+      const mensaje =
+        document.getElementById('loginMsg');
+
+      const usuario =
+        usuarioElemento
+          ? usuarioElemento.value.trim()
+          : '';
+
+      const password =
+        passwordElemento
+          ? passwordElemento.value.trim()
+          : '';
+
+      if (!usuario || !password) {
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            'Ingrese usuario y contraseña.';
+
+        }
+
+        return;
+
+      }
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '🔄 Verificando acceso...';
+
+      }
+
+      try {
+
+        const parametros =
+          new URLSearchParams({
+
+            action: 'apiLogin',
+
+            user: usuario,
+
+            pass: password
+
+          });
+
+        const respuesta =
+          await fetch(
+            CONFIG.API_URL +
+            '?' +
+            parametros.toString(),
+            {
+              method: 'GET',
+              cache: 'no-store'
+            }
+          );
+
+        if (!respuesta.ok) {
+
+          throw new Error(
+            'El servidor respondió HTTP ' +
+            respuesta.status
+          );
+
+        }
+
+        const resultado =
+          await respuesta.json();
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
+
+        if (!resultado.ok) {
+
+          if (mensaje) {
+
+            mensaje.textContent =
+              '❌ ' +
+              (
+                resultado.mensaje ||
+                'Usuario o contraseña incorrectos.'
+              );
+
+          }
+
+          return;
+
+        }
+
+        // =============================================
+        // GUARDAR SESIÓN V2
+        // =============================================
+
+        state.usuario =
+          resultado.usuario || null;
+
+        console.log(
+          'Usuario autenticado V2:',
+          state.usuario
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '✅ Acceso autorizado.';
+
+        }
+
+        // =============================================
+        // ENTRAR AL PANEL
+        // SOLO SI EL SERVIDOR AUTORIZÓ
+        // =============================================
+
+        mostrarVista('panel');
+
+      }
+      catch (error) {
+
+        console.error(
+          'Error en LOGIN V2:',
+          error
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '❌ No se pudo comunicar con el servidor: ' +
+            error.message;
+
+        }
+
+      }
 
     }
   );
