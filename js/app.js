@@ -152,6 +152,23 @@ document
 
           const permiso = mapaPermisos[destino];
 
+          const rolActual =
+            String(
+              (state.usuario && state.usuario.rol) || ''
+            ).trim().toUpperCase();
+
+          if (
+            rolActual === 'AUXILIAR' ||
+            rolActual === 'DIRECTOR'
+          ) {
+            if (
+              destino !== 'registro' &&
+              destino !== 'reportes'
+            ) {
+              return;
+            }
+          }
+
           if (
             permiso &&
             (!state.permisos || state.permisos[permiso] !== true)
@@ -473,6 +490,11 @@ function aplicarPermisosPanel() {
   // El frontend solo refleja esos permisos en el panel.
   const permisos = state.permisos || {};
 
+  const rol =
+    String(
+      (state.usuario && state.usuario.rol) || ''
+    ).trim().toUpperCase();
+
   const controles = [
     {
       vista: 'registro',
@@ -499,7 +521,22 @@ function aplicarPermisosPanel() {
       '[data-v="' + control.vista + '"]'
     );
 
+    // AUXILIAR y DIRECTOR solo muestran Registro y Reportes.
+    // ADMIN conserva acceso a los módulos administrativos
+    // según los permisos entregados por el backend.
+    let permitidoPorRol = true;
+
+    if (
+      rol === 'AUXILIAR' ||
+      rol === 'DIRECTOR'
+    ) {
+      permitidoPorRol =
+        control.vista === 'registro' ||
+        control.vista === 'reportes';
+    }
+
     const permitido =
+      permitidoPorRol &&
       permisos[control.permiso] === true;
 
     botones.forEach(function(boton) {
