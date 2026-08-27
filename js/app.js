@@ -318,7 +318,6 @@ if (entrarBtn) {
             state.permisos =
               resultado.usuario.permisos;
 
-
             if (mensaje) {
               mensaje.textContent =
                 '✅ Acceso autorizado.';
@@ -409,75 +408,6 @@ if (entrarBtn) {
   );
 
 }
-
-function tienePermisoV2(permiso) {
-
-  return !!(
-    state.permisos &&
-    state.permisos[permiso] === true
-  );
-
-}
-
-
-function puedeAccederVistaV2(nombreVista) {
-
-  const mapa = {
-
-    registro:
-      'registrarAsistencia',
-
-    reportes:
-      'verReportes',
-
-    carnets:
-      'administrarQR',
-
-    admin:
-      'administrarPersonas'
-
-  };
-
-  const permiso =
-    mapa[nombreVista];
-
-  if (!permiso) {
-
-    return true;
-
-  }
-
-  return tienePermisoV2(permiso);
-
-}
-
-
-const mostrarVistaOriginal =
-  mostrarVista;
-
-mostrarVista = function(nombre) {
-
-  if (
-    nombre !== 'portal' &&
-    nombre !== 'consulta' &&
-    nombre !== 'login' &&
-    nombre !== 'panel' &&
-    !puedeAccederVistaV2(nombre)
-  ) {
-
-    console.warn(
-      'Acceso bloqueado por permisos V2:',
-      nombre
-    );
-
-    return;
-
-  }
-
-  mostrarVistaOriginal(nombre);
-
-};
-
 
 // =====================================================
 // TIPO DE PERSONA
