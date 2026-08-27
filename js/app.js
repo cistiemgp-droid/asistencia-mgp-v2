@@ -143,6 +143,22 @@ document
 
         if (destino) {
 
+          const mapaPermisos = {
+            registro: 'registrarAsistencia',
+            reportes: 'verReportes',
+            carnets: 'administrarQR',
+            admin: 'administrarPersonas'
+          };
+
+          const permiso = mapaPermisos[destino];
+
+          if (
+            permiso &&
+            (!state.permisos || state.permisos[permiso] !== true)
+          ) {
+            return;
+          }
+
           mostrarVista(destino);
 
         }
@@ -453,15 +469,50 @@ if (entrarBtn) {
 
 function aplicarPermisosPanel() {
 
-  /*
-   * Las vistas Registro, Reportes, Carnets y Administración
-   * NO se ocultan ni se deshabilitan por rol.
-   *
-   * Los permisos autorizan las operaciones internas mediante
-   * el backend. La navegación del panel permanece intacta.
-   */
+  // El backend determina los permisos.
+  // El frontend solo refleja esos permisos en el panel.
+  const permisos = state.permisos || {};
 
-  return;
+  const controles = [
+    {
+      vista: 'registro',
+      permiso: 'registrarAsistencia'
+    },
+    {
+      vista: 'reportes',
+      permiso: 'verReportes'
+    },
+    {
+      vista: 'carnets',
+      permiso: 'administrarQR'
+    },
+    {
+      vista: 'admin',
+      permiso: 'administrarPersonas'
+    }
+  ];
+
+  controles.forEach(function(control) {
+
+    const botones = document.querySelectorAll(
+      '[data-view="' + control.vista + '"], ' +
+      '[data-v="' + control.vista + '"]'
+    );
+
+    const permitido =
+      permisos[control.permiso] === true;
+
+    botones.forEach(function(boton) {
+
+      boton.style.display =
+        permitido ? '' : 'none';
+
+      boton.disabled =
+        !permitido;
+
+    });
+
+  });
 
 }
 
