@@ -318,6 +318,8 @@ if (entrarBtn) {
             state.permisos =
               resultado.usuario.permisos;
 
+            aplicarPermisosPanel();
+
             if (mensaje) {
               mensaje.textContent =
                 '✅ Acceso autorizado.';
@@ -408,6 +410,84 @@ if (entrarBtn) {
   );
 
 }
+
+// =====================================================
+// PERMISOS V2 - PANEL INSTITUCIONAL
+// PERMISOS V2 - PANEL INSTITUCIONAL
+// =====================================================
+// El servidor determina los permisos.
+// El frontend solo refleja esos permisos.
+// =====================================================
+
+function aplicarPermisosPanel() {
+
+  const permisos =
+    state.permisos || {};
+
+  const controles = [
+
+    {
+      vista: 'registro',
+      permiso: 'registrarAsistencia'
+    },
+
+    {
+      vista: 'reportes',
+      permiso: 'verReportes'
+    },
+
+    {
+      vista: 'carnets',
+      permiso: 'administrarQR'
+    },
+
+    {
+      vista: 'admin',
+      permiso: 'administrarPersonas'
+    }
+
+  ];
+
+  controles.forEach(function(control) {
+
+    const botones =
+      document.querySelectorAll(
+        '[data-view="' +
+        control.vista +
+        '"], [data-v="' +
+        control.vista +
+        '"]'
+      );
+
+    const permitido =
+      permisos[control.permiso] === true;
+
+    botones.forEach(function(boton) {
+
+      boton.style.display =
+        permitido
+          ? ''
+          : 'none';
+
+      boton.disabled =
+        !permitido;
+
+    });
+
+  });
+
+}
+
+
+function tienePermisoV2(permiso) {
+
+  return !!(
+    state.permisos &&
+    state.permisos[permiso] === true
+  );
+
+}
+
 
 // =====================================================
 // TIPO DE PERSONA
@@ -1132,6 +1212,11 @@ function registrarAsistenciaBackend(id) {
       '&id=' + encodeURIComponent(idLimpio) +
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
+      '&token=' + encodeURIComponent(
+        state.usuario && state.usuario.token
+          ? state.usuario.token
+          : ''
+      ) +
       '&callback=respuestaRegistroMGP';
 
     registroScript.onerror =
