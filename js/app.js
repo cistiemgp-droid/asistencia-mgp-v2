@@ -227,13 +227,14 @@ if (homeBtn) {
 
 // =====================================================
 // RETORNO AL PANEL INSTITUCIONAL
-// CORRECCIÓN FINAL AISLADA
+// CORRECCIÓN AISLADA - NO INTERCEPTAR OTROS CLICS
 // =====================================================
-// ASISTENCIAV2 es una SPA. Registro y Reportes están dentro
-// del mismo index/app.js. El retorno se resuelve por el
-// elemento real pulsado, incluyendo botones, enlaces,
-// elementos con onclick/data-view/data-v y contenedores.
-// SOLO actúa estando en Registro o Reportes.
+// IMPORTANTE:
+// Este manejador SOLO responde cuando el elemento pulsado
+// es realmente un control de retorno al Panel.
+// NO analiza textContent de contenedores padres, porque eso
+// provocaba que cualquier clic dentro de Registro/Reportes
+// pudiera interpretarse como "Panel Institucional".
 // =====================================================
 
 document.addEventListener(
@@ -258,84 +259,99 @@ document.addEventListener(
       return;
     }
 
-    let elemento =
-      evento.target;
+    // Solo el elemento de control realmente pulsado.
+    // No subir por los contenedores buscando texto.
+    const boton =
+      evento.target.closest(
+        'button, a, [role="button"], [data-view], [data-v]'
+      );
 
-    let encontrado = null;
-
-    while (
-      elemento &&
-      elemento !== document.body
-    ) {
-
-      const texto =
-        String(
-          elemento.textContent ||
-          elemento.getAttribute('aria-label') ||
-          elemento.getAttribute('title') ||
-          ''
-        )
-          .replace(/\s+/g, ' ')
-          .trim()
-          .toLowerCase();
-
-      const id =
-        String(elemento.id || '')
-          .toLowerCase();
-
-      const clase =
-        String(elemento.className || '')
-          .toLowerCase();
-
-      const dataView =
-        String(
-          elemento.getAttribute('data-view') ||
-          elemento.getAttribute('data-v') ||
-          ''
-        )
-          .trim()
-          .toLowerCase();
-
-      const onclick =
-        String(
-          elemento.getAttribute('onclick') || ''
-        )
-          .toLowerCase()
-          .replace(/\s+/g, '');
-
-      const apuntaPanel =
-        dataView === 'panel' ||
-        onclick.includes("mostrarvista('panel')") ||
-        onclick.includes('mostrarvista("panel")') ||
-        onclick.includes('mostrarvista(panel)');
-
-      const esRetorno =
-        texto.includes('panel institucional') ||
-        texto.includes('volver al panel') ||
-        texto.includes('regresar al panel') ||
-        texto.includes('retornar al panel') ||
-        texto.includes('volver a panel') ||
-        texto.includes('regresar a panel') ||
-        texto.includes('retornar a panel') ||
-        id.includes('panelinstitucional') ||
-        id.includes('volverpanel') ||
-        id.includes('regresarpanel') ||
-        id.includes('retornarpanel') ||
-        clase.includes('panel-institucional') ||
-        clase.includes('volver-panel') ||
-        clase.includes('regresar-panel') ||
-        clase.includes('retornar-panel');
-
-      if (apuntaPanel || esRetorno) {
-        encontrado = elemento;
-        break;
-      }
-
-      elemento =
-        elemento.parentElement;
+    if (!boton) {
+      return;
     }
 
-    if (!encontrado) {
+    // El control debe estar dentro de Registro o Reportes.
+    if (
+      !(
+        registro &&
+        registro.contains(boton)
+      ) &&
+      !(
+        reportes &&
+        reportes.contains(boton)
+      )
+    ) {
+      return;
+    }
+
+    const id =
+      String(boton.id || '')
+        .toLowerCase();
+
+    const clase =
+      String(boton.className || '')
+        .toLowerCase();
+
+    const texto =
+      String(
+        boton.textContent ||
+        boton.getAttribute('aria-label') ||
+        boton.getAttribute('title') ||
+        ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+    const dataView =
+      String(
+        boton.getAttribute('data-view') ||
+        boton.getAttribute('data-v') ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const href =
+      String(
+        boton.getAttribute('href') || ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const onclick =
+      String(
+        boton.getAttribute('onclick') || ''
+      )
+        .toLowerCase()
+        .replace(/\s+/g, '');
+
+    const apuntaPanel =
+      dataView === 'panel' ||
+      href === '#panel' ||
+      href.endsWith('#panel') ||
+      onclick.includes("mostrarvista('panel')") ||
+      onclick.includes('mostrarvista("panel")') ||
+      onclick.includes('mostrarvista(panel)');
+
+    const esRetorno =
+      texto.includes('panel institucional') ||
+      texto.includes('volver al panel') ||
+      texto.includes('regresar al panel') ||
+      texto.includes('retornar al panel') ||
+      texto.includes('volver a panel') ||
+      texto.includes('regresar a panel') ||
+      texto.includes('retornar a panel') ||
+      id.includes('panelinstitucional') ||
+      id.includes('volverpanel') ||
+      id.includes('regresarpanel') ||
+      id.includes('retornarpanel') ||
+      clase.includes('panel-institucional') ||
+      clase.includes('volver-panel') ||
+      clase.includes('regresar-panel') ||
+      clase.includes('retornar-panel');
+
+    if (!apuntaPanel && !esRetorno) {
       return;
     }
 
