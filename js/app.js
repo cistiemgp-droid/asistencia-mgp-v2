@@ -228,155 +228,52 @@ if (homeBtn) {
 // =====================================================
 // RETORNO AL PANEL INSTITUCIONAL
 // =====================================================
-// CORRECCIÓN EXCLUSIVA DE LOS BOTONES DE RETORNO.
-// Se atienden los botones reales dentro de REGISTRO y
-// REPORTES aunque el HTML use texto, id, clase, href,
-// data-v/data-view u onclick.
-// No modifica cámara, QR, permisos ni registro.
+// ASISTENCIAV2 es una SPA: Registro y Reportes son vistas
+// del mismo index.html. Esta captura atiende botones cuyo
+// texto/aria-label indica retorno al Panel, sin tocar sus
+// funciones de registro, QR o reportes.
 // =====================================================
 
 document.addEventListener(
   'click',
   function(evento) {
 
-    // Solo actuar cuando estamos en REGISTRO o REPORTES.
-    const registro =
-      document.getElementById('registro');
-
-    const reportes =
-      document.getElementById('reportes');
-
-    const enRegistro =
-      registro &&
-      registro.classList.contains('active');
-
-    const enReportes =
-      reportes &&
-      reportes.classList.contains('active');
-
-    if (!enRegistro && !enReportes) {
-      return;
-    }
-
-    // Buscar el control clickeado y sus ancestros.
-    let elemento =
-      evento.target;
-
-    let boton = null;
-
-    while (
-      elemento &&
-      elemento !== document.body
-    ) {
-
-      const tag =
-        String(elemento.tagName || '')
-          .toLowerCase();
-
-      const id =
-        String(elemento.id || '')
-          .toLowerCase();
-
-      const clase =
-        String(elemento.className || '')
-          .toLowerCase();
-
-      const texto =
-        String(
-          elemento.textContent ||
-          elemento.getAttribute('aria-label') ||
-          elemento.title ||
-          ''
-        )
-          .replace(/\s+/g, ' ')
-          .trim()
-          .toLowerCase();
-
-      const dataView =
-        String(
-          elemento.getAttribute('data-view') ||
-          elemento.getAttribute('data-v') ||
-          ''
-        )
-          .trim()
-          .toLowerCase();
-
-      const href =
-        String(
-          elemento.getAttribute('href') || ''
-        )
-          .trim()
-          .toLowerCase();
-
-      const onclick =
-        String(
-          elemento.getAttribute('onclick') || ''
-        )
-          .toLowerCase();
-
-      const esControl =
-        tag === 'button' ||
-        tag === 'a' ||
-        elemento.getAttribute('role') === 'button' ||
-        id.includes('panel') ||
-        id.includes('volver') ||
-        id.includes('regresar') ||
-        id.includes('retornar') ||
-        clase.includes('panel') ||
-        clase.includes('volver') ||
-        clase.includes('regresar') ||
-        clase.includes('retornar');
-
-      if (esControl) {
-
-        const apuntaPanel =
-          dataView === 'panel' ||
-          href.includes('#panel') ||
-          onclick.includes("mostrarvista('panel')") ||
-          onclick.includes('mostrarvista("panel")') ||
-          onclick.includes('panel');
-
-        const textoRetorno =
-          texto.includes('panel institucional') ||
-          texto.includes('volver al panel') ||
-          texto.includes('regresar al panel') ||
-          texto.includes('retornar al panel') ||
-          texto.includes('volver a panel') ||
-          texto.includes('regresar a panel') ||
-          texto.includes('retornar a panel') ||
-          texto === 'panel' ||
-          texto === 'inicio';
-
-        if (apuntaPanel || textoRetorno) {
-          boton = elemento;
-          break;
-        }
-
-      }
-
-      elemento =
-        elemento.parentElement;
-
-    }
+    const boton =
+      evento.target.closest(
+        'button, a, [role="button"]'
+      );
 
     if (!boton) {
       return;
     }
 
-    // Evitar que href, onclick u otros listeners
-    // cambien la vista antes de nuestra navegación.
-    evento.preventDefault();
-    evento.stopPropagation();
-    evento.stopImmediatePropagation();
+    const texto =
+      (
+        boton.textContent ||
+        boton.getAttribute('aria-label') ||
+        boton.title ||
+        ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toUpperCase();
+
+    if (
+      texto.indexOf('PANEL INSTITUCIONAL') === -1
+    ) {
+      return;
+    }
 
     if (
       state.usuario &&
       state.token
     ) {
+
+      evento.preventDefault();
+      evento.stopImmediatePropagation();
+
       mostrarVista('panel');
-    }
-    else {
-      mostrarVista('portal');
+
     }
 
   },
