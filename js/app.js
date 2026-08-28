@@ -199,27 +199,86 @@ if (homeBtn) {
     'click',
     function() {
 
-      // Con sesión institucional activa:
-      // volver al Panel Institucional.
-      // Sin sesión: permanecer/regresar al Portal.
+      const portal =
+        document.getElementById('portal');
+
+      if (
+        portal &&
+        portal.classList.contains('active')
+      ) {
+        return;
+      }
+
       if (
         state.usuario &&
         state.token
       ) {
-
         mostrarVista('panel');
-
       }
       else {
-
         mostrarVista('portal');
-
       }
 
     }
   );
 
 }
+
+
+// =====================================================
+// RETORNO AL PANEL INSTITUCIONAL
+// =====================================================
+// ASISTENCIAV2 es una SPA: Registro y Reportes son vistas
+// del mismo index.html. Esta captura atiende botones cuyo
+// texto/aria-label indica retorno al Panel, sin tocar sus
+// funciones de registro, QR o reportes.
+// =====================================================
+
+document.addEventListener(
+  'click',
+  function(evento) {
+
+    const boton =
+      evento.target.closest(
+        'button, a, [role="button"]'
+      );
+
+    if (!boton) {
+      return;
+    }
+
+    const texto =
+      (
+        boton.textContent ||
+        boton.getAttribute('aria-label') ||
+        boton.title ||
+        ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toUpperCase();
+
+    if (
+      texto.indexOf('PANEL INSTITUCIONAL') === -1
+    ) {
+      return;
+    }
+
+    if (
+      state.usuario &&
+      state.token
+    ) {
+
+      evento.preventDefault();
+      evento.stopImmediatePropagation();
+
+      mostrarVista('panel');
+
+    }
+
+  },
+  true
+);
 
 
 // =====================================================
