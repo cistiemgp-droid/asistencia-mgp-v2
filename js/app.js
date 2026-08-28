@@ -2733,9 +2733,10 @@ if (dniBtn) {
       }
 
 
-      mensaje.textContent =
-        'Registro excepcional por DNI preparado. ' +
-        'Método: DNI.';
+      // El DNI manual debe registrarse usando exactamente
+      // la misma rutina de asistencia V2 utilizada por QR.
+      // No se modifica ninguna otra función.
+      registrarAsistenciaBackend(dni);
 
     }
   );
