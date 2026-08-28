@@ -227,54 +227,130 @@ if (homeBtn) {
 
 // =====================================================
 // RETORNO AL PANEL INSTITUCIONAL
+// CORRECCIÓN FINAL AISLADA
 // =====================================================
-// ASISTENCIAV2 es una SPA: Registro y Reportes son vistas
-// del mismo index.html. Esta captura atiende botones cuyo
-// texto/aria-label indica retorno al Panel, sin tocar sus
-// funciones de registro, QR o reportes.
+// ASISTENCIAV2 es una SPA. Registro y Reportes están dentro
+// del mismo index/app.js. El retorno se resuelve por el
+// elemento real pulsado, incluyendo botones, enlaces,
+// elementos con onclick/data-view/data-v y contenedores.
+// SOLO actúa estando en Registro o Reportes.
 // =====================================================
 
 document.addEventListener(
   'click',
   function(evento) {
 
-    const boton =
-      evento.target.closest(
-        'button, a, [role="button"]'
-      );
+    const registro =
+      document.getElementById('registro');
 
-    if (!boton) {
+    const reportes =
+      document.getElementById('reportes');
+
+    const enRegistro =
+      registro &&
+      registro.classList.contains('active');
+
+    const enReportes =
+      reportes &&
+      reportes.classList.contains('active');
+
+    if (!enRegistro && !enReportes) {
       return;
     }
 
-    const texto =
-      (
-        boton.textContent ||
-        boton.getAttribute('aria-label') ||
-        boton.title ||
-        ''
-      )
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toUpperCase();
+    let elemento =
+      evento.target;
+
+    let encontrado = null;
+
+    while (
+      elemento &&
+      elemento !== document.body
+    ) {
+
+      const texto =
+        String(
+          elemento.textContent ||
+          elemento.getAttribute('aria-label') ||
+          elemento.getAttribute('title') ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+
+      const id =
+        String(elemento.id || '')
+          .toLowerCase();
+
+      const clase =
+        String(elemento.className || '')
+          .toLowerCase();
+
+      const dataView =
+        String(
+          elemento.getAttribute('data-view') ||
+          elemento.getAttribute('data-v') ||
+          ''
+        )
+          .trim()
+          .toLowerCase();
+
+      const onclick =
+        String(
+          elemento.getAttribute('onclick') || ''
+        )
+          .toLowerCase()
+          .replace(/\s+/g, '');
+
+      const apuntaPanel =
+        dataView === 'panel' ||
+        onclick.includes("mostrarvista('panel')") ||
+        onclick.includes('mostrarvista("panel")') ||
+        onclick.includes('mostrarvista(panel)');
+
+      const esRetorno =
+        texto.includes('panel institucional') ||
+        texto.includes('volver al panel') ||
+        texto.includes('regresar al panel') ||
+        texto.includes('retornar al panel') ||
+        texto.includes('volver a panel') ||
+        texto.includes('regresar a panel') ||
+        texto.includes('retornar a panel') ||
+        id.includes('panelinstitucional') ||
+        id.includes('volverpanel') ||
+        id.includes('regresarpanel') ||
+        id.includes('retornarpanel') ||
+        clase.includes('panel-institucional') ||
+        clase.includes('volver-panel') ||
+        clase.includes('regresar-panel') ||
+        clase.includes('retornar-panel');
+
+      if (apuntaPanel || esRetorno) {
+        encontrado = elemento;
+        break;
+      }
+
+      elemento =
+        elemento.parentElement;
+    }
+
+    if (!encontrado) {
+      return;
+    }
 
     if (
-      texto.indexOf('PANEL INSTITUCIONAL') === -1
+      !state.usuario ||
+      !state.token
     ) {
       return;
     }
 
-    if (
-      state.usuario &&
-      state.token
-    ) {
+    evento.preventDefault();
+    evento.stopPropagation();
+    evento.stopImmediatePropagation();
 
-      evento.preventDefault();
-      evento.stopImmediatePropagation();
-
-      mostrarVista('panel');
-
-    }
+    mostrarVista('panel');
 
   },
   true
