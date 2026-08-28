@@ -30,7 +30,15 @@ const state = {
 
   camara: false,
 
-  persona: null
+  persona: null,
+
+  usuario: null,
+
+  permisos: null,
+
+  // Sesión institucional V2
+  token: null,
+  expiraSesion: null
 
 };
 
@@ -135,6 +143,39 @@ document
 
         if (destino) {
 
+          const mapaPermisos = {
+            registro: 'registrarAsistencia',
+            reportes: 'verReportes',
+            carnets: 'administrarQR',
+            admin: 'administrarPersonas'
+          };
+
+          const permiso = mapaPermisos[destino];
+
+          const rolActual =
+            String(
+              (state.usuario && state.usuario.rol) || ''
+            ).trim().toUpperCase();
+
+          if (
+            rolActual === 'AUXILIAR' ||
+            rolActual === 'DIRECTOR'
+          ) {
+            if (
+              destino !== 'registro' &&
+              destino !== 'reportes'
+            ) {
+              return;
+            }
+          }
+
+          if (
+            permiso &&
+            (!state.permisos || state.permisos[permiso] !== true)
+          ) {
+            return;
+          }
+
           mostrarVista(destino);
 
         }
@@ -158,12 +199,279 @@ if (homeBtn) {
     'click',
     function() {
 
-      mostrarVista('portal');
+      const portal =
+        document.getElementById('portal');
+
+      if (
+        portal &&
+        portal.classList.contains('active')
+      ) {
+        return;
+      }
+
+      if (
+        state.usuario &&
+        state.token
+      ) {
+        mostrarVista('panel');
+      }
+      else {
+        mostrarVista('portal');
+      }
 
     }
   );
 
 }
+
+
+// =====================================================
+// RETORNO AL PANEL INSTITUCIONAL
+// CORRECCIÓN AISLADA - NO INTERCEPTAR OTROS CLICS
+// =====================================================
+// IMPORTANTE:
+// Este manejador SOLO responde cuando el elemento pulsado
+// es realmente un control de retorno al Panel.
+// NO analiza textContent de contenedores padres, porque eso
+// provocaba que cualquier clic dentro de Registro/Reportes
+// pudiera interpretarse como "Panel Institucional".
+// =====================================================
+
+document.addEventListener(
+  'click',
+  function(evento) {
+
+    const registro =
+      document.getElementById('registro');
+
+    const reportes =
+      document.getElementById('reportes');
+
+    const enRegistro =
+      registro &&
+      registro.classList.contains('active');
+
+    const enReportes =
+      reportes &&
+      reportes.classList.contains('active');
+
+    if (!enRegistro && !enReportes) {
+      return;
+    }
+
+    // Solo el elemento de control realmente pulsado.
+    // No subir por los contenedores buscando texto.
+    const boton =
+      evento.target.closest(
+        'button, a, [role="button"], [data-view], [data-v]'
+      );
+
+    if (!boton) {
+      return;
+    }
+
+    // El control debe estar dentro de Registro o Reportes.
+    if (
+      !(
+        registro &&
+        registro.contains(boton)
+      ) &&
+      !(
+        reportes &&
+        reportes.contains(boton)
+      )
+    ) {
+      return;
+    }
+
+    const id =
+      String(boton.id || '')
+        .toLowerCase();
+
+    const clase =
+      String(boton.className || '')
+        .toLowerCase();
+
+    const texto =
+      String(
+        boton.textContent ||
+        boton.getAttribute('aria-label') ||
+        boton.getAttribute('title') ||
+        ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+    const dataView =
+      String(
+        boton.getAttribute('data-view') ||
+        boton.getAttribute('data-v') ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const href =
+      String(
+        boton.getAttribute('href') || ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const onclick =
+      String(
+        boton.getAttribute('onclick') || ''
+      )
+        .toLowerCase()
+        .replace(/\s+/g, '');
+
+    const apuntaPanel =
+      dataView === 'panel' ||
+      href === '#panel' ||
+      href.endsWith('#panel') ||
+      onclick.includes("mostrarvista('panel')") ||
+      onclick.includes('mostrarvista("panel")') ||
+      onclick.includes('mostrarvista(panel)');
+
+    const esRetorno =
+      texto.includes('panel institucional') ||
+      texto.includes('volver al panel') ||
+      texto.includes('regresar al panel') ||
+      texto.includes('retornar al panel') ||
+      texto.includes('volver a panel') ||
+      texto.includes('regresar a panel') ||
+      texto.includes('retornar a panel') ||
+      id.includes('panelinstitucional') ||
+      id.includes('volverpanel') ||
+      id.includes('regresarpanel') ||
+      id.includes('retornarpanel') ||
+      clase.includes('panel-institucional') ||
+      clase.includes('volver-panel') ||
+      clase.includes('regresar-panel') ||
+      clase.includes('retornar-panel');
+
+    if (!apuntaPanel && !esRetorno) {
+      return;
+    }
+
+    if (
+      !state.usuario ||
+      !state.token
+    ) {
+      return;
+    }
+
+    evento.preventDefault();
+    evento.stopPropagation();
+    evento.stopImmediatePropagation();
+
+    mostrarVista('panel');
+
+  },
+  true
+);
+
+
+// =====================================================
+// BOTONES DEL PORTAL V2
+// CORRECCIÓN AISLADA DE NAVEGACIÓN
+// =====================================================
+// Los botones del Portal pueden existir con data-v/data-view,
+// id, texto o onclick según la versión del index actual.
+// Aquí resolvemos únicamente CONSULTAS y ACCESO INSTITUCIONAL.
+// No modifica la lógica de sesión, permisos, QR ni asistencia.
+// =====================================================
+
+document.addEventListener(
+  'click',
+  function(evento) {
+
+    const portal =
+      document.getElementById('portal');
+
+    if (
+      !portal ||
+      !portal.classList.contains('active')
+    ) {
+      return;
+    }
+
+    const boton =
+      evento.target.closest(
+        'button, a, [role="button"]'
+      );
+
+    if (!boton) {
+      return;
+    }
+
+    const id =
+      String(boton.id || '')
+        .toLowerCase();
+
+    const clase =
+      String(boton.className || '')
+        .toLowerCase();
+
+    const texto =
+      String(
+        boton.textContent ||
+        boton.getAttribute('aria-label') ||
+        boton.title ||
+        ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+    const dataView =
+      String(
+        boton.getAttribute('data-view') ||
+        boton.getAttribute('data-v') ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    let destino = '';
+
+    // CONSULTAS
+    if (
+      dataView === 'consulta' ||
+      id.includes('consulta') ||
+      clase.includes('consulta') ||
+      texto.includes('consultas') ||
+      texto === 'consulta'
+    ) {
+      destino = 'consulta';
+    }
+
+    // ACCESO INSTITUCIONAL / LOGIN
+    else if (
+      dataView === 'login' ||
+      id.includes('institucional') ||
+      id.includes('login') ||
+      clase.includes('institucional') ||
+      clase.includes('login') ||
+      texto.includes('acceso institucional') ||
+      texto.includes('acceso institucional')
+    ) {
+      destino = 'login';
+    }
+
+    if (!destino) {
+      return;
+    }
+
+    evento.preventDefault();
+    evento.stopImmediatePropagation();
+
+    mostrarVista(destino);
+
+  },
+  true
+);
 
 
 // =====================================================
@@ -182,6 +490,13 @@ if (salirBtn) {
 
       detenerCamara();
 
+      state.usuario = null;
+      state.permisos = null;
+      state.token = null;
+      state.expiraSesion = null;
+      state.persona = null;
+      state.qr = null;
+
       mostrarVista('portal');
 
     }
@@ -191,7 +506,7 @@ if (salirBtn) {
 
 
 // =====================================================
-// LOGIN
+// LOGIN V2
 // =====================================================
 
 const entrarBtn =
@@ -202,7 +517,7 @@ if (entrarBtn) {
 
   entrarBtn.addEventListener(
     'click',
-    function() {
+    async function() {
 
       const usuarioElemento =
         document.getElementById('usuario');
@@ -226,24 +541,286 @@ if (entrarBtn) {
       if (!usuario || !password) {
 
         if (mensaje) {
+
           mensaje.textContent =
             'Ingrese usuario y contraseña.';
+
         }
 
         return;
+
       }
 
       if (mensaje) {
+
         mensaje.textContent =
-          'Acceso de prueba V2.';
+          '🔄 Verificando acceso...';
+
       }
 
-      mostrarVista('panel');
+      try {
+
+        const nombreCallback =
+          'respuestaLoginMGP_' + Date.now();
+
+        let terminado = false;
+
+        const limpiar =
+          function() {
+
+            if (
+              loginScript &&
+              loginScript.parentNode
+            ) {
+              loginScript.parentNode.removeChild(loginScript);
+            }
+
+            loginScript = null;
+
+            try {
+              delete window[nombreCallback];
+            }
+            catch (error) {
+              console.warn(
+                'No fue posible eliminar callback LOGIN:',
+                error
+              );
+            }
+
+          };
+
+        const resultado =
+          await new Promise(function(resolve, reject) {
+
+            loginScript =
+              document.createElement('script');
+
+            window[nombreCallback] =
+              function(data) {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+                resolve(data);
+
+              };
+
+            loginScript.src =
+              CONFIG.API_URL +
+              '?action=apiLogin' +
+              '&user=' + encodeURIComponent(usuario) +
+              '&pass=' + encodeURIComponent(password) +
+              '&callback=' + encodeURIComponent(nombreCallback);
+
+            loginScript.async = true;
+
+            loginScript.onerror =
+              function() {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+
+                reject(
+                  new Error(
+                    'No se pudo comunicar con el servidor.'
+                  )
+                );
+
+              };
+
+            document.head.appendChild(
+              loginScript
+            );
+
+          });
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
+
+        if (!resultado.ok) {
+
+          if (mensaje) {
+
+            mensaje.textContent =
+              '❌ ' +
+              (
+                resultado.mensaje ||
+                'Usuario o contraseña incorrectos.'
+              );
+
+          }
+
+          return;
+
+        }
+
+        state.usuario =
+          resultado.usuario || null;
+
+        state.permisos =
+          (
+            resultado.usuario &&
+            resultado.usuario.permisos
+          ) || null;
+
+        state.token =
+          (
+            resultado.usuario &&
+            resultado.usuario.token
+          ) || null;
+
+        state.expiraSesion =
+          (
+            resultado.usuario &&
+            resultado.usuario.expiraSesion
+          ) || null;
+
+        if (!state.token) {
+          if (mensaje) {
+            mensaje.textContent =
+              '❌ El servidor no devolvió una sesión institucional válida.';
+          }
+
+          console.error(
+            'LOGIN V2 sin token de sesión.'
+          );
+
+          return;
+        }
+
+        aplicarPermisosPanel();
+
+        console.log(
+          'Usuario autenticado V2:',
+          state.usuario
+        );
+
+        console.log(
+          'Permisos V2:',
+          state.permisos
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '✅ Acceso autorizado.';
+
+        }
+
+        mostrarVista('panel');
+
+      }
+      catch (error) {
+
+        console.error(
+          'Error en LOGIN V2:',
+          error
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '❌ No se pudo comunicar con el servidor: ' +
+            error.message;
+
+        }
+
+      }
 
     }
   );
 
 }
+
+
+// =====================================================
+// PERMISOS V2 - PANEL INSTITUCIONAL
+// =====================================================
+
+function aplicarPermisosPanel() {
+
+  // El backend determina los permisos.
+  // El frontend solo refleja esos permisos en el panel.
+  const permisos = state.permisos || {};
+
+  const rol =
+    String(
+      (state.usuario && state.usuario.rol) || ''
+    ).trim().toUpperCase();
+
+  const controles = [
+    {
+      vista: 'registro',
+      permiso: 'registrarAsistencia'
+    },
+    {
+      vista: 'reportes',
+      permiso: 'verReportes'
+    },
+    {
+      vista: 'carnets',
+      permiso: 'administrarQR'
+    },
+    {
+      vista: 'admin',
+      permiso: 'administrarPersonas'
+    }
+  ];
+
+  controles.forEach(function(control) {
+
+    const botones = document.querySelectorAll(
+      '[data-view="' + control.vista + '"], ' +
+      '[data-v="' + control.vista + '"]'
+    );
+
+    // AUXILIAR y DIRECTOR solo muestran Registro y Reportes.
+    // ADMIN conserva acceso a los módulos administrativos
+    // según los permisos entregados por el backend.
+    let permitidoPorRol = true;
+
+    if (
+      rol === 'AUXILIAR' ||
+      rol === 'DIRECTOR'
+    ) {
+      permitidoPorRol =
+        control.vista === 'registro' ||
+        control.vista === 'reportes';
+    }
+
+    const permitido =
+      permitidoPorRol &&
+      permisos[control.permiso] === true;
+
+    botones.forEach(function(boton) {
+
+      boton.style.display =
+        permitido ? '' : 'none';
+
+      boton.disabled =
+        !permitido;
+
+    });
+
+  });
+
+}
+
+
 
 // =====================================================
 // TIPO DE PERSONA
@@ -261,12 +838,12 @@ document
           .querySelectorAll('[data-t], [data-tipo]')
           .forEach(function(b) {
 
-            b.classList.remove('on');
+            b.classList.remove('active');
 
           });
 
 
-        boton.classList.add('on');
+        boton.classList.add('active');
 
         state.tipo =
           boton.dataset.t ||
@@ -295,12 +872,12 @@ document
           .querySelectorAll('[data-e], [data-estado]')
           .forEach(function(b) {
 
-            b.classList.remove('on');
+            b.classList.remove('active');
 
           });
 
 
-        boton.classList.add('on');
+        boton.classList.add('active');
 
         state.estado =
           boton.dataset.e ||
@@ -643,10 +1220,7 @@ async function identificarQRBackend(
           'identificarQR',
 
         codigoQR:
-          codigoQR,
-
-        tipo:
-          String(state.tipo || 'estudiante').trim().toLowerCase()
+          codigoQR
 
       });
 
@@ -663,28 +1237,81 @@ async function identificarQRBackend(
     );
 
 
-    const respuesta =
-      await fetch(
-        url,
-        {
-          method: 'GET',
-          cache: 'no-store'
-        }
-      );
-
-
-    if (!respuesta.ok) {
-
-      throw new Error(
-        'El servidor respondió HTTP ' +
-        respuesta.status
-      );
-
-    }
-
+    const nombreCallback =
+      'respuestaQR_MGP_' + Date.now();
 
     const resultado =
-      await respuesta.json();
+      await new Promise(function(resolve, reject) {
+
+        const script =
+          document.createElement('script');
+
+        let terminado = false;
+
+        function limpiar() {
+
+          if (
+            script &&
+            script.parentNode
+          ) {
+            script.parentNode.removeChild(script);
+          }
+
+          try {
+            delete window[nombreCallback];
+          }
+          catch (error) {
+            console.warn(
+              'No fue posible eliminar callback QR:',
+              error
+            );
+          }
+
+        }
+
+        window[nombreCallback] =
+          function(data) {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+            resolve(data);
+
+          };
+
+        script.src =
+          url +
+          '&callback=' +
+          encodeURIComponent(nombreCallback);
+
+        script.async = true;
+
+        script.onerror =
+          function() {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+
+            reject(
+              new Error(
+                'No se pudo comunicar con el servidor.'
+              )
+            );
+
+          };
+
+        document.head.appendChild(
+          script
+        );
+
+      });
 
 
     console.log(
@@ -924,7 +1551,9 @@ function registrarAsistenciaBackend(id) {
 
     if (mensaje) {
       mensaje.innerHTML =
-        '<strong>⏳ REGISTRANDO ASISTENCIA...</strong><br>' +
+        '<strong>⏳ REGISTRANDO ' +
+        (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO') +
+        '...</strong><br>' +
         'DNI: ' + idLimpio + '<br>' +
         'Tipo: ' + tipo + '<br>' +
         'Estado: ' + estado;
@@ -974,7 +1603,7 @@ function registrarAsistenciaBackend(id) {
 
           if (mensaje) {
             mensaje.innerHTML =
-              '<strong>✅ ASISTENCIA REGISTRADA</strong><br>' +
+              '<strong>✅ ' + (String(data.estado || estado).toUpperCase() === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
               'DNI: ' + idLimpio + '<br>' +
               (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
               (detalle ? 'Grado: ' + detalle + '<br>' : '') +
@@ -1005,6 +1634,7 @@ function registrarAsistenciaBackend(id) {
       '&id=' + encodeURIComponent(idLimpio) +
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
+      '&token=' + encodeURIComponent(state.token || '') +
       '&callback=respuestaRegistroMGP';
 
     registroScript.onerror =
@@ -1397,14 +2027,22 @@ async function iniciarCamara() {
 
         await detenerCamara();
 
+        try {
 
-        await identificarQRBackend(
-          decodedText
-        );
+          await identificarQRBackend(
+            decodedText
+          );
 
+        }
 
-        cameraState.procesandoQR =
-          false;
+        finally {
+
+          cameraState.procesandoQR =
+            false;
+
+          await iniciarCamara();
+
+        }
 
       },
 
@@ -2095,9 +2733,10 @@ if (dniBtn) {
       }
 
 
-      mensaje.textContent =
-        'Registro excepcional por DNI preparado. ' +
-        'Método: DNI.';
+      // El DNI manual debe registrarse usando exactamente
+      // la misma rutina de asistencia V2 utilizada por QR.
+      // No se modifica ninguna otra función.
+      registrarAsistenciaBackend(dni);
 
     }
   );
