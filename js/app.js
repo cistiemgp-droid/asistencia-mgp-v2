@@ -2605,6 +2605,9 @@ if (consultarBtn) {
 // =====================================================
 // REGISTRO EXCEPCIONAL POR DNI
 // =====================================================
+// Usa el mismo backend de asistencia que utiliza el QR.
+// NO modifica la lógica QR ni cámara.
+// =====================================================
 
 const dniBtn =
   document.getElementById(
@@ -2618,34 +2621,35 @@ if (dniBtn) {
     'click',
     function() {
 
-      const dni =
-        document
-          .getElementById(
-            'dniManual'
-          )
-          .value
-          .trim();
-
+      const dniElemento =
+        document.getElementById(
+          'dniManual'
+        );
 
       const mensaje =
         document.getElementById(
           'regMsg'
         );
 
+      const dni =
+        dniElemento
+          ? dniElemento.value.trim()
+          : '';
 
       if (!dni) {
 
-        mensaje.textContent =
-          'Ingrese el DNI.';
+        if (mensaje) {
+          mensaje.textContent =
+            'Ingrese el DNI.';
+        }
 
         return;
 
       }
 
-
-      mensaje.textContent =
-        'Registro excepcional por DNI preparado. ' +
-        'Método: DNI.';
+      // El DNI manual debe pasar por el mismo
+      // registro de asistencia del servidor.
+      registrarAsistenciaBackend(dni);
 
     }
   );
