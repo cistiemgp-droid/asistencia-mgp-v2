@@ -34,7 +34,11 @@ const state = {
 
   usuario: null,
 
-  permisos: null
+  permisos: null,
+
+  // Sesión institucional V2
+  token: null,
+  expiraSesion: null
 
 };
 
@@ -139,6 +143,39 @@ document
 
         if (destino) {
 
+          const mapaPermisos = {
+            registro: 'registrarAsistencia',
+            reportes: 'verReportes',
+            carnets: 'administrarQR',
+            admin: 'administrarPersonas'
+          };
+
+          const permiso = mapaPermisos[destino];
+
+          const rolActual =
+            String(
+              (state.usuario && state.usuario.rol) || ''
+            ).trim().toUpperCase();
+
+          if (
+            rolActual === 'AUXILIAR' ||
+            rolActual === 'DIRECTOR'
+          ) {
+            if (
+              destino !== 'registro' &&
+              destino !== 'reportes'
+            ) {
+              return;
+            }
+          }
+
+          if (
+            permiso &&
+            (!state.permisos || state.permisos[permiso] !== true)
+          ) {
+            return;
+          }
+
           mostrarVista(destino);
 
         }
@@ -162,7 +199,22 @@ if (homeBtn) {
     'click',
     function() {
 
-      mostrarVista('panel');
+      // Con sesión institucional activa:
+      // volver al Panel Institucional.
+      // Sin sesión: permanecer/regresar al Portal.
+      if (
+        state.usuario &&
+        state.token
+      ) {
+
+        mostrarVista('panel');
+
+      }
+      else {
+
+        mostrarVista('portal');
+
+      }
 
     }
   );
@@ -187,8 +239,11 @@ if (salirBtn) {
       detenerCamara();
 
       state.usuario = null;
-
       state.permisos = null;
+      state.token = null;
+      state.expiraSesion = null;
+      state.persona = null;
+      state.qr = null;
 
       mostrarVista('portal');
 
@@ -199,32 +254,18 @@ if (salirBtn) {
 
 
 // =====================================================
-// LOGIN
-// =====================================================
-//
-// GitHub Pages y Google Apps Script están en dominios distintos.
-// El backend MGP ya soporta JSONP mediante ?callback=.
-// LOGIN usa JSONP para evitar CORS / Failed to fetch.
+// LOGIN V2
 // =====================================================
 
 const entrarBtn =
   document.getElementById('entrar') ||
   document.getElementById('entrarBtn');
 
-let loginScript = null;
-
-function eliminarLoginScript() {
-  if (loginScript && loginScript.parentNode) {
-    loginScript.parentNode.removeChild(loginScript);
-  }
-  loginScript = null;
-}
-
 if (entrarBtn) {
 
   entrarBtn.addEventListener(
     'click',
-    function() {
+    async function() {
 
       const usuarioElemento =
         document.getElementById('usuario');
@@ -236,114 +277,53 @@ if (entrarBtn) {
         document.getElementById('loginMsg');
 
       const usuario =
-        usuarioElemento ? usuarioElemento.value.trim() : '';
+        usuarioElemento
+          ? usuarioElemento.value.trim()
+          : '';
 
       const password =
-        passwordElemento ? passwordElemento.value.trim() : '';
+        passwordElemento
+          ? passwordElemento.value.trim()
+          : '';
 
       if (!usuario || !password) {
+
         if (mensaje) {
+
           mensaje.textContent =
             'Ingrese usuario y contraseña.';
+
         }
-        return;
-      }
 
-      if (entrarBtn.disabled) {
         return;
-      }
 
-      eliminarLoginScript();
+      }
 
       if (mensaje) {
+
         mensaje.textContent =
           '🔄 Verificando acceso...';
+
       }
 
-      entrarBtn.disabled = true;
+      try {
 
-      const nombreCallback =
-        'respuestaLoginMGP_' + Date.now();
+        const nombreCallback =
+          'respuestaLoginMGP_' + Date.now();
 
-      let respondio = false;
+        let terminado = false;
 
-      window[nombreCallback] =
-        function(resultado) {
-
-          respondio = true;
-          eliminarLoginScript();
-
-          try {
-
-            console.log(
-              'Respuesta LOGIN V2:',
-              resultado
-            );
-
-            if (!resultado) {
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ El servidor no devolvió respuesta.';
-              }
-              return;
-            }
-
-            if (!resultado.ok) {
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ ' +
-                  (
-                    resultado.mensaje ||
-                    'Usuario o contraseña incorrectos.'
-                  );
-              }
-              return;
-            }
+        const limpiar =
+          function() {
 
             if (
-              !resultado.usuario ||
-              !resultado.usuario.rol ||
-              !resultado.usuario.permisos
+              loginScript &&
+              loginScript.parentNode
             ) {
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ El servidor no devolvió los permisos del usuario.';
-              }
-              return;
+              loginScript.parentNode.removeChild(loginScript);
             }
 
-            state.usuario =
-              resultado.usuario;
-
-            state.permisos =
-              resultado.usuario.permisos;
-
-            aplicarPermisosPanel();
-
-            if (mensaje) {
-              mensaje.textContent =
-                '✅ Acceso autorizado.';
-            }
-
-            mostrarVista('panel');
-
-          }
-          catch (error) {
-
-            console.error(
-              'Error procesando LOGIN V2:',
-              error
-            );
-
-            if (mensaje) {
-              mensaje.textContent =
-                '❌ Error procesando la respuesta del servidor.';
-            }
-
-          }
-          finally {
-
-            entrarBtn.disabled = false;
+            loginScript = null;
 
             try {
               delete window[nombreCallback];
@@ -355,119 +335,229 @@ if (entrarBtn) {
               );
             }
 
-          }
-        };
+          };
 
-      loginScript =
-        document.createElement('script');
+        const resultado =
+          await new Promise(function(resolve, reject) {
 
-      const parametros =
-        new URLSearchParams({
-          action: 'apiLogin',
-          user: usuario,
-          pass: password,
-          callback: nombreCallback
-        });
+            loginScript =
+              document.createElement('script');
 
-      loginScript.src =
-        CONFIG.API_URL +
-        '?' +
-        parametros.toString();
+            window[nombreCallback] =
+              function(data) {
 
-      loginScript.async = true;
+                if (terminado) {
+                  return;
+                }
 
-      loginScript.onerror =
-        function() {
+                terminado = true;
+                limpiar();
+                resolve(data);
 
-          if (respondio) {
-            return;
-          }
+              };
 
-          eliminarLoginScript();
+            loginScript.src =
+              CONFIG.API_URL +
+              '?action=apiLogin' +
+              '&user=' + encodeURIComponent(usuario) +
+              '&pass=' + encodeURIComponent(password) +
+              '&callback=' + encodeURIComponent(nombreCallback);
+
+            loginScript.async = true;
+
+            loginScript.onerror =
+              function() {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+
+                reject(
+                  new Error(
+                    'No se pudo comunicar con el servidor.'
+                  )
+                );
+
+              };
+
+            document.head.appendChild(
+              loginScript
+            );
+
+          });
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
+
+        if (!resultado.ok) {
 
           if (mensaje) {
+
             mensaje.textContent =
-              '❌ No se pudo comunicar con el servidor.';
+              '❌ ' +
+              (
+                resultado.mensaje ||
+                'Usuario o contraseña incorrectos.'
+              );
+
           }
 
-          entrarBtn.disabled = false;
+          return;
 
-          try {
-            delete window[nombreCallback];
+        }
+
+        state.usuario =
+          resultado.usuario || null;
+
+        state.permisos =
+          (
+            resultado.usuario &&
+            resultado.usuario.permisos
+          ) || null;
+
+        state.token =
+          (
+            resultado.usuario &&
+            resultado.usuario.token
+          ) || null;
+
+        state.expiraSesion =
+          (
+            resultado.usuario &&
+            resultado.usuario.expiraSesion
+          ) || null;
+
+        if (!state.token) {
+          if (mensaje) {
+            mensaje.textContent =
+              '❌ El servidor no devolvió una sesión institucional válida.';
           }
-          catch (error) {
-            console.warn(
-              'No fue posible eliminar callback LOGIN:',
-              error
-            );
-          }
 
-        };
+          console.error(
+            'LOGIN V2 sin token de sesión.'
+          );
 
-      document.head.appendChild(loginScript);
+          return;
+        }
+
+        aplicarPermisosPanel();
+
+        console.log(
+          'Usuario autenticado V2:',
+          state.usuario
+        );
+
+        console.log(
+          'Permisos V2:',
+          state.permisos
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '✅ Acceso autorizado.';
+
+        }
+
+        mostrarVista('panel');
+
+      }
+      catch (error) {
+
+        console.error(
+          'Error en LOGIN V2:',
+          error
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '❌ No se pudo comunicar con el servidor: ' +
+            error.message;
+
+        }
+
+      }
 
     }
   );
 
 }
 
+
 // =====================================================
 // PERMISOS V2 - PANEL INSTITUCIONAL
-// PERMISOS V2 - PANEL INSTITUCIONAL
-// =====================================================
-// El servidor determina los permisos.
-// El frontend solo refleja esos permisos.
 // =====================================================
 
 function aplicarPermisosPanel() {
 
-  const permisos =
-    state.permisos || {};
+  // El backend determina los permisos.
+  // El frontend solo refleja esos permisos en el panel.
+  const permisos = state.permisos || {};
+
+  const rol =
+    String(
+      (state.usuario && state.usuario.rol) || ''
+    ).trim().toUpperCase();
 
   const controles = [
-
     {
       vista: 'registro',
       permiso: 'registrarAsistencia'
     },
-
     {
       vista: 'reportes',
       permiso: 'verReportes'
     },
-
     {
       vista: 'carnets',
       permiso: 'administrarQR'
     },
-
     {
       vista: 'admin',
       permiso: 'administrarPersonas'
     }
-
   ];
 
   controles.forEach(function(control) {
 
-    const botones =
-      document.querySelectorAll(
-        '[data-view="' +
-        control.vista +
-        '"], [data-v="' +
-        control.vista +
-        '"]'
-      );
+    const botones = document.querySelectorAll(
+      '[data-view="' + control.vista + '"], ' +
+      '[data-v="' + control.vista + '"]'
+    );
+
+    // AUXILIAR y DIRECTOR solo muestran Registro y Reportes.
+    // ADMIN conserva acceso a los módulos administrativos
+    // según los permisos entregados por el backend.
+    let permitidoPorRol = true;
+
+    if (
+      rol === 'AUXILIAR' ||
+      rol === 'DIRECTOR'
+    ) {
+      permitidoPorRol =
+        control.vista === 'registro' ||
+        control.vista === 'reportes';
+    }
 
     const permitido =
+      permitidoPorRol &&
       permisos[control.permiso] === true;
 
     botones.forEach(function(boton) {
 
       boton.style.display =
-        permitido
-          ? ''
-          : 'none';
+        permitido ? '' : 'none';
 
       boton.disabled =
         !permitido;
@@ -478,74 +568,6 @@ function aplicarPermisosPanel() {
 
 }
 
-
-function tienePermisoV2(permiso) {
-
-  return !!(
-    state.permisos &&
-    state.permisos[permiso] === true
-  );
-
-}
-
-
-function puedeAccederVistaV2(nombreVista) {
-
-  const mapa = {
-
-    registro:
-      'registrarAsistencia',
-
-    reportes:
-      'verReportes',
-
-    carnets:
-      'administrarQR',
-
-    admin:
-      'administrarPersonas'
-
-  };
-
-  const permiso =
-    mapa[nombreVista];
-
-  if (!permiso) {
-
-    return true;
-
-  }
-
-  return tienePermisoV2(permiso);
-
-}
-
-
-const mostrarVistaOriginal =
-  mostrarVista;
-
-mostrarVista = function(nombre) {
-
-  if (
-    nombre !== 'portal' &&
-    nombre !== 'consulta' &&
-    nombre !== 'login' &&
-    nombre !== 'panel' &&
-    !puedeAccederVistaV2(nombre)
-  ) {
-
-    console.warn(
-      'Acceso bloqueado por permisos V2:',
-      nombre
-    );
-
-    return;
-
-  }
-
-  mostrarVistaOriginal(nombre);
-
-};
 
 
 // =====================================================
@@ -564,12 +586,12 @@ document
           .querySelectorAll('[data-t], [data-tipo]')
           .forEach(function(b) {
 
-            b.classList.remove('on');
+            b.classList.remove('active');
 
           });
 
 
-        boton.classList.add('on');
+        boton.classList.add('active');
 
         state.tipo =
           boton.dataset.t ||
@@ -598,12 +620,12 @@ document
           .querySelectorAll('[data-e], [data-estado]')
           .forEach(function(b) {
 
-            b.classList.remove('on');
+            b.classList.remove('active');
 
           });
 
 
-        boton.classList.add('on');
+        boton.classList.add('active');
 
         state.estado =
           boton.dataset.e ||
@@ -915,190 +937,266 @@ async function identificarQRBackend(
 ) {
 
   const mensaje =
-    document.getElementById('regMsg');
+    document.getElementById(
+      'regMsg'
+    );
+
 
   try {
 
     if (!codigoQR) {
+
       throw new Error(
         'El código QR está vacío.'
       );
+
     }
+
 
     if (mensaje) {
+
       mensaje.textContent =
         '🔄 Consultando estudiante...';
+
     }
 
-    // Comunicación JSONP con Google Apps Script.
-    // Se evita la petición AJAX entre dominios.
-
-    const nombreCallback =
-      'respuestaQR_MGP_' + Date.now();
 
     const parametros =
       new URLSearchParams({
-        accion: 'identificarQR',
-        codigoQR: codigoQR,
-        callback: nombreCallback
+
+        accion:
+          'identificarQR',
+
+        codigoQR:
+          codigoQR
+
       });
+
 
     const url =
       CONFIG.API_URL +
       '?' +
       parametros.toString();
 
+
     console.log(
-      'Consultando API QR V2 mediante JSONP:',
+      'Consultando API:',
       url
     );
 
+
+    const nombreCallback =
+      'respuestaQR_MGP_' + Date.now();
+
     const resultado =
-      await new Promise(
-        function(resolve, reject) {
+      await new Promise(function(resolve, reject) {
 
-          const script =
-            document.createElement('script');
+        const script =
+          document.createElement('script');
 
-          let terminado = false;
+        let terminado = false;
 
-          function limpiar() {
+        function limpiar() {
 
-            if (
-              script &&
-              script.parentNode
-            ) {
-              script.parentNode.removeChild(script);
-            }
-
-            try {
-              delete window[nombreCallback];
-            }
-            catch (error) {
-              console.warn(
-                'No fue posible eliminar callback QR:',
-                error
-              );
-            }
+          if (
+            script &&
+            script.parentNode
+          ) {
+            script.parentNode.removeChild(script);
           }
 
-          window[nombreCallback] =
-            function(respuesta) {
+          try {
+            delete window[nombreCallback];
+          }
+          catch (error) {
+            console.warn(
+              'No fue posible eliminar callback QR:',
+              error
+            );
+          }
 
-              if (terminado) {
-                return;
-              }
-
-              terminado = true;
-              limpiar();
-              resolve(respuesta);
-            };
-
-          script.onerror =
-            function() {
-
-              if (terminado) {
-                return;
-              }
-
-              terminado = true;
-              limpiar();
-
-              reject(
-                new Error(
-                  'No se pudo comunicar con el servidor.'
-                )
-              );
-            };
-
-          script.async = true;
-          script.src = url;
-
-          document.head.appendChild(script);
         }
-      );
+
+        window[nombreCallback] =
+          function(data) {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+            resolve(data);
+
+          };
+
+        script.src =
+          url +
+          '&callback=' +
+          encodeURIComponent(nombreCallback);
+
+        script.async = true;
+
+        script.onerror =
+          function() {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+
+            reject(
+              new Error(
+                'No se pudo comunicar con el servidor.'
+              )
+            );
+
+          };
+
+        document.head.appendChild(
+          script
+        );
+
+      });
+
 
     console.log(
       'Respuesta API QR V2:',
       resultado
     );
 
-    if (!resultado || !resultado.ok) {
+
+    // =================================================
+    // QR NO IDENTIFICADO
+    // =================================================
+
+    if (!resultado.ok) {
 
       if (mensaje) {
+
         mensaje.textContent =
           '❌ ' +
           (
-            resultado &&
-            resultado.mensaje
-              ? resultado.mensaje
-              : 'No se pudo identificar el QR.'
+            resultado.mensaje ||
+            'No se pudo identificar el QR.'
           );
+
       }
 
-      return (
-        resultado || {
-          ok: false,
-          mensaje:
-            'El servidor no devolvió una respuesta válida.'
-        }
-      );
+
+      return resultado;
+
     }
+
+
+    // =================================================
+    // GUARDAR PERSONA IDENTIFICADA
+    // =================================================
 
     state.persona =
       resultado;
 
+    // =================================================
+    // IMPORTANTE V2
+    // IDENTIFICAR NO ES LO MISMO QUE REGISTRAR
+    //
+    // La cámara ya hizo su trabajo.
+    // Ahora enviamos el DNI identificado al endpoint
+    // apiRegistrar para guardar INGRESO/SALIDA.
+    // =================================================
+
+
+    // =================================================
+    // LEGACY 2026
+    // =================================================
+
     if (
-      resultado.tipoQR === 'LEGACY_2026' &&
+      resultado.tipoQR ===
+      'LEGACY_2026'
+      &&
       resultado.estudiante
     ) {
 
       const estudiante =
         resultado.estudiante;
 
+
       if (mensaje) {
 
         mensaje.innerHTML =
+
           '<strong>✅ ESTUDIANTE IDENTIFICADO</strong><br>' +
+
           'DNI: ' +
           estudiante.dni +
           '<br>' +
+
           estudiante.apellidoPaterno +
           ' ' +
+
           estudiante.apellidoMaterno +
           ' ' +
+
           estudiante.nombres +
           '<br>' +
+
           'Grado: ' +
           estudiante.grado +
           ' ' +
           estudiante.seccion +
           '<br>' +
+
           'Turno: ' +
           estudiante.turno;
+
       }
+
     }
 
+
+    // =================================================
+    // QR V2
+    // =================================================
+
     else if (
-      resultado.tipoQR === 'MGP_V2'
+      resultado.tipoQR ===
+      'MGP_V2'
     ) {
 
       if (mensaje) {
 
         mensaje.innerHTML =
+
           '<strong>✅ QR V2 IDENTIFICADO</strong><br>' +
+
           'ID: ' +
           resultado.identificador;
+
       }
+
     }
+
 
     else {
 
       if (mensaje) {
+
         mensaje.textContent =
           '✅ QR identificado correctamente.';
+
       }
+
     }
+
+
+    // =================================================
+    // REGISTRAR ASISTENCIA AUTOMÁTICAMENTE
+    // =================================================
+    // Para el QR Legacy 2026 ya tenemos el DNI real.
+    // Ese es el dato que entiende registrarAsistenciaServidor().
+    // =================================================
 
     if (
       resultado.tipoQR === 'LEGACY_2026' &&
@@ -1109,7 +1207,9 @@ async function identificarQRBackend(
       await registrarAsistenciaBackend(
         resultado.estudiante.dni
       );
+
     }
+
 
     return resultado;
 
@@ -1121,18 +1221,27 @@ async function identificarQRBackend(
       error
     );
 
+
     if (mensaje) {
 
       mensaje.textContent =
         '❌ No se pudo comunicar con el servidor: ' +
         error.message;
+
     }
 
+
     return {
+
       ok: false,
-      mensaje: error.message
+
+      mensaje:
+        error.message
+
     };
+
   }
+
 }
 
 
@@ -1190,7 +1299,9 @@ function registrarAsistenciaBackend(id) {
 
     if (mensaje) {
       mensaje.innerHTML =
-        '<strong>⏳ REGISTRANDO ASISTENCIA...</strong><br>' +
+        '<strong>⏳ REGISTRANDO ' +
+        (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO') +
+        '...</strong><br>' +
         'DNI: ' + idLimpio + '<br>' +
         'Tipo: ' + tipo + '<br>' +
         'Estado: ' + estado;
@@ -1240,7 +1351,7 @@ function registrarAsistenciaBackend(id) {
 
           if (mensaje) {
             mensaje.innerHTML =
-              '<strong>✅ ASISTENCIA REGISTRADA</strong><br>' +
+              '<strong>✅ ' + (String(data.estado || estado).toUpperCase() === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
               'DNI: ' + idLimpio + '<br>' +
               (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
               (detalle ? 'Grado: ' + detalle + '<br>' : '') +
@@ -1271,6 +1382,7 @@ function registrarAsistenciaBackend(id) {
       '&id=' + encodeURIComponent(idLimpio) +
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
+      '&token=' + encodeURIComponent(state.token || '') +
       '&callback=respuestaRegistroMGP';
 
     registroScript.onerror =
@@ -1663,14 +1775,22 @@ async function iniciarCamara() {
 
         await detenerCamara();
 
+        try {
 
-        await identificarQRBackend(
-          decodedText
-        );
+          await identificarQRBackend(
+            decodedText
+          );
 
+        }
 
-        cameraState.procesandoQR =
-          false;
+        finally {
+
+          cameraState.procesandoQR =
+            false;
+
+          await iniciarCamara();
+
+        }
 
       },
 
@@ -2189,12 +2309,6 @@ async function detenerCamara() {
 
   if (switchCamBtn) {
     switchCamBtn.style.display = 'none';
-  }
-
-  // Al detener la cámara, ACTIVAR debe quedar
-  // disponible para la próxima entrada a Registro.
-  if (camBtn) {
-    camBtn.style.display = 'block';
   }
 
   mensajeCamara(
