@@ -1124,16 +1124,20 @@ async function identificarQRBackend(
 
 
     const parametros =
-      new URLSearchParams({
+  new URLSearchParams({
 
-        accion:
-          'identificarQR',
+    accion:
+      'identificarQR',
 
-        codigoQR:
-          codigoQR
+    codigoQR:
+      codigoQR,
 
-      });
+    tipo:
+      String(state.tipo || 'estudiante')
+        .trim()
+        .toLowerCase()
 
+  });
 
     const url =
       CONFIG.API_URL +
