@@ -2610,51 +2610,28 @@ if (consultarBtn) {
 // REGISTRO EXCEPCIONAL POR DNI
 // =====================================================
 
-const dniBtn =
-  document.getElementById(
-    'dniBtn'
-  );
+document.getElementById('dniBtn')
+  .addEventListener('click', function() {
 
+    const dni =
+      document.getElementById('dniManual').value.trim();
 
-if (dniBtn) {
+    const mensaje =
+      document.getElementById('regMsg');
 
-  dniBtn.addEventListener(
-    'click',
-    function() {
+    if (!dni) {
 
-      const dni =
-        document
-          .getElementById(
-            'dniManual'
-          )
-          .value
-          .trim();
-
-
-      const mensaje =
-        document.getElementById(
-          'regMsg'
-        );
-
-
-      if (!dni) {
-
+      if (mensaje) {
         mensaje.textContent =
           'Ingrese el DNI.';
-
-        return;
-
       }
 
-
-      mensaje.textContent =
-        'Registro excepcional por DNI preparado. ' +
-        'Método: DNI.';
-
+      return;
     }
-  );
 
-}
+    registrarAsistenciaBackend(dni);
+
+  });
 
 // =====================================================
 // COMPATIBILIDAD FINAL V1 / V2
