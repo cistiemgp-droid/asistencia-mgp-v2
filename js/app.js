@@ -1118,7 +1118,13 @@ async function identificarQRBackend(
     if (mensaje) {
 
       mensaje.textContent =
-        '🔄 Consultando estudiante...';
+  '🔄 Consultando ' +
+  (
+    String(state.tipo || 'estudiante').trim().toLowerCase() === 'personal'
+      ? 'personal'
+      : 'estudiante'
+  ) +
+  '...';
 
     }
 
