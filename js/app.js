@@ -556,11 +556,6 @@ if (entrarBtn) {
           resultado
         );
 
-        console.log(
-          'Respuesta LOGIN V2:',
-          resultado
-        );
-
         if (!resultado.ok) {
 
           if (mensaje) {
