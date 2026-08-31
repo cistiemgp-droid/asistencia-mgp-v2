@@ -1362,7 +1362,7 @@ async function identificarQRBackend(
     // REGISTRAR ASISTENCIA AUTOMÁTICAMENTE
     // =================================================
     // Para el QR Legacy 2026 ya tenemos el DNI real.
-    // Ese es el dato que entiende registrarAsistenciaServidor().
+    // Ese DNI se envía al endpoint apiRegistrar para registrar la asistencia.
     // =================================================
 
     if (
