@@ -2509,19 +2509,21 @@ if (camBtn) {
 // BOTÓN DETENER CÁMARA
 // =====================================================
 
-const camBtn =
+const stopCamBtn =
   document.getElementById(
-    'camBtn'
+    'stopCamBtn'
   );
 
-if (camBtn) {
 
-  camBtn.addEventListener(
+if (stopCamBtn) {
+
+  stopCamBtn.addEventListener(
     'click',
-    iniciarCamara
+    detenerCamara
   );
 
 }
+
 
 // =====================================================
 // BOTÓN CAMBIAR CÁMARA
