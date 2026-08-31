@@ -2516,11 +2516,10 @@ const camBtn =
 
 if (camBtn) {
 
-  camBtn.style.display =
-    'block';
-
-  camBtn.disabled =
-    false;
+  camBtn.addEventListener(
+    'click',
+    iniciarCamara
+  );
 
 }
 
