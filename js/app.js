@@ -3073,9 +3073,7 @@ async function consultarReporte() {
                celdaDni.textContent =
                 alumno.dni || '';
 
-          celdaDni.textContent =
-            alumno.id || '';
-
+         
 
           const celdaNombre =
             document.createElement(
