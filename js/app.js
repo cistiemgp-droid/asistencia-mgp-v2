@@ -2724,19 +2724,12 @@ const esMensual =
   // -------------------------------------------------
   // VALIDACIONES
   // -------------------------------------------------
-
- if (
-  esMensual
-    ? !mes
-    : !fecha
-) {
+if (!fecha) {
 
   if (mensaje) {
 
     mensaje.textContent =
-      esMensual
-        ? 'Ingrese el mes del reporte.'
-        : 'Ingrese la fecha del reporte.';
+      'Ingrese la fecha del reporte.';
 
   }
 
