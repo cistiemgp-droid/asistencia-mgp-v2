@@ -2695,19 +2695,7 @@ async function consultarReporte() {
       ? tipoElemento.value.trim().toLowerCase()
       : 'asistencia';
 
-const mesElemento =
-  document.getElementById(
-    'reporteMes'
-  );
-
-const mes =
-  mesElemento
-    ? mesElemento.value.trim()
-    : '';
-
-const esMensual =
-  tipoReporte === 'mensual';
-  
+ 
   const mesElemento =
   document.getElementById(
     'reporteMes'
