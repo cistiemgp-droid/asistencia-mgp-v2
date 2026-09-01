@@ -2507,7 +2507,23 @@ if (camBtn) {
 }
 
 
+// =====================================================
+// BOTÓN DETENER CÁMARA
+// =====================================================
 
+const stopCamBtn =
+  document.getElementById(
+    'stopCamBtn'
+  );
+
+if (stopCamBtn) {
+
+  stopCamBtn.addEventListener(
+    'click',
+    detenerCamara
+  );
+
+}
 
 // =====================================================
 // BOTÓN CAMBIAR CÁMARA
