@@ -2813,7 +2813,9 @@ if (
           'apiReportes',
 
         fecha:
-          fecha,
+  esMensual
+    ? ''
+    : fecha,
 
         mes:
       mes,
