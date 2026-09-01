@@ -2568,6 +2568,79 @@ if (consultarReporteBtn) {
 
 }
 
+// =====================================================
+// CAMBIO DE FILTRO SEGÚN TIPO DE REPORTE
+// =====================================================
+
+const reporteTipo =
+  document.getElementById(
+    'reporteTipo'
+  );
+
+const reporteFecha =
+  document.getElementById(
+    'reporteFecha'
+  );
+
+const reporteMes =
+  document.getElementById(
+    'reporteMes'
+  );
+
+const reporteMensualFiltros =
+  document.getElementById(
+    'reporteMensualFiltros'
+  );
+
+
+function actualizarFiltroReporte() {
+
+  if (!reporteTipo) {
+    return;
+  }
+
+  const tipo =
+    reporteTipo.value
+      .trim()
+      .toLowerCase();
+
+
+  const esMensual =
+    tipo === 'mensual';
+
+
+  if (reporteFecha) {
+
+    reporteFecha.style.display =
+      esMensual
+        ? 'none'
+        : '';
+
+  }
+
+
+  if (reporteMensualFiltros) {
+
+    reporteMensualFiltros.style.display =
+      esMensual
+        ? 'block'
+        : 'none';
+
+  }
+
+}
+
+
+if (reporteTipo) {
+
+  reporteTipo.addEventListener(
+    'change',
+    actualizarFiltroReporte
+  );
+
+  actualizarFiltroReporte();
+
+}
 
 async function consultarReporte() {
 
