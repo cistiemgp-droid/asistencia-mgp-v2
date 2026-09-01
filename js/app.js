@@ -2548,7 +2548,653 @@ if (switchCamBtn) {
   );
 
 }
+// =====================================================
+// REPORTES - FASE 1
+// REPORTE DIARIO DE ESTUDIANTES
+// =====================================================
 
+const consultarReporteBtn =
+  document.getElementById(
+    'consultarReporteBtn'
+  );
+
+
+if (consultarReporteBtn) {
+
+  consultarReporteBtn.addEventListener(
+    'click',
+    consultarReporte
+  );
+
+}
+
+
+async function consultarReporte() {
+
+  const fechaElemento =
+    document.getElementById(
+      'reporteFecha'
+    );
+
+  const gradoElemento =
+    document.getElementById(
+      'reporteGrado'
+    );
+
+  const tipoElemento =
+    document.getElementById(
+      'reporteTipo'
+    );
+
+  const mensaje =
+    document.getElementById(
+      'reporteMsg'
+    );
+
+  const resumen =
+    document.getElementById(
+      'reporteResumen'
+    );
+
+  const resultados =
+    document.getElementById(
+      'reporteResultados'
+    );
+
+  const tabla =
+    document.getElementById(
+      'reporteTablaBody'
+    );
+
+
+  const fecha =
+    fechaElemento
+      ? fechaElemento.value.trim()
+      : '';
+
+  const grado =
+    gradoElemento
+      ? gradoElemento.value.trim()
+      : '';
+
+  const tipoReporte =
+    tipoElemento
+      ? tipoElemento.value.trim().toLowerCase()
+      : 'asistencia';
+
+
+  // -------------------------------------------------
+  // VALIDACIONES
+  // -------------------------------------------------
+
+  if (!fecha) {
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        'Ingrese la fecha del reporte.';
+
+    }
+
+    return;
+
+  }
+
+
+  if (!state.token) {
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '❌ La sesión institucional no es válida.';
+
+    }
+
+    return;
+
+  }
+
+
+  // -------------------------------------------------
+  // LIMPIAR RESULTADO ANTERIOR
+  // -------------------------------------------------
+
+  if (mensaje) {
+
+    mensaje.textContent =
+      '🔄 Consultando reporte...';
+
+  }
+
+
+  if (resumen) {
+
+    resumen.style.display =
+      'none';
+
+  }
+
+
+  if (resultados) {
+
+    resultados.style.display =
+      'none';
+
+  }
+
+
+  if (tabla) {
+
+    tabla.innerHTML =
+      '';
+
+  }
+
+
+  consultarReporteBtn.disabled =
+    true;
+
+
+  try {
+
+    const nombreCallback =
+      'respuestaReporteMGP_' +
+      Date.now();
+
+
+    const parametros =
+      new URLSearchParams({
+
+        action:
+          'apiReportes',
+
+        fecha:
+          fecha,
+
+        grado:
+          grado,
+
+        reporte:
+          tipoReporte,
+
+        token:
+          state.token,
+
+        callback:
+          nombreCallback
+
+      });
+
+
+    const url =
+      CONFIG.API_URL +
+      '?' +
+      parametros.toString();
+
+
+    console.log(
+      'Consultando reporte:',
+      url
+    );
+
+
+    const resultado =
+      await new Promise(
+        function(resolve, reject) {
+
+          const script =
+            document.createElement(
+              'script'
+            );
+
+          let terminado =
+            false;
+
+
+          function limpiar() {
+
+            if (
+              script &&
+              script.parentNode
+            ) {
+
+              script.parentNode
+                .removeChild(script);
+
+            }
+
+
+            try {
+
+              delete window[
+                nombreCallback
+              ];
+
+            }
+            catch (error) {
+
+              console.warn(
+                'No fue posible eliminar callback REPORTE:',
+                error
+              );
+
+            }
+
+          }
+
+
+          window[nombreCallback] =
+            function(data) {
+
+              if (terminado) {
+
+                return;
+
+              }
+
+
+              terminado =
+                true;
+
+              limpiar();
+
+              resolve(data);
+
+            };
+
+
+          script.src =
+            url;
+
+
+          script.async =
+            true;
+
+
+          script.onerror =
+            function() {
+
+              if (terminado) {
+
+                return;
+
+              }
+
+
+              terminado =
+                true;
+
+              limpiar();
+
+
+              reject(
+                new Error(
+                  'No se pudo comunicar con el servidor.'
+                )
+              );
+
+            };
+
+
+          document.head.appendChild(
+            script
+          );
+
+        }
+      );
+
+
+    console.log(
+      'Respuesta API REPORTES:',
+      resultado
+    );
+
+
+    // -------------------------------------------------
+    // ERROR DEL SERVIDOR
+    // -------------------------------------------------
+
+    if (
+      !resultado ||
+      resultado.ok !== true
+    ) {
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '❌ ' +
+          (
+            resultado &&
+            resultado.mensaje
+              ? resultado.mensaje
+              : 'No fue posible obtener el reporte.'
+          );
+
+      }
+
+      return;
+
+    }
+
+
+    // -------------------------------------------------
+    // RESUMEN
+    // -------------------------------------------------
+
+    const datosResumen =
+      resultado.resumen || {};
+
+
+    const totalElemento =
+      document.getElementById(
+        'reporteTotal'
+      );
+
+    const presentesElemento =
+      document.getElementById(
+        'reportePresentes'
+      );
+
+    const puntualesElemento =
+      document.getElementById(
+        'reportePuntuales'
+      );
+
+    const tardanzasElemento =
+      document.getElementById(
+        'reporteTardanzas'
+      );
+
+    const faltasElemento =
+      document.getElementById(
+        'reporteFaltas'
+      );
+
+
+    if (totalElemento) {
+
+      totalElemento.textContent =
+        datosResumen.total || 0;
+
+    }
+
+
+    if (presentesElemento) {
+
+      presentesElemento.textContent =
+        datosResumen.presentes || 0;
+
+    }
+
+
+    if (puntualesElemento) {
+
+      puntualesElemento.textContent =
+        datosResumen.puntuales || 0;
+
+    }
+
+
+    if (tardanzasElemento) {
+
+      tardanzasElemento.textContent =
+        datosResumen.tardanzas || 0;
+
+    }
+
+
+    if (faltasElemento) {
+
+      faltasElemento.textContent =
+        datosResumen.faltas || 0;
+
+    }
+
+
+    if (resumen) {
+
+      resumen.style.display =
+        'block';
+
+    }
+
+
+    // -------------------------------------------------
+    // CARGAR GRADOS / SECCIONES EN EL SELECTOR
+    //
+    // No inventamos grados.
+    // Los obtenemos de los datos reales
+    // devueltos por apiReportes().
+    // -------------------------------------------------
+
+    if (gradoElemento) {
+
+      const gradosActuales =
+        new Set();
+
+      const alumnos =
+        Array.isArray(resultado.alumnos)
+          ? resultado.alumnos
+          : [];
+
+
+      alumnos.forEach(
+        function(alumno) {
+
+          const gradoSeccion =
+            String(
+              alumno.gradoSeccion || ''
+            ).trim();
+
+
+          if (gradoSeccion) {
+
+            gradosActuales.add(
+              gradoSeccion
+            );
+
+          }
+
+        }
+      );
+
+
+      gradosActuales.forEach(
+        function(gradoSeccion) {
+
+          const existe =
+            Array.from(
+              gradoElemento.options
+            ).some(
+              function(opcion) {
+
+                return (
+                  opcion.value ===
+                  gradoSeccion
+                );
+
+              }
+            );
+
+
+          if (!existe) {
+
+            const opcion =
+              document.createElement(
+                'option'
+              );
+
+
+            opcion.value =
+              gradoSeccion;
+
+            opcion.textContent =
+              gradoSeccion;
+
+
+            gradoElemento.appendChild(
+              opcion
+            );
+
+          }
+
+        }
+      );
+
+    }
+
+
+    // -------------------------------------------------
+    // TABLA
+    // -------------------------------------------------
+
+    const alumnos =
+      Array.isArray(resultado.alumnos)
+        ? resultado.alumnos
+        : [];
+
+
+    if (tabla) {
+
+      alumnos.forEach(
+        function(alumno) {
+
+          const fila =
+            document.createElement(
+              'tr'
+            );
+
+
+          const celdaDni =
+            document.createElement(
+              'td'
+            );
+
+          celdaDni.textContent =
+            alumno.id || '';
+
+
+          const celdaNombre =
+            document.createElement(
+              'td'
+            );
+
+          celdaNombre.textContent =
+            alumno.nombre || '';
+
+
+          const celdaGrado =
+            document.createElement(
+              'td'
+            );
+
+          celdaGrado.textContent =
+            alumno.gradoSeccion || '';
+
+
+          const celdaEstado =
+            document.createElement(
+              'td'
+            );
+
+          celdaEstado.textContent =
+            alumno.estado || '';
+
+
+          const celdaPuntualidad =
+            document.createElement(
+              'td'
+            );
+
+          celdaPuntualidad.textContent =
+            alumno.puntualidad || '';
+
+
+          const celdaHora =
+            document.createElement(
+              'td'
+            );
+
+          celdaHora.textContent =
+            alumno.hora || '';
+
+
+          fila.appendChild(
+            celdaDni
+          );
+
+          fila.appendChild(
+            celdaNombre
+          );
+
+          fila.appendChild(
+            celdaGrado
+          );
+
+          fila.appendChild(
+            celdaEstado
+          );
+
+          fila.appendChild(
+            celdaPuntualidad
+          );
+
+          fila.appendChild(
+            celdaHora
+          );
+
+
+          tabla.appendChild(
+            fila
+          );
+
+        }
+      );
+
+    }
+
+
+    if (resultados) {
+
+      resultados.style.display =
+        'block';
+
+    }
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '✅ Reporte generado correctamente.';
+
+    }
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error en consulta de Reportes:',
+      error
+    );
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '❌ No se pudo obtener el reporte: ' +
+        error.message;
+
+    }
+
+  }
+  finally {
+
+    consultarReporteBtn.disabled =
+      false;
+
+  }
+
+}
 // =====================================================
 // CONSULTA PÚBLICA
 // =====================================================
