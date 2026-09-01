@@ -525,6 +525,7 @@
     ← Panel
   </button>
 
+
   <div class="card">
 
     <h2>
@@ -532,9 +533,196 @@
     </h2>
 
     <p>
-      Módulo preparado para reportes diarios, mensuales,
-      tardanzas, faltas y alertas.
+      Consulta la asistencia diaria de los estudiantes.
     </p>
+
+
+    <!-- =================================================
+         TIPO DE REPORTE
+         ================================================= -->
+
+    <label for="reporteTipo">
+      Tipo de reporte
+    </label>
+
+    <select
+      id="reporteTipo"
+    >
+
+      <option value="asistencia">
+        Asistencia
+      </option>
+
+      <option value="faltas">
+        Faltas
+      </option>
+
+    </select>
+
+
+    <!-- =================================================
+         FECHA
+         ================================================= -->
+
+    <label for="reporteFecha">
+      Fecha
+    </label>
+
+    <input
+      id="reporteFecha"
+      type="date"
+    >
+
+
+    <!-- =================================================
+         GRADO / SECCIÓN
+         ================================================= -->
+
+    <label for="reporteGrado">
+      Grado / Sección
+    </label>
+
+    <select
+      id="reporteGrado"
+    >
+
+      <option value="">
+        Todos los grados
+      </option>
+
+    </select>
+
+
+    <!-- =================================================
+         CONSULTAR
+         ================================================= -->
+
+    <button
+      id="consultarReporteBtn"
+      class="primary"
+      type="button"
+    >
+      🔎 Consultar
+    </button>
+
+
+    <!-- =================================================
+         MENSAJE
+         ================================================= -->
+
+    <div
+      id="reporteMsg"
+      class="message"
+    >
+    </div>
+
+
+    <!-- =================================================
+         RESUMEN
+         ================================================= -->
+
+    <div
+      id="reporteResumen"
+      style="display:none;"
+    >
+
+      <h3>
+        Resumen
+      </h3>
+
+      <div class="grid">
+
+        <div class="card">
+          <strong>Total</strong>
+          <div id="reporteTotal">0</div>
+        </div>
+
+        <div class="card">
+          <strong>Presentes</strong>
+          <div id="reportePresentes">0</div>
+        </div>
+
+        <div class="card">
+          <strong>Puntuales</strong>
+          <div id="reportePuntuales">0</div>
+        </div>
+
+        <div class="card">
+          <strong>Tardanzas</strong>
+          <div id="reporteTardanzas">0</div>
+        </div>
+
+        <div class="card">
+          <strong>Faltas</strong>
+          <div id="reporteFaltas">0</div>
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- =================================================
+         RESULTADOS
+         ================================================= -->
+
+    <div
+      id="reporteResultados"
+      style="display:none;"
+    >
+
+      <h3>
+        Detalle
+      </h3>
+
+      <div
+        style="overflow-x:auto;"
+      >
+
+        <table>
+
+          <thead>
+
+            <tr>
+
+              <th>
+                DNI
+              </th>
+
+              <th>
+                Estudiante
+              </th>
+
+              <th>
+                Grado / Sección
+              </th>
+
+              <th>
+                Estado
+              </th>
+
+              <th>
+                Puntualidad
+              </th>
+
+              <th>
+                Hora
+              </th>
+
+            </tr>
+
+          </thead>
+
+          <tbody
+            id="reporteTablaBody"
+          >
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
 
   </div>
 
