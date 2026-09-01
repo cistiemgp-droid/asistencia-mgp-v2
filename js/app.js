@@ -2742,24 +2742,6 @@ const esMensual =
 
   return;
 }
-
-if (
-  esMensual
-    ? !mes
-    : !fecha
-) {
-
-  if (mensaje) {
-
-    mensaje.textContent =
-      esMensual
-        ? 'Ingrese el mes del reporte.'
-        : 'Ingrese la fecha del reporte.';
-
-  }
-
-  return;
-}
   
 
 
