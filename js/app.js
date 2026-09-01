@@ -2450,11 +2450,13 @@ async function detenerCamara() {
 
   if (camBtn) {
 
-    camBtn.disabled =
-      false;
+  camBtn.style.display =
+    'block';
 
-  }
+  camBtn.disabled =
+    false;
 
+}
 
   const stopCamBtn =
     document.getElementById(
@@ -2505,24 +2507,6 @@ if (camBtn) {
 }
 
 
-// =====================================================
-// BOTÓN DETENER CÁMARA
-// =====================================================
-
-const stopCamBtn =
-  document.getElementById(
-    'stopCamBtn'
-  );
-
-
-if (stopCamBtn) {
-
-  stopCamBtn.addEventListener(
-    'click',
-    detenerCamara
-  );
-
-}
 
 
 // =====================================================
