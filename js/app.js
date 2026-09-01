@@ -2695,6 +2695,18 @@ async function consultarReporte() {
       ? tipoElemento.value.trim().toLowerCase()
       : 'asistencia';
 
+  const mesElemento =
+  document.getElementById(
+    'reporteMes'
+  );
+
+const mes =
+  mesElemento
+    ? mesElemento.value.trim()
+    : '';
+
+const esMensual =
+  tipoReporte === 'mensual';
 
   // -------------------------------------------------
   // VALIDACIONES
@@ -2712,6 +2724,25 @@ async function consultarReporte() {
     return;
 
   }
+
+if (
+  esMensual
+    ? !mes
+    : !fecha
+) {
+
+  if (mensaje) {
+
+    mensaje.textContent =
+      esMensual
+        ? 'Ingrese el mes del reporte.'
+        : 'Ingrese la fecha del reporte.';
+
+  }
+
+  return;
+}
+  
 
 
   if (!state.token) {
@@ -2783,6 +2814,9 @@ async function consultarReporte() {
 
         fecha:
           fecha,
+
+        mes:
+      mes,
 
         grado:
           grado,
