@@ -3175,6 +3175,7 @@ if (
             '<th>Días evaluados</th>' +
             '<th>Presentes</th>' +
             '<th>Faltas</th>' +
+            '<th>Faltas derivadas</th>' +
             '<th>Puntuales</th>' +
             '<th>Tardanzas</th>' +
             '<th>Registros DNI</th>' +
@@ -3278,6 +3279,15 @@ if (
               alumno.faltas || 0;
 
 
+            const celdaFaltasDerivadas =
+              document.createElement(
+                'td'
+              );
+
+            celdaFaltasDerivadas.textContent =
+              alumno.faltasDerivadasPorTardanzas || 0;
+
+
             const celdaPuntuales =
               document.createElement(
                 'td'
@@ -3306,6 +3316,10 @@ if (
 
             fila.appendChild(
               celdaFaltas
+            );
+
+            fila.appendChild(
+              celdaFaltasDerivadas
             );
 
             fila.appendChild(
@@ -3422,7 +3436,7 @@ if (
                     'td'
                   );
 
-                celdaDetalleCompleto.colSpan = 12;
+                celdaDetalleCompleto.colSpan = 13;
                 celdaDetalleCompleto.style.padding = '10px';
 
                 const tituloDetalle =
