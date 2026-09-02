@@ -3152,6 +3152,50 @@ if (
 
     if (tabla) {
 
+      // El encabezado cambia según el tipo de reporte.
+      // El reporte diario conserva Estado/Puntualidad/Hora.
+      // El reporte mensual muestra los acumulados del mes.
+      const tablaElemento =
+        tabla.closest('table');
+
+      const cabecera =
+        tablaElemento
+          ? tablaElemento.querySelector('thead')
+          : null;
+
+      if (cabecera) {
+
+        if (esMensual) {
+
+          cabecera.innerHTML =
+            '<tr>' +
+            '<th>DNI</th>' +
+            '<th>Estudiante</th>' +
+            '<th>Grado / Sección</th>' +
+            '<th>Días evaluados</th>' +
+            '<th>Presentes</th>' +
+            '<th>Faltas</th>' +
+            '<th>Puntuales</th>' +
+            '<th>Tardanzas</th>' +
+            '</tr>';
+
+        } else {
+
+          cabecera.innerHTML =
+            '<tr>' +
+            '<th>DNI</th>' +
+            '<th>Estudiante</th>' +
+            '<th>Grado / Sección</th>' +
+            '<th>Estado</th>' +
+            '<th>Puntualidad</th>' +
+            '<th>Hora</th>' +
+            '</tr>';
+
+        }
+
+      }
+
+
       alumnos.forEach(
         function(alumno) {
 
@@ -3162,14 +3206,13 @@ if (
 
 
           const celdaDni =
-              document.createElement(
-               'td'
-             );
+            document.createElement(
+              'td'
+            );
 
-               celdaDni.textContent =
-                alumno.dni || '';
+          celdaDni.textContent =
+            alumno.dni || '';
 
-         
 
           const celdaNombre =
             document.createElement(
@@ -3189,33 +3232,6 @@ if (
             alumno.gradoSeccion || '';
 
 
-          const celdaEstado =
-            document.createElement(
-              'td'
-            );
-
-          celdaEstado.textContent =
-            alumno.estado || '';
-
-
-          const celdaPuntualidad =
-            document.createElement(
-              'td'
-            );
-
-          celdaPuntualidad.textContent =
-            alumno.puntualidad || '';
-
-
-          const celdaHora =
-            document.createElement(
-              'td'
-            );
-
-          celdaHora.textContent =
-            alumno.hora || '';
-
-
           fila.appendChild(
             celdaDni
           );
@@ -3228,17 +3244,116 @@ if (
             celdaGrado
           );
 
-          fila.appendChild(
-            celdaEstado
-          );
 
-          fila.appendChild(
-            celdaPuntualidad
-          );
+          if (esMensual) {
 
-          fila.appendChild(
-            celdaHora
-          );
+            const celdaDiasEvaluados =
+              document.createElement(
+                'td'
+              );
+
+            celdaDiasEvaluados.textContent =
+              alumno.diasEvaluados || 0;
+
+
+            const celdaPresentes =
+              document.createElement(
+                'td'
+              );
+
+            celdaPresentes.textContent =
+              alumno.presentes || 0;
+
+
+            const celdaFaltas =
+              document.createElement(
+                'td'
+              );
+
+            celdaFaltas.textContent =
+              alumno.faltas || 0;
+
+
+            const celdaPuntuales =
+              document.createElement(
+                'td'
+              );
+
+            celdaPuntuales.textContent =
+              alumno.puntuales || 0;
+
+
+            const celdaTardanzas =
+              document.createElement(
+                'td'
+              );
+
+            celdaTardanzas.textContent =
+              alumno.tardanzas || 0;
+
+
+            fila.appendChild(
+              celdaDiasEvaluados
+            );
+
+            fila.appendChild(
+              celdaPresentes
+            );
+
+            fila.appendChild(
+              celdaFaltas
+            );
+
+            fila.appendChild(
+              celdaPuntuales
+            );
+
+            fila.appendChild(
+              celdaTardanzas
+            );
+
+          } else {
+
+            const celdaEstado =
+              document.createElement(
+                'td'
+              );
+
+            celdaEstado.textContent =
+              alumno.estado || '';
+
+
+            const celdaPuntualidad =
+              document.createElement(
+                'td'
+              );
+
+            celdaPuntualidad.textContent =
+              alumno.puntualidad || '';
+
+
+            const celdaHora =
+              document.createElement(
+                'td'
+              );
+
+            celdaHora.textContent =
+              alumno.hora || '';
+
+
+            fila.appendChild(
+              celdaEstado
+            );
+
+            fila.appendChild(
+              celdaPuntualidad
+            );
+
+            fila.appendChild(
+              celdaHora
+            );
+
+          }
 
 
           tabla.appendChild(
