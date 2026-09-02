@@ -3177,9 +3177,6 @@ if (
             '<th>Faltas</th>' +
             '<th>Puntuales</th>' +
             '<th>Tardanzas</th>' +
-            '<th>Registros DNI</th>' +
-            '<th>Límite DNI</th>' +
-            '<th>Justificación</th>' +
             '<th>Detalle</th>' +
             '</tr>';
 
@@ -3318,60 +3315,6 @@ if (
 
 
             // ---------------------------------------------
-            // REGLA MAX_DNI_MENSUAL
-            // ---------------------------------------------
-            const celdaRegistrosDni =
-              document.createElement(
-                'td'
-              );
-
-            celdaRegistrosDni.textContent =
-              alumno.registrosDniMes || 0;
-
-
-            const celdaLimiteDni =
-              document.createElement(
-                'td'
-              );
-
-            celdaLimiteDni.textContent =
-              alumno.limiteDniMensual || 0;
-
-
-            const celdaJustificacion =
-              document.createElement(
-                'td'
-              );
-
-            const requiereJustificacion =
-              alumno.requiereJustificacion === true;
-
-            celdaJustificacion.textContent =
-              requiereJustificacion
-                ? 'REQUIERE'
-                : 'NO';
-
-
-            if (requiereJustificacion) {
-              celdaJustificacion.style.fontWeight =
-                'bold';
-            }
-
-
-            fila.appendChild(
-              celdaRegistrosDni
-            );
-
-            fila.appendChild(
-              celdaLimiteDni
-            );
-
-            fila.appendChild(
-              celdaJustificacion
-            );
-
-
-            // ---------------------------------------------
             // BOTÓN VER DETALLE DEL MES
             // ---------------------------------------------
             const celdaDetalle =
@@ -3422,7 +3365,7 @@ if (
                     'td'
                   );
 
-                celdaDetalleCompleto.colSpan = 12;
+                celdaDetalleCompleto.colSpan = 9;
                 celdaDetalleCompleto.style.padding = '10px';
 
                 const tituloDetalle =
