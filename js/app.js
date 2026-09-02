@@ -3177,6 +3177,7 @@ if (
             '<th>Faltas</th>' +
             '<th>Puntuales</th>' +
             '<th>Tardanzas</th>' +
+            '<th>Detalle</th>' +
             '</tr>';
 
         } else {
@@ -3310,6 +3311,210 @@ if (
 
             fila.appendChild(
               celdaTardanzas
+            );
+
+
+            // ---------------------------------------------
+            // BOTÓN VER DETALLE DEL MES
+            // ---------------------------------------------
+            const celdaDetalle =
+              document.createElement(
+                'td'
+              );
+
+            const botonDetalle =
+              document.createElement(
+                'button'
+              );
+
+            botonDetalle.type = 'button';
+            botonDetalle.textContent = 'Ver detalle';
+
+            botonDetalle.style.cursor = 'pointer';
+            botonDetalle.style.padding = '4px 8px';
+            botonDetalle.style.borderRadius = '4px';
+            botonDetalle.style.border = '1px solid #ccc';
+            botonDetalle.style.background = '#f5f5f5';
+
+            botonDetalle.addEventListener(
+              'click',
+              function() {
+
+                const siguiente =
+                  fila.nextElementSibling;
+
+                if (
+                  siguiente &&
+                  siguiente.dataset &&
+                  siguiente.dataset.detalleAlumno === '1'
+                ) {
+                  siguiente.remove();
+                  botonDetalle.textContent = 'Ver detalle';
+                  return;
+                }
+
+                const filaDetalle =
+                  document.createElement(
+                    'tr'
+                  );
+
+                filaDetalle.dataset.detalleAlumno = '1';
+
+                const celdaDetalleCompleto =
+                  document.createElement(
+                    'td'
+                  );
+
+                celdaDetalleCompleto.colSpan = 9;
+                celdaDetalleCompleto.style.padding = '10px';
+
+                const tituloDetalle =
+                  document.createElement(
+                    'strong'
+                  );
+
+                tituloDetalle.textContent =
+                  'Detalle diario de ' +
+                  (alumno.nombre || 'estudiante');
+
+                celdaDetalleCompleto.appendChild(
+                  tituloDetalle
+                );
+
+                const tablaDetalle =
+                  document.createElement(
+                    'table'
+                  );
+
+                tablaDetalle.style.width = '100%';
+                tablaDetalle.style.marginTop = '8px';
+                tablaDetalle.style.borderCollapse = 'collapse';
+
+                const encabezadoDetalle =
+                  document.createElement(
+                    'tr'
+                  );
+
+                [
+                  'Fecha',
+                  'Estado',
+                  'Puntualidad',
+                  'Hora'
+                ].forEach(
+                  function(texto) {
+                    const th =
+                      document.createElement(
+                        'th'
+                      );
+
+                    th.textContent = texto;
+                    th.style.textAlign = 'left';
+                    th.style.padding = '4px';
+                    th.style.borderBottom = '1px solid #ddd';
+
+                    encabezadoDetalle.appendChild(th);
+                  }
+                );
+
+                tablaDetalle.appendChild(
+                  encabezadoDetalle
+                );
+
+                const detalleDias =
+                  Array.isArray(alumno.detalleDias)
+                    ? alumno.detalleDias
+                    : [];
+
+                if (!detalleDias.length) {
+
+                  const filaSinDetalle =
+                    document.createElement(
+                      'tr'
+                    );
+
+                  const celdaSinDetalle =
+                    document.createElement(
+                      'td'
+                    );
+
+                  celdaSinDetalle.colSpan = 4;
+                  celdaSinDetalle.textContent =
+                    'No hay detalle diario disponible.';
+                  celdaSinDetalle.style.padding = '6px';
+
+                  filaSinDetalle.appendChild(
+                    celdaSinDetalle
+                  );
+
+                  tablaDetalle.appendChild(
+                    filaSinDetalle
+                  );
+
+                } else {
+
+                  detalleDias.forEach(
+                    function(dia) {
+
+                      const filaDia =
+                        document.createElement(
+                          'tr'
+                        );
+
+                      [
+                        dia.fecha || '',
+                        dia.estado || '',
+                        dia.puntualidad || '',
+                        dia.hora || ''
+                      ].forEach(
+                        function(valor) {
+
+                          const td =
+                            document.createElement(
+                              'td'
+                            );
+
+                          td.textContent = valor;
+                          td.style.padding = '4px';
+                          td.style.borderBottom = '1px solid #eee';
+
+                          filaDia.appendChild(td);
+
+                        }
+                      );
+
+                      tablaDetalle.appendChild(
+                        filaDia
+                      );
+
+                    }
+                  );
+
+                }
+
+                celdaDetalleCompleto.appendChild(
+                  tablaDetalle
+                );
+
+                filaDetalle.appendChild(
+                  celdaDetalleCompleto
+                );
+
+                fila.parentNode.insertBefore(
+                  filaDetalle,
+                  fila.nextSibling
+                );
+
+                botonDetalle.textContent = 'Ocultar detalle';
+
+              }
+            );
+
+            celdaDetalle.appendChild(
+              botonDetalle
+            );
+
+            fila.appendChild(
+              celdaDetalle
             );
 
           } else {
