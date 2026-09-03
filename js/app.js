@@ -47,6 +47,13 @@ const state = {
 // ESTADO DE CÁMARA
 // =====================================================
 
+// =====================================================
+// ESTADO DEL ÚLTIMO REPORTE PARA EXPORTACIÓN
+// =====================================================
+
+let ultimoReporteMGP = null;
+
+
 const cameraState = {
 
   reader: null,
@@ -2568,6 +2575,41 @@ if (consultarReporteBtn) {
 
 }
 
+
+// =====================================================
+// BOTONES DE DESCARGA DE REPORTES
+// =====================================================
+
+const descargarReporteExcelBtn =
+  document.getElementById(
+    'descargarReporteExcelBtn'
+  );
+
+const descargarReportePdfBtn =
+  document.getElementById(
+    'descargarReportePdfBtn'
+  );
+
+
+if (descargarReporteExcelBtn) {
+
+  descargarReporteExcelBtn.addEventListener(
+    'click',
+    descargarReporteExcel
+  );
+
+}
+
+
+if (descargarReportePdfBtn) {
+
+  descargarReportePdfBtn.addEventListener(
+    'click',
+    descargarReportePDF
+  );
+
+}
+
 // =====================================================
 // CAMBIO DE FILTRO SEGÚN TIPO DE REPORTE
 // =====================================================
@@ -2971,6 +3013,24 @@ if (
       return;
 
     }
+
+
+    // -------------------------------------------------
+    // GUARDAR REPORTE ACTUAL PARA EXPORTACIÓN
+    // -------------------------------------------------
+
+    ultimoReporteMGP = {
+      tipoReporte: tipoReporte,
+      fecha: fecha,
+      mes: mes,
+      grado: grado,
+      resumen: resultado.resumen || {},
+      alumnos: Array.isArray(resultado.alumnos)
+        ? resultado.alumnos
+        : []
+    };
+
+    actualizarBotonesDescargaReporte();
 
 
     // -------------------------------------------------
@@ -3470,8 +3530,7 @@ if (
                   'Fecha',
                   'Estado',
                   'Puntualidad',
-                  'Hora',
-                  'Código'
+                  'Hora'
                 ].forEach(
                   function(texto) {
                     const th =
@@ -3509,7 +3568,7 @@ if (
                       'td'
                     );
 
-                  celdaSinDetalle.colSpan = 5;
+                  celdaSinDetalle.colSpan = 4;
                   celdaSinDetalle.textContent =
                     'No hay detalle diario disponible.';
                   celdaSinDetalle.style.padding = '6px';
@@ -3536,8 +3595,7 @@ if (
                         dia.fecha || '',
                         dia.estado || '',
                         dia.puntualidad || '',
-                        dia.hora || '',
-                        dia.codigo || ''
+                        dia.hora || ''
                       ].forEach(
                         function(valor) {
 
@@ -3616,7 +3674,10 @@ if (
               );
 
             celdaHora.textContent =
-              alumno.hora || '';
+              alumno.hora ||
+              alumno.horaRegistro ||
+              alumno.horaIngreso ||
+              '';
 
 
             fila.appendChild(
@@ -3685,6 +3746,382 @@ if (
   }
 
 }
+// =====================================================
+// EXPORTACIÓN DE REPORTES V2
+// PDF Y EXCEL
+// -----------------------------------------------------
+// Estas funciones exportan exactamente el último reporte
+// consultado. No vuelven a consultar ni modifican datos.
+// =====================================================
+
+function actualizarBotonesDescargaReporte() {
+
+  const habilitado =
+    !!ultimoReporteMGP &&
+    Array.isArray(ultimoReporteMGP.alumnos);
+
+  if (descargarReporteExcelBtn) {
+    descargarReporteExcelBtn.disabled = !habilitado;
+  }
+
+  if (descargarReportePdfBtn) {
+    descargarReportePdfBtn.disabled = !habilitado;
+  }
+
+}
+
+
+function obtenerDatosExportacionReporte() {
+
+  if (!ultimoReporteMGP) {
+    throw new Error(
+      'Primero genere un reporte.'
+    );
+  }
+
+  const reporte = ultimoReporteMGP;
+  const esMensual =
+    reporte.tipoReporte === 'mensual';
+
+  let encabezados = [];
+  let filas = [];
+
+  if (esMensual) {
+
+    encabezados = [
+      'DNI',
+      'Estudiante',
+      'Grado / Sección',
+      'Días evaluados',
+      'Presentes',
+      'Faltas',
+      'Faltas derivadas',
+      'Puntuales',
+      'Tardanzas',
+      'Registros DNI',
+      'Límite DNI',
+      'Justificación'
+    ];
+
+    filas = reporte.alumnos.map(function(alumno) {
+      return [
+        alumno.dni || '',
+        alumno.nombre || '',
+        alumno.gradoSeccion || '',
+        alumno.diasEvaluados || 0,
+        alumno.presentes || 0,
+        alumno.faltas || 0,
+        alumno.faltasDerivadasPorTardanzas || 0,
+        alumno.puntuales || 0,
+        alumno.tardanzas || 0,
+        alumno.registrosDniMes || 0,
+        alumno.limiteDniMensual || 0,
+        alumno.requiereJustificacion === true
+          ? 'REQUIERE'
+          : 'NO'
+      ];
+    });
+
+  } else {
+
+    encabezados = [
+      'DNI',
+      'Estudiante',
+      'Grado / Sección',
+      'Estado',
+      'Puntualidad',
+      'Hora'
+    ];
+
+    filas = reporte.alumnos.map(function(alumno) {
+      return [
+        alumno.dni || '',
+        alumno.nombre || '',
+        alumno.gradoSeccion || '',
+        alumno.estado || '',
+        alumno.puntualidad || '',
+        alumno.hora ||
+          alumno.horaRegistro ||
+          alumno.horaIngreso ||
+          ''
+      ];
+    });
+
+  }
+
+  return {
+    reporte: reporte,
+    esMensual: esMensual,
+    encabezados: encabezados,
+    filas: filas
+  };
+}
+
+
+function obtenerTituloReporteMGP(datos) {
+
+  const nombres = {
+    asistencia: 'REPORTE DE ASISTENCIA',
+    faltas: 'REPORTE DE FALTAS',
+    tardanzas: 'REPORTE DE TARDANZAS',
+    mensual: 'REPORTE MENSUAL DE ASISTENCIA'
+  };
+
+  return nombres[datos.reporte.tipoReporte] ||
+    'REPORTE DE ASISTENCIA';
+}
+
+
+function obtenerSubtituloReporteMGP(datos) {
+
+  const reporte = datos.reporte;
+  const partes = [];
+
+  if (datos.esMensual) {
+    if (reporte.mes) {
+      partes.push('Mes: ' + reporte.mes);
+    }
+  } else if (reporte.fecha) {
+    const partesFecha = reporte.fecha.split('-');
+    if (partesFecha.length === 3) {
+      partes.push(
+        'Fecha: ' +
+        partesFecha[2] + '/' +
+        partesFecha[1] + '/' +
+        partesFecha[0]
+      );
+    } else {
+      partes.push('Fecha: ' + reporte.fecha);
+    }
+  }
+
+  partes.push(
+    'Grado / Sección: ' +
+    (reporte.grado || 'Todos')
+  );
+
+  return partes.join('   |   ');
+}
+
+
+function descargarReporteExcel() {
+
+  try {
+
+    if (
+      typeof XLSX === 'undefined'
+    ) {
+      throw new Error(
+        'No se cargó el módulo de Excel.'
+      );
+    }
+
+    const datos =
+      obtenerDatosExportacionReporte();
+
+    const titulo =
+      obtenerTituloReporteMGP(datos);
+
+    const subtitulo =
+      obtenerSubtituloReporteMGP(datos);
+
+    const filasHoja = [
+      ['IE JEC MANUEL GONZALES PRADA'],
+      [titulo],
+      [subtitulo],
+      [],
+      datos.encabezados,
+      ...datos.filas
+    ];
+
+    const hoja =
+      XLSX.utils.aoa_to_sheet(filasHoja);
+
+    hoja['!cols'] =
+      datos.encabezados.map(function(encabezado, indice) {
+        let maximo = String(encabezado).length;
+
+        datos.filas.forEach(function(fila) {
+          maximo = Math.max(
+            maximo,
+            String(fila[indice] ?? '').length
+          );
+        });
+
+        return {
+          wch: Math.min(40, Math.max(10, maximo + 2))
+        };
+      });
+
+    const libro =
+      XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      libro,
+      hoja,
+      datos.esMensual
+        ? 'Reporte Mensual'
+        : 'Reporte Diario'
+    );
+
+    const fechaArchivo =
+      datos.reporte.fecha ||
+      datos.reporte.mes ||
+      'reporte';
+
+    XLSX.writeFile(
+      libro,
+      'Asistencia_MGP_' +
+      datos.reporte.tipoReporte.toUpperCase() +
+      '_' +
+      fechaArchivo.replace(/-/g, '') +
+      '.xlsx'
+    );
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error exportando Excel:',
+      error
+    );
+
+    const mensaje =
+      document.getElementById(
+        'reporteMsg'
+      );
+
+    if (mensaje) {
+      mensaje.textContent =
+        '❌ No se pudo descargar Excel: ' +
+        error.message;
+    }
+
+  }
+
+}
+
+
+function descargarReportePDF() {
+
+  try {
+
+    if (
+      typeof window.jspdf === 'undefined' ||
+      typeof window.jspdf.jsPDF === 'undefined'
+    ) {
+      throw new Error(
+        'No se cargó el módulo PDF.'
+      );
+    }
+
+    const datos =
+      obtenerDatosExportacionReporte();
+
+    const jsPDF =
+      window.jspdf.jsPDF;
+
+    const doc =
+      new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+    const titulo =
+      obtenerTituloReporteMGP(datos);
+
+    const subtitulo =
+      obtenerSubtituloReporteMGP(datos);
+
+    doc.setFontSize(14);
+    doc.text(
+      'IE JEC MANUEL GONZALES PRADA',
+      14,
+      13
+    );
+
+    doc.setFontSize(12);
+    doc.text(
+      titulo,
+      14,
+      20
+    );
+
+    doc.setFontSize(9);
+    doc.text(
+      subtitulo,
+      14,
+      26
+    );
+
+    if (
+      typeof doc.autoTable !== 'function'
+    ) {
+      throw new Error(
+        'No se cargó el módulo de tablas PDF.'
+      );
+    }
+
+    doc.autoTable({
+      head: [datos.encabezados],
+      body: datos.filas,
+      startY: 30,
+      theme: 'grid',
+      styles: {
+        fontSize: datos.esMensual ? 6.5 : 8,
+        cellPadding: 2,
+        overflow: 'linebreak'
+      },
+      headStyles: {
+        fontSize: datos.esMensual ? 6.5 : 8
+      },
+      margin: {
+        left: 10,
+        right: 10
+      }
+    });
+
+    const fechaArchivo =
+      datos.reporte.fecha ||
+      datos.reporte.mes ||
+      'reporte';
+
+    doc.save(
+      'Asistencia_MGP_' +
+      datos.reporte.tipoReporte.toUpperCase() +
+      '_' +
+      fechaArchivo.replace(/-/g, '') +
+      '.pdf'
+    );
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error exportando PDF:',
+      error
+    );
+
+    const mensaje =
+      document.getElementById(
+        'reporteMsg'
+      );
+
+    if (mensaje) {
+      mensaje.textContent =
+        '❌ No se pudo descargar PDF: ' +
+        error.message;
+    }
+
+  }
+
+}
+
+
+actualizarBotonesDescargaReporte();
+
+
 // =====================================================
 // CONSULTA PÚBLICA
 // =====================================================
