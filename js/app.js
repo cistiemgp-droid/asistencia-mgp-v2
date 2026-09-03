@@ -52,6 +52,7 @@ const state = {
 // =====================================================
 
 let ultimoReporteMGP = null;
+let matrizMensualVisibleMGP = false;
 
 
 const cameraState = {
@@ -2590,6 +2591,11 @@ const descargarReportePdfBtn =
     'descargarReportePdfBtn'
   );
 
+const verMatrizMensualBtn =
+  document.getElementById(
+    'verMatrizMensualBtn'
+  );
+
 
 if (descargarReporteExcelBtn) {
 
@@ -2606,6 +2612,30 @@ if (descargarReportePdfBtn) {
   descargarReportePdfBtn.addEventListener(
     'click',
     descargarReportePDF
+  );
+
+}
+
+if (verMatrizMensualBtn) {
+
+  verMatrizMensualBtn.addEventListener(
+    'click',
+    function() {
+      if (!ultimoReporteMGP ||
+          ultimoReporteMGP.tipoReporte !== 'mensual') {
+        return;
+      }
+
+      matrizMensualVisibleMGP =
+        !matrizMensualVisibleMGP;
+
+      renderizarMatrizMensualMGP();
+
+      verMatrizMensualBtn.textContent =
+        matrizMensualVisibleMGP
+          ? '📅 Ocultar matriz mensual'
+          : '📅 Ver matriz mensual';
+    }
   );
 
 }
@@ -3031,6 +3061,7 @@ if (
     };
 
     actualizarBotonesDescargaReporte();
+    renderizarMatrizMensualMGP();
 
 
     // -------------------------------------------------
@@ -3747,6 +3778,303 @@ if (
 
 }
 // =====================================================
+// MATRIZ MENSUAL V2 - APOYO PARA SIAGIE
+// -----------------------------------------------------
+// Usa el detalle mensual que ya devuelve apiReportes().
+// No modifica datos ni crea nuevos registros.
+// =====================================================
+
+function renderizarMatrizMensualMGP() {
+
+  const contenedorMatriz =
+    document.getElementById(
+      'reporteMatrizTablaContenedor'
+    );
+
+  const contenedorIncidencias =
+    document.getElementById(
+      'reporteIncidenciasTablaContenedor'
+    );
+
+  const contenedorPrincipal =
+    document.getElementById(
+      'reporteMatrizMensual'
+    );
+
+  if (!contenedorMatriz ||
+      !contenedorIncidencias ||
+      !contenedorPrincipal) {
+    return;
+  }
+
+  contenedorMatriz.innerHTML = '';
+  contenedorIncidencias.innerHTML = '';
+
+  if (!matrizMensualVisibleMGP ||
+      !ultimoReporteMGP ||
+      ultimoReporteMGP.tipoReporte !== 'mensual') {
+    contenedorPrincipal.style.display = 'none';
+    return;
+  }
+
+  const alumnos =
+    Array.isArray(ultimoReporteMGP.alumnos)
+      ? ultimoReporteMGP.alumnos
+      : [];
+
+  if (!alumnos.length) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No hay estudiantes para mostrar.';
+    contenedorIncidencias.textContent =
+      'No hay incidencias para mostrar.';
+    return;
+  }
+
+  const mes =
+    String(ultimoReporteMGP.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+
+  if (!anio || !numeroMes) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No fue posible determinar el mes del reporte.';
+    return;
+  }
+
+  const ultimoDia =
+    new Date(anio, numeroMes, 0).getDate();
+
+  const diasEvaluados = new Set();
+  const datosPorAlumno = [];
+  const incidencias = [];
+
+  alumnos.forEach(function(alumno, indiceAlumno) {
+
+    const porFecha = {};
+    const detalleDias =
+      Array.isArray(alumno.detalleDias)
+        ? alumno.detalleDias
+        : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha =
+        String(dia.fecha || '').trim();
+
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) {
+        return;
+      }
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) {
+        return;
+      }
+
+      diasEvaluados.add(diaNumero);
+      porFecha[diaNumero] = {
+        codigo: String(dia.codigo || '').trim().toUpperCase(),
+        fecha: fecha,
+        estado: String(dia.estado || '').trim().toUpperCase(),
+        puntualidad: String(dia.puntualidad || '').trim().toUpperCase(),
+        hora: String(dia.hora || '').trim()
+      };
+    });
+
+    datosPorAlumno.push({
+      alumno: alumno,
+      porFecha: porFecha,
+      numero: indiceAlumno + 1
+    });
+  });
+
+  // ---------------------------------------------------
+  // TABLA MATRIZ
+  // ---------------------------------------------------
+
+  const tablaMatriz =
+    document.createElement('table');
+
+  tablaMatriz.style.borderCollapse = 'collapse';
+  tablaMatriz.style.minWidth = '1100px';
+  tablaMatriz.style.width = '100%';
+
+  const thead =
+    document.createElement('thead');
+  const filaCabecera =
+    document.createElement('tr');
+
+  [
+    'N.º',
+    'DNI',
+    'APELLIDOS Y NOMBRES'
+  ].forEach(function(texto) {
+    const th = document.createElement('th');
+    th.textContent = texto;
+    th.style.padding = '5px';
+    th.style.border = '1px solid #ccc';
+    th.style.whiteSpace = 'nowrap';
+    filaCabecera.appendChild(th);
+  });
+
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    const th = document.createElement('th');
+    th.textContent = String(dia);
+    th.style.padding = '5px';
+    th.style.border = '1px solid #ccc';
+    th.style.textAlign = 'center';
+    th.style.minWidth = '28px';
+    filaCabecera.appendChild(th);
+  }
+
+  thead.appendChild(filaCabecera);
+  tablaMatriz.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  datosPorAlumno.forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    [
+      item.numero,
+      item.alumno.dni || '',
+      item.alumno.nombre || ''
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '5px';
+      td.style.border = '1px solid #ccc';
+      td.style.whiteSpace = 'nowrap';
+      fila.appendChild(td);
+    });
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const td = document.createElement('td');
+      const registro = item.porFecha[dia];
+
+      // Si el día fue evaluado, el código proviene
+      // directamente de las reglas mensuales actuales.
+      // Si no fue evaluado, se muestra D.
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      td.textContent = codigo;
+      td.style.padding = '5px';
+      td.style.border = '1px solid #ccc';
+      td.style.textAlign = 'center';
+      td.style.fontWeight = 'bold';
+      td.style.minWidth = '28px';
+      fila.appendChild(td);
+
+      if (
+        registro &&
+        ['T', 'U', 'F', 'J'].indexOf(codigo) !== -1
+      ) {
+        incidencias.push({
+          numero: item.numero,
+          nombre: item.alumno.nombre || '',
+          dni: item.alumno.dni || '',
+          dia: dia,
+          fecha: registro.fecha || '',
+          codigo: codigo
+        });
+      }
+    }
+
+    tbody.appendChild(fila);
+  });
+
+  tablaMatriz.appendChild(tbody);
+  contenedorMatriz.appendChild(tablaMatriz);
+
+  // ---------------------------------------------------
+  // TABLA DE INCIDENCIAS
+  // ---------------------------------------------------
+
+  incidencias.sort(function(a, b) {
+    if (a.numero !== b.numero) {
+      return a.numero - b.numero;
+    }
+    return a.dia - b.dia;
+  });
+
+  const tablaIncidencias =
+    document.createElement('table');
+
+  tablaIncidencias.style.borderCollapse = 'collapse';
+  tablaIncidencias.style.width = '100%';
+  tablaIncidencias.style.minWidth = '650px';
+
+  const filaIncidenciasCabecera =
+    document.createElement('tr');
+
+  [
+    'N.º',
+    'DNI',
+    'ESTUDIANTE',
+    'DÍA',
+    'FECHA',
+    'CÓDIGO'
+  ].forEach(function(texto) {
+    const th = document.createElement('th');
+    th.textContent = texto;
+    th.style.padding = '6px';
+    th.style.border = '1px solid #ccc';
+    th.style.textAlign = 'left';
+    filaIncidenciasCabecera.appendChild(th);
+  });
+
+  const theadIncidencias =
+    document.createElement('thead');
+  theadIncidencias.appendChild(filaIncidenciasCabecera);
+  tablaIncidencias.appendChild(theadIncidencias);
+
+  const tbodyIncidencias =
+    document.createElement('tbody');
+
+  incidencias.forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    [
+      item.numero,
+      item.dni,
+      item.nombre,
+      item.dia,
+      item.fecha,
+      item.codigo
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '6px';
+      td.style.border = '1px solid #ccc';
+      fila.appendChild(td);
+    });
+
+    tbodyIncidencias.appendChild(fila);
+  });
+
+  tablaIncidencias.appendChild(tbodyIncidencias);
+  contenedorIncidencias.appendChild(tablaIncidencias);
+
+  if (!incidencias.length) {
+    contenedorIncidencias.textContent =
+      'No se encontraron faltas ni tardanzas en el período seleccionado.';
+  }
+
+  contenedorPrincipal.style.display = 'block';
+}
+
+
+// =====================================================
 // EXPORTACIÓN DE REPORTES V2
 // PDF Y EXCEL
 // -----------------------------------------------------
@@ -3766,6 +4094,23 @@ function actualizarBotonesDescargaReporte() {
 
   if (descargarReportePdfBtn) {
     descargarReportePdfBtn.disabled = !habilitado;
+  }
+
+  const esMensual =
+    habilitado &&
+    ultimoReporteMGP.tipoReporte === 'mensual';
+
+  if (verMatrizMensualBtn) {
+    verMatrizMensualBtn.disabled = !esMensual;
+  }
+
+  if (!esMensual) {
+    matrizMensualVisibleMGP = false;
+    if (verMatrizMensualBtn) {
+      verMatrizMensualBtn.textContent =
+        '📅 Ver matriz mensual';
+    }
+    renderizarMatrizMensualMGP();
   }
 
 }
