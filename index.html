@@ -631,6 +631,41 @@
 
 
     <!-- =================================================
+         DESCARGAS
+         ================================================= -->
+
+    <div
+      id="reporteDescargas"
+      style="
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        margin-top:10px;
+      "
+    >
+
+      <button
+        id="descargarReportePdfBtn"
+        class="secondary"
+        type="button"
+        disabled
+      >
+        📄 Descargar PDF
+      </button>
+
+      <button
+        id="descargarReporteExcelBtn"
+        class="secondary"
+        type="button"
+        disabled
+      >
+        📊 Descargar Excel
+      </button>
+
+    </div>
+
+
+    <!-- =================================================
          MENSAJE
          ================================================= -->
 
@@ -841,6 +876,18 @@
 <!-- =====================================================
      JAVASCRIPT PRINCIPAL
      ===================================================== -->
+
+<script
+  src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
+</script>
+
+<script
+  src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+</script>
+
+<script
+  src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js">
+</script>
 
 <script src="js/app.js"></script>
 
