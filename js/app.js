@@ -3470,7 +3470,8 @@ if (
                   'Fecha',
                   'Estado',
                   'Puntualidad',
-                  'Hora'
+                  'Hora',
+                  'Código'
                 ].forEach(
                   function(texto) {
                     const th =
@@ -3508,7 +3509,7 @@ if (
                       'td'
                     );
 
-                  celdaSinDetalle.colSpan = 4;
+                  celdaSinDetalle.colSpan = 5;
                   celdaSinDetalle.textContent =
                     'No hay detalle diario disponible.';
                   celdaSinDetalle.style.padding = '6px';
@@ -3535,7 +3536,8 @@ if (
                         dia.fecha || '',
                         dia.estado || '',
                         dia.puntualidad || '',
-                        dia.hora || ''
+                        dia.hora || '',
+                        dia.codigo || ''
                       ].forEach(
                         function(valor) {
 
