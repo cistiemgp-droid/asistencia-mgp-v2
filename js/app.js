@@ -3997,6 +3997,59 @@ function renderizarMatrizMensualMGP() {
   contenedorMatriz.appendChild(tablaMatriz);
 
   // ---------------------------------------------------
+  // LEYENDA DE CÓDIGOS
+  // ---------------------------------------------------
+
+  const leyenda = document.createElement('div');
+  leyenda.style.marginTop = '12px';
+  leyenda.style.padding = '10px';
+  leyenda.style.border = '1px solid #ccc';
+  leyenda.style.background = '#f8f8f8';
+
+  const tituloLeyenda = document.createElement('strong');
+  tituloLeyenda.textContent = 'Leyenda de códigos';
+  leyenda.appendChild(tituloLeyenda);
+
+  const tablaLeyenda = document.createElement('table');
+  tablaLeyenda.style.borderCollapse = 'collapse';
+  tablaLeyenda.style.marginTop = '7px';
+
+  [
+    ['A', 'Asistió'],
+    ['T', 'Tardanza'],
+    ['U', 'Tardanza justificada'],
+    ['F', 'Falta'],
+    ['J', 'Falta justificada'],
+    ['D', 'Día no evaluable']
+  ].forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    item.forEach(function(valor, indice) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '4px 10px';
+      td.style.border = '1px solid #ccc';
+      if (indice === 0) {
+        td.style.fontWeight = 'bold';
+        td.style.textAlign = 'center';
+      }
+      fila.appendChild(td);
+    });
+
+    tablaLeyenda.appendChild(fila);
+  });
+
+  leyenda.appendChild(tablaLeyenda);
+
+  const notaLeyenda = document.createElement('div');
+  notaLeyenda.style.marginTop = '8px';
+  notaLeyenda.textContent =
+    'Nota: Las incidencias para SIAGIE se muestran en la sección siguiente y corresponden a F, T, U y J.';
+  leyenda.appendChild(notaLeyenda);
+
+  contenedorMatriz.appendChild(leyenda);
+
+  // ---------------------------------------------------
   // TABLA DE INCIDENCIAS
   // ---------------------------------------------------
 
@@ -4249,6 +4302,108 @@ function obtenerSubtituloReporteMGP(datos) {
 }
 
 
+function obtenerDatosMatrizMensualMGP() {
+
+  const reporte = ultimoReporteMGP;
+
+  if (!reporte || reporte.tipoReporte !== 'mensual') {
+    return {
+      encabezados: [],
+      filas: [],
+      incidencias: []
+    };
+  }
+
+  const mes = String(reporte.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+  const ultimoDia =
+    anio && numeroMes
+      ? new Date(anio, numeroMes, 0).getDate()
+      : 0;
+
+  const diasEvaluados = new Set();
+  const datosPorAlumno = [];
+
+  (Array.isArray(reporte.alumnos) ? reporte.alumnos : []).forEach(function(alumno, indiceAlumno) {
+    const porFecha = {};
+    const detalleDias =
+      Array.isArray(alumno.detalleDias)
+        ? alumno.detalleDias
+        : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha = String(dia.fecha || '').trim();
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) return;
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) return;
+
+      diasEvaluados.add(diaNumero);
+      porFecha[diaNumero] = {
+        codigo: String(dia.codigo || '').trim().toUpperCase(),
+        fecha: fecha
+      };
+    });
+
+    datosPorAlumno.push({
+      numero: indiceAlumno + 1,
+      dni: alumno.dni || '',
+      nombre: alumno.nombre || '',
+      porFecha: porFecha
+    });
+  });
+
+  const encabezados = ['N.º', 'DNI', 'APELLIDOS Y NOMBRES'];
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    encabezados.push(String(dia));
+  }
+
+  const filas = [];
+  const incidencias = [];
+
+  datosPorAlumno.forEach(function(item) {
+    const fila = [item.numero, item.dni, item.nombre];
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const registro = item.porFecha[dia];
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      fila.push(codigo);
+
+      if (['T', 'U', 'F', 'J'].indexOf(codigo) !== -1 && registro) {
+        incidencias.push([
+          item.numero,
+          item.dni,
+          item.nombre,
+          dia,
+          registro.fecha || '',
+          codigo
+        ]);
+      }
+    }
+
+    filas.push(fila);
+  });
+
+  return {
+    encabezados: encabezados,
+    filas: filas,
+    incidencias: incidencias
+  };
+}
+
+
 function descargarReporteExcel() {
 
   try {
@@ -4308,6 +4463,69 @@ function descargarReporteExcel() {
         ? 'Reporte Mensual'
         : 'Reporte Diario'
     );
+
+    if (datos.esMensual) {
+      const matriz = obtenerDatosMatrizMensualMGP();
+      const filasMatriz = [
+        ['IE JEC MANUEL GONZALES PRADA'],
+        ['MATRIZ MENSUAL DE ASISTENCIA'],
+        [subtitulo],
+        [],
+        matriz.encabezados,
+        ...matriz.filas,
+        [],
+        ['LEYENDA DE CÓDIGOS'],
+        ['A', 'Asistió'],
+        ['T', 'Tardanza'],
+        ['U', 'Tardanza justificada'],
+        ['F', 'Falta'],
+        ['J', 'Falta justificada'],
+        ['D', 'Día no evaluable']
+      ];
+
+      const hojaMatriz = XLSX.utils.aoa_to_sheet(filasMatriz);
+      hojaMatriz['!cols'] = matriz.encabezados.map(function(encabezado, indice) {
+        if (indice === 2) return { wch: 36 };
+        return { wch: Math.max(5, String(encabezado).length + 2) };
+      });
+
+      XLSX.utils.book_append_sheet(
+        libro,
+        hojaMatriz,
+        'Matriz Mensual'
+      );
+
+      const filasIncidencias = [
+        ['IE JEC MANUEL GONZALES PRADA'],
+        ['INCIDENCIAS PARA SIAGIE'],
+        [subtitulo],
+        [],
+        ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
+        ...matriz.incidencias,
+        [],
+        ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
+        ['T', 'Tardanza'],
+        ['U', 'Tardanza justificada'],
+        ['F', 'Falta'],
+        ['J', 'Falta justificada']
+      ];
+
+      const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
+      hojaIncidencias['!cols'] = [
+        { wch: 7 },
+        { wch: 14 },
+        { wch: 36 },
+        { wch: 8 },
+        { wch: 14 },
+        { wch: 10 }
+      ];
+
+      XLSX.utils.book_append_sheet(
+        libro,
+        hojaIncidencias,
+        'Incidencias SIAGIE'
+      );
+    }
 
     const fechaArchivo =
       datos.reporte.fecha ||
@@ -4426,6 +4644,83 @@ function descargarReportePDF() {
         right: 10
       }
     });
+
+    if (datos.esMensual) {
+      const matriz = obtenerDatosMatrizMensualMGP();
+      let siguienteY = doc.lastAutoTable.finalY + 8;
+
+      doc.setFontSize(11);
+      doc.text('MATRIZ MENSUAL DE ASISTENCIA', 10, siguienteY);
+      siguienteY += 4;
+
+      doc.autoTable({
+        head: [matriz.encabezados],
+        body: matriz.filas,
+        startY: siguienteY,
+        theme: 'grid',
+        styles: {
+          fontSize: 5,
+          cellPadding: 1.2,
+          overflow: 'linebreak'
+        },
+        headStyles: {
+          fontSize: 5
+        },
+        margin: {
+          left: 8,
+          right: 8
+        }
+      });
+
+      siguienteY = doc.lastAutoTable.finalY + 6;
+
+      doc.setFontSize(10);
+      doc.text('LEYENDA DE CÓDIGOS', 10, siguienteY);
+      siguienteY += 2;
+
+      doc.autoTable({
+        head: [['Código', 'Significado']],
+        body: [
+          ['A', 'Asistió'],
+          ['T', 'Tardanza'],
+          ['U', 'Tardanza justificada'],
+          ['F', 'Falta'],
+          ['J', 'Falta justificada'],
+          ['D', 'Día no evaluable']
+        ],
+        startY: siguienteY,
+        theme: 'grid',
+        styles: {
+          fontSize: 7,
+          cellPadding: 1.5
+        },
+        margin: {
+          left: 10,
+          right: 10
+        }
+      });
+
+      siguienteY = doc.lastAutoTable.finalY + 6;
+      doc.setFontSize(10);
+      doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
+      siguienteY += 2;
+
+      doc.autoTable({
+        head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
+        body: matriz.incidencias,
+        startY: siguienteY,
+        theme: 'grid',
+        styles: {
+          fontSize: 7,
+          cellPadding: 1.5,
+          overflow: 'linebreak'
+        },
+        margin: {
+          left: 10,
+          right: 10
+        }
+      });
+    }
 
     const fechaArchivo =
       datos.reporte.fecha ||
