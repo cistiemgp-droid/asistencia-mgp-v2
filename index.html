@@ -662,6 +662,15 @@
         📊 Descargar Excel
       </button>
 
+      <button
+        id="verMatrizMensualBtn"
+        class="secondary"
+        type="button"
+        disabled
+      >
+        📅 Ver matriz mensual
+      </button>
+
     </div>
 
 
@@ -779,6 +788,44 @@
 
         </table>
 
+      </div>
+
+    </div>
+
+
+    <!-- =================================================
+         MATRIZ MENSUAL - APOYO PARA SIAGIE
+         ================================================= -->
+
+    <div
+      id="reporteMatrizMensual"
+      style="display:none; margin-top:18px;"
+    >
+
+      <h3>
+        Matriz mensual de asistencia
+      </h3>
+
+      <p>
+        Vista de control por estudiante y día.
+        Las incidencias se muestran aparte para facilitar
+        el registro manual en SIAGIE.
+      </p>
+
+      <div
+        id="reporteMatrizTablaContenedor"
+        style="overflow-x:auto;"
+      >
+      </div>
+
+      <h3 style="margin-top:18px;">
+        Incidencias para SIAGIE
+      </h3>
+
+      <div
+        id="reporteIncidenciasTablaContenedor"
+        style="overflow-x:auto;"
+      >
       </div>
 
     </div>
