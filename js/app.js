@@ -3133,10 +3133,14 @@ const usaFiltroMensual =
       // CONTENEDOR DE ALERTAS
       // -------------------------------------------------
 
-      const tablaElemento =
-        tabla
-          ? tabla.closest('table')
-          : null;
+     const tablaElemento =
+  tabla
+    ? tabla.closest('table')
+    : null;
+
+if (tablaElemento) {
+ 
+}
 
       if (tablaElemento) {
 
