@@ -3097,10 +3097,14 @@ const usaFiltroMensual =
     alertas.length
   );
 
-  console.log(
-    'Primera alerta:',
-    alertas[0]
-  );
+ console.log(
+  'Primera alerta completa:',
+  JSON.stringify(
+    alertas[0],
+    null,
+    2
+  )
+);
 
 }
     
