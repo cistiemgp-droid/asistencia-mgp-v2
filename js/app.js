@@ -3085,326 +3085,365 @@ const usaFiltroMensual =
     // Se recibe directamente en resultado.alertas.
     // -------------------------------------------------
 
-       // -------------------------------------------------
-    // ALERTAS V2 - VISUALIZACIÓN
-    // -------------------------------------------------
-    // Alertas utiliza resultado.alertas.
-    // No utiliza resultado.alumnos.
-    // -------------------------------------------------
+// -------------------------------------------------
+// ALERTAS V2 - VISUALIZACIÓN
+// -------------------------------------------------
 
-    if (esAlertas) {
+if (esAlertas) {
 
-      const alertas =
-        Array.isArray(resultado.alertas)
-          ? resultado.alertas
-          : [];
+  const alertas =
+    Array.isArray(resultado.alertas)
+      ? resultado.alertas
+      : [];
 
-      console.log(
-        'Alertas recibidas:',
-        alertas.length
+  console.log(
+    'Alertas recibidas:',
+    alertas.length
+  );
+
+  ultimoReporteMGP = {
+    tipoReporte: tipoReporte,
+    fecha: fecha,
+    mes: mes,
+    grado: grado,
+    resumen: resultado.resumen || {},
+    alumnos: [],
+    alertas: alertas
+  };
+
+  actualizarBotonesDescargaReporte();
+  renderizarMatrizMensualMGP();
+
+  if (resumen) {
+    resumen.style.display = 'none';
+  }
+
+  if (resultados) {
+    resultados.style.display = 'block';
+  }
+
+  // -----------------------------------------------
+  // OCULTAR TABLA NORMAL
+  // -----------------------------------------------
+
+  if (tabla) {
+    const tablaNormal =
+      tabla.closest('table');
+
+    if (tablaNormal) {
+      tablaNormal.style.display = 'none';
+    }
+  }
+
+  // -----------------------------------------------
+  // ELIMINAR ALERTAS ANTERIORES
+  // -----------------------------------------------
+
+  const alertaAnterior =
+    document.getElementById(
+      'reporteAlertasMGP'
+    );
+
+  if (alertaAnterior) {
+    alertaAnterior.remove();
+  }
+
+  // -----------------------------------------------
+  // CONTENEDOR
+  // -----------------------------------------------
+
+  const contenedorAlertas =
+    document.createElement('div');
+
+  contenedorAlertas.id =
+    'reporteAlertasMGP';
+
+  contenedorAlertas.style.marginTop =
+    '10px';
+
+  contenedorAlertas.style.width =
+    '100%';
+
+  contenedorAlertas.style.overflowX =
+    'auto';
+
+  // -----------------------------------------------
+  // TÍTULO
+  // -----------------------------------------------
+
+  const titulo =
+    document.createElement('h3');
+
+  titulo.textContent =
+    'Alertas del mes';
+
+  titulo.style.margin =
+    '0 0 10px 0';
+
+  contenedorAlertas.appendChild(
+    titulo
+  );
+
+  // -----------------------------------------------
+  // RESUMEN
+  // -----------------------------------------------
+
+  const resumenAlertas =
+    document.createElement('div');
+
+  const total =
+    resultado.resumen &&
+    resultado.resumen.total !== undefined
+      ? resultado.resumen.total
+      : alertas.length;
+
+  const altas =
+    resultado.resumen &&
+    resultado.resumen.altas !== undefined
+      ? resultado.resumen.altas
+      : 0;
+
+  const medias =
+    resultado.resumen &&
+    resultado.resumen.medias !== undefined
+      ? resultado.resumen.medias
+      : 0;
+
+  resumenAlertas.textContent =
+    'Total: ' +
+    total +
+    ' | Alta: ' +
+    altas +
+    ' | Media: ' +
+    medias;
+
+  resumenAlertas.style.fontWeight =
+    'bold';
+
+  resumenAlertas.style.marginBottom =
+    '12px';
+
+  contenedorAlertas.appendChild(
+    resumenAlertas
+  );
+
+  // -----------------------------------------------
+  // TABLA
+  // -----------------------------------------------
+
+  const tablaAlertas =
+    document.createElement('table');
+
+  tablaAlertas.style.width =
+    '100%';
+
+  tablaAlertas.style.borderCollapse =
+    'collapse';
+
+  tablaAlertas.style.color =
+    '#172033';
+
+  tablaAlertas.style.background =
+    '#ffffff';
+
+  // -----------------------------------------------
+  // CABECERA
+  // -----------------------------------------------
+
+  const thead =
+    document.createElement('thead');
+
+  const filaCabecera =
+    document.createElement('tr');
+
+  [
+    'Nivel',
+    'Tipo',
+    'Código',
+    'DNI',
+    'Estudiante',
+    'Grado / Sección',
+    'Mensaje',
+    'Valor'
+  ].forEach(
+    function(texto) {
+
+      const th =
+        document.createElement('th');
+
+      th.textContent =
+        texto;
+
+      th.style.padding =
+        '8px';
+
+      th.style.border =
+        '1px solid #d7dee8';
+
+      th.style.textAlign =
+        'left';
+
+      th.style.background =
+        '#eef3f8';
+
+      th.style.color =
+        '#172033';
+
+      th.style.whiteSpace =
+        'nowrap';
+
+      filaCabecera.appendChild(
+        th
       );
 
-      // -------------------------------------------------
-      // GUARDAR ALERTAS ACTUALES
-      // -------------------------------------------------
+    }
+  );
 
-      ultimoReporteMGP = {
-        tipoReporte: tipoReporte,
-        fecha: fecha,
-        mes: mes,
-        grado: grado,
-        resumen: resultado.resumen || {},
-        alumnos: [],
-        alertas: alertas
-      };
+  thead.appendChild(
+    filaCabecera
+  );
 
-      actualizarBotonesDescargaReporte();
-      renderizarMatrizMensualMGP();
+  tablaAlertas.appendChild(
+    thead
+  );
 
-      // -------------------------------------------------
-      // OCULTAR RESUMEN NORMAL
-      // -------------------------------------------------
+  // -----------------------------------------------
+  // CUERPO
+  // -----------------------------------------------
 
-      if (resumen) {
-        resumen.style.display = 'none';
-      }
+  const tbody =
+    document.createElement('tbody');
 
-      // -------------------------------------------------
-      // CONTENEDOR DE ALERTAS
-      // -------------------------------------------------
+  alertas.forEach(
+    function(alerta) {
 
-     const tablaElemento =
-  tabla
-    ? tabla.closest('table')
-    : null;
+      const fila =
+        document.createElement('tr');
 
-if (tablaElemento) {
- 
-}
+      const valores = [
+        alerta.nivel,
+        alerta.tipo,
+        alerta.codigo,
+        alerta.dni,
+        alerta.nombre,
+        alerta.gradoSeccion,
+        alerta.mensaje,
+        alerta.valor
+      ];
 
-      if (tablaElemento) {
+      valores.forEach(
+        function(valor) {
 
-        const alertaAnterior =
-          document.getElementById(
-            'reporteAlertasMGP'
-          );
-
-        if (alertaAnterior) {
-          alertaAnterior.remove();
-        }
-
-        const contenedorAlertas =
-          document.createElement('div');
-
-        contenedorAlertas.id =
-  'reporteAlertasMGP';
-
-contenedorAlertas.style.marginTop =
-  '10px';
-
-
-
-
-        
-        // -------------------------------------------------
-        // TÍTULO
-        // -------------------------------------------------
-
-        const tituloAlertas =
-          document.createElement('h3');
-
-        tituloAlertas.textContent =
-          'Alertas del mes';
-
-        tituloAlertas.style.marginBottom =
-          '10px';
-
-        contenedorAlertas.appendChild(
-          tituloAlertas
-        );
-
-        // -------------------------------------------------
-        // RESUMEN DE ALERTAS
-        // -------------------------------------------------
-
-        const resumenAlertas =
-          document.createElement('div');
-
-        resumenAlertas.style.marginBottom =
-          '12px';
-
-        const totalAlertas =
-          resultado.resumen &&
-          resultado.resumen.total
-            ? resultado.resumen.total
-            : alertas.length;
-
-        const altas =
-          resultado.resumen &&
-          resultado.resumen.altas
-            ? resultado.resumen.altas
-            : 0;
-
-        const medias =
-          resultado.resumen &&
-          resultado.resumen.medias
-            ? resultado.resumen.medias
-            : 0;
-
-        resumenAlertas.textContent =
-          'Total: ' +
-          totalAlertas +
-          ' | Alta: ' +
-          altas +
-          ' | Media: ' +
-          medias;
-
-        resumenAlertas.style.fontWeight =
-          'bold';
-
-        contenedorAlertas.appendChild(
-          resumenAlertas
-        );
-
-        // -------------------------------------------------
-        // TABLA DE ALERTAS
-        // -------------------------------------------------
-
-        const tablaAlertas =
-          document.createElement('table');
-
-      tablaAlertas.style.width =
-  '100%';
-
-tablaAlertas.style.borderCollapse =
-  'collapse';
-
-tablaAlertas.style.minWidth =
-  '1100px';
-
-
-
-        // -------------------------------------------------
-        // CABECERA
-        // -------------------------------------------------
-
-        const theadAlertas =
-          document.createElement('thead');
-
-        theadAlertas.innerHTML =
-          '<tr>' +
-          '<th>Nivel</th>' +
-          '<th>Tipo</th>' +
-          '<th>Código</th>' +
-          '<th>DNI</th>' +
-          '<th>Estudiante</th>' +
-          '<th>Grado / Sección</th>' +
-          '<th>Mensaje</th>' +
-          '<th>Valor</th>' +
-          '</tr>';
-
-        tablaAlertas.appendChild(
-          theadAlertas
-        );
-
-        // -------------------------------------------------
-        // CUERPO
-        // -------------------------------------------------
-
-        const tbodyAlertas =
-          document.createElement('tbody');
-
-        alertas.forEach(
-          function(alerta) {
-
-            const fila =
-              document.createElement('tr');
-
-            const valores = [
-              alerta.nivel || '',
-              alerta.tipo || '',
-              alerta.codigo || '',
-              alerta.dni || '',
-              alerta.nombre || '',
-              alerta.gradoSeccion || '',
-              alerta.mensaje || '',
-              alerta.valor !== undefined &&
-              alerta.valor !== null
-                ? alerta.valor
-                : ''
-            ];
-
-            valores.forEach(
-              function(valor) {
-
-                const celda =
-  document.createElement('td');
-
-celda.textContent =
-  String(valor);
-
-celda.style.padding =
-  '6px';
-
-celda.style.borderBottom =
-  '1px solid #ddd';
-
-celda.style.verticalAlign =
-  'top';
-
-celda.style.whiteSpace =
-  'normal';
-
-celda.style.wordBreak =
-  'break-word';
-                fila.appendChild(
-                  celda
-                );
-
-              }
-            );
-
-            tbodyAlertas.appendChild(
-              fila
-            );
-
-          }
-        );
-
-        // -------------------------------------------------
-        // SIN ALERTAS
-        // -------------------------------------------------
-
-        if (!alertas.length) {
-
-          const filaSinAlertas =
-            document.createElement('tr');
-
-          const celdaSinAlertas =
+          const td =
             document.createElement('td');
 
-          celdaSinAlertas.colSpan = 8;
+          td.textContent =
+            valor === undefined ||
+            valor === null
+              ? ''
+              : String(valor);
 
-          celdaSinAlertas.textContent =
-            'No se encontraron alertas para el período seleccionado.';
+          td.style.padding =
+            '8px';
 
-          celdaSinAlertas.style.padding =
-            '10px';
+          td.style.border =
+            '1px solid #d7dee8';
 
-          filaSinAlertas.appendChild(
-            celdaSinAlertas
-          );
+          td.style.color =
+            '#172033';
 
-          tbodyAlertas.appendChild(
-            filaSinAlertas
+          td.style.background =
+            '#ffffff';
+
+          td.style.verticalAlign =
+            'top';
+
+          td.style.whiteSpace =
+            'normal';
+
+          td.style.wordBreak =
+            'break-word';
+
+          fila.appendChild(
+            td
           );
 
         }
+      );
 
-        tablaAlertas.appendChild(
-          tbodyAlertas
-        );
+      tbody.appendChild(
+        fila
+      );
 
-        contenedorAlertas.appendChild(
-          tablaAlertas
-        );
-
-        // -------------------------------------------------
-        // INSERTAR ANTES DE LA TABLA NORMAL
-        // -------------------------------------------------
-
-        tablaElemento.parentNode.insertBefore(
-          contenedorAlertas,
-          tablaElemento
-        );
-
-        tablaElemento.style.display =
-          'none';
-
-      }
-
-    
-      // -------------------------------------------------
-      // MOSTRAR RESULTADO
-      // -------------------------------------------------
-
-      if (resultados) {
-        resultados.style.display =
-          'block';
-      }
-
-      if (mensaje) {
-        mensaje.textContent =
-          '✅ Alertas generadas correctamente.';
-      }
-
-      // -------------------------------------------------
-      // IMPORTANTE:
-      // No continuar con la lógica de reportes normales.
-      // -------------------------------------------------
-
-      return;
     }
+  );
+
+  // -----------------------------------------------
+  // SIN ALERTAS
+  // -----------------------------------------------
+
+  if (!alertas.length) {
+
+    const fila =
+      document.createElement('tr');
+
+    const td =
+      document.createElement('td');
+
+    td.colSpan = 8;
+
+    td.textContent =
+      'No se encontraron alertas para el período seleccionado.';
+
+    td.style.padding =
+      '10px';
+
+    td.style.color =
+      '#172033';
+
+    fila.appendChild(
+      td
+    );
+
+    tbody.appendChild(
+      fila
+    );
+
+  }
+
+  tablaAlertas.appendChild(
+    tbody
+  );
+
+  contenedorAlertas.appendChild(
+    tablaAlertas
+  );
+
+  // -----------------------------------------------
+  // INSERTAR EN RESULTADOS
+  // -----------------------------------------------
+
+  if (resultados) {
+
+    resultados.appendChild(
+      contenedorAlertas
+    );
+
+  }
+
+  if (mensaje) {
+
+    mensaje.textContent =
+      '✅ Alertas generadas correctamente.';
+
+  }
+
+  return;
+}
+
+// -------------------------------------------------
+// RESUMEN
+// -------------------------------------------------
     
     // -------------------------------------------------
     // RESUMEN
