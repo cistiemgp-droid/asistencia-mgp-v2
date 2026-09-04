@@ -2787,6 +2787,12 @@ const mes =
 const esMensual =
   tipoReporte === 'mensual';
 
+const esAlertas =
+  tipoReporte === 'alertas';
+
+const usaFiltroMensual =
+  esMensual || esAlertas;
+
   // -------------------------------------------------
   // VALIDACIONES
   // -------------------------------------------------
