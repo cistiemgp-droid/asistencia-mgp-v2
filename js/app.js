@@ -3158,11 +3158,7 @@ const usaFiltroMensual =
 contenedorAlertas.style.marginTop =
   '10px';
 
-contenedorAlertas.style.width =
-  '100%';
 
-contenedorAlertas.style.overflowX =
-  'auto';
 
 
         
