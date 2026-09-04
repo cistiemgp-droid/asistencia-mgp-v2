@@ -3078,7 +3078,28 @@ const usaFiltroMensual =
     actualizarBotonesDescargaReporte();
     renderizarMatrizMensualMGP();
 
+        // -------------------------------------------------
+    // ALERTAS V2
+    // -------------------------------------------------
+    // Alertas no utiliza resultado.alumnos.
+    // Se recibe directamente en resultado.alertas.
+    // -------------------------------------------------
 
+    if (esAlertas) {
+
+      const alertas =
+        Array.isArray(resultado.alertas)
+          ? resultado.alertas
+          : [];
+
+      console.log(
+        'Alertas recibidas:',
+        alertas.length
+      );
+
+    }
+
+    
     // -------------------------------------------------
     // RESUMEN
     // -------------------------------------------------
