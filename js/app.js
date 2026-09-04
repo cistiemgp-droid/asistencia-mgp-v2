@@ -3153,11 +3153,19 @@ const usaFiltroMensual =
           document.createElement('div');
 
         contenedorAlertas.id =
-          'reporteAlertasMGP';
+  'reporteAlertasMGP';
 
-        contenedorAlertas.style.marginTop =
-          '10px';
+contenedorAlertas.style.marginTop =
+  '10px';
 
+contenedorAlertas.style.width =
+  '100%';
+
+contenedorAlertas.style.overflowX =
+  'auto';
+
+
+        
         // -------------------------------------------------
         // TÍTULO
         // -------------------------------------------------
@@ -3225,14 +3233,17 @@ const usaFiltroMensual =
         const tablaAlertas =
           document.createElement('table');
 
-        tablaAlertas.style.width =
-          '100%';
+       tablaAlertas.style.width =
+  '100%';
 
-        tablaAlertas.style.borderCollapse =
-          'collapse';
+tablaAlertas.style.borderCollapse =
+  'collapse';
 
-        tablaAlertas.style.minWidth =
-          '1100px';
+tablaAlertas.style.minWidth =
+  '1000px';
+
+tablaAlertas.style.tableLayout =
+  'auto';
 
         // -------------------------------------------------
         // CABECERA
