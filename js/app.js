@@ -3229,17 +3229,16 @@ contenedorAlertas.style.marginTop =
         const tablaAlertas =
           document.createElement('table');
 
-       tablaAlertas.style.width =
+      tablaAlertas.style.width =
   '100%';
 
 tablaAlertas.style.borderCollapse =
   'collapse';
 
 tablaAlertas.style.minWidth =
-  '1000px';
+  '1100px';
 
-tablaAlertas.style.tableLayout =
-  'auto';
+
 
         // -------------------------------------------------
         // CABECERA
