@@ -2885,8 +2885,9 @@ const usaFiltroMensual =
         action:
           'apiReportes',
 
+
         fecha:
-  esMensual
+  usaFiltroMensual
     ? ''
     : fecha,
 
