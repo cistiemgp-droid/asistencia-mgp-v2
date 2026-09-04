@@ -3294,9 +3294,12 @@ tablaAlertas.style.minWidth =
               function(valor) {
 
                 const celda =
-                  document.createElement('td');
+  document.createElement('td');
 
-               celda.style.padding =
+celda.textContent =
+  String(valor);
+
+celda.style.padding =
   '6px';
 
 celda.style.borderBottom =
