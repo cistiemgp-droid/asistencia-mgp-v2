@@ -2835,6 +2835,49 @@ const usaFiltroMensual =
   // -------------------------------------------------
   // LIMPIAR RESULTADO ANTERIOR
   // -------------------------------------------------
+  // Si el reporte anterior fue ALERTAS, eliminamos su
+  // contenedor antes de construir cualquier otro reporte.
+  // Esto evita que Alertas aparezca dentro de Mensual,
+  // Asistencia, Faltas o Tardanzas.
+  // -------------------------------------------------
+
+  const alertasAnteriores =
+    document.getElementById(
+      'reporteAlertasMGP'
+    );
+
+  if (alertasAnteriores) {
+    alertasAnteriores.remove();
+  }
+
+  // Restaurar elementos que solo se ocultan durante Alertas.
+  if (resultados) {
+
+    const elementosOcultosAlertas =
+      resultados.querySelectorAll(
+        '.alertasOcultoMGP'
+      );
+
+    elementosOcultosAlertas.forEach(
+      function(elemento) {
+        elemento.classList.remove(
+          'alertasOcultoMGP'
+        );
+        elemento.style.display = '';
+      }
+    );
+  }
+
+  // La tabla normal puede haber quedado oculta durante Alertas.
+  if (tabla) {
+
+    const tablaNormalAnterior =
+      tabla.closest('table');
+
+    if (tablaNormalAnterior) {
+      tablaNormalAnterior.style.display = '';
+    }
+  }
 
   if (mensaje) {
 
@@ -3079,473 +3122,458 @@ const usaFiltroMensual =
     renderizarMatrizMensualMGP();
 
         // -------------------------------------------------
-    // ALERTAS V2
+    // ALERTAS V2 - VISUALIZACIÓN
     // -------------------------------------------------
-    // Alertas no utiliza resultado.alumnos.
-    // Se recibe directamente en resultado.alertas.
+    // Alertas utiliza resultado.alertas.
+    // No utiliza resultado.alumnos.
     // -------------------------------------------------
 
-// -------------------------------------------------
-// ALERTAS V2 - VISUALIZACIÓN
-// -------------------------------------------------
-// Alertas utiliza resultado.alertas.
-// No utiliza resultado.alumnos.
-// -------------------------------------------------
+    if (esAlertas) {
 
-if (esAlertas) {
+      const alertas =
+        Array.isArray(resultado.alertas)
+          ? resultado.alertas
+          : [];
 
-  const alertas =
-    Array.isArray(resultado.alertas)
-      ? resultado.alertas
-      : [];
-
-  console.log(
-    'Alertas recibidas:',
-    alertas.length
-  );
-
-  // -------------------------------------------------
-  // GUARDAR ALERTAS ACTUALES
-  // -------------------------------------------------
-
-  ultimoReporteMGP = {
-    tipoReporte: tipoReporte,
-    fecha: fecha,
-    mes: mes,
-    grado: grado,
-    resumen: resultado.resumen || {},
-    alumnos: [],
-    alertas: alertas
-  };
-
-  actualizarBotonesDescargaReporte();
-  renderizarMatrizMensualMGP();
-
-  // -------------------------------------------------
-  // OCULTAR RESUMEN NORMAL
-  // -------------------------------------------------
-
-  if (resumen) {
-    resumen.style.display = 'none';
-  }
-
-  // -------------------------------------------------
-  // MOSTRAR RESULTADOS
-  // -------------------------------------------------
-
-  if (resultados) {
-    resultados.style.display = 'block';
-  }
-
-  // -------------------------------------------------
-  // OCULTAR TABLA NORMAL
-  // -------------------------------------------------
-
-  if (tabla) {
-
-    const tablaNormal =
-      tabla.closest('table');
-
-    if (tablaNormal) {
-      tablaNormal.style.display = 'none';
-    }
-  }
-
-  // -------------------------------------------------
-  // OCULTAR "DETALLE" DEL REPORTE NORMAL
-  // -------------------------------------------------
-  // En modo Alertas no debe quedar visible
-  // ningún encabezado independiente llamado "Detalle".
-  // -------------------------------------------------
-
-  if (resultados) {
-
-    const elementosDetalle =
-      resultados.querySelectorAll(
-        'h1,h2,h3,h4,h5,h6,strong,p,div,span,th,td'
+      console.log(
+        'Alertas recibidas:',
+        alertas.length
       );
 
-    elementosDetalle.forEach(
-      function(elemento) {
+      // -------------------------------------------------
+      // GUARDAR ALERTAS ACTUALES
+      // -------------------------------------------------
 
-        const texto =
-          String(
-            elemento.textContent || ''
-          ).trim();
+      ultimoReporteMGP = {
+        tipoReporte: tipoReporte,
+        fecha: fecha,
+        mes: mes,
+        grado: grado,
+        resumen: resultado.resumen || {},
+        alumnos: [],
+        alertas: alertas
+      };
 
-        if (texto === 'Detalle') {
-          elemento.style.display = 'none';
-        }
+      actualizarBotonesDescargaReporte();
+      renderizarMatrizMensualMGP();
 
+      // -------------------------------------------------
+      // OCULTAR RESUMEN NORMAL
+      // -------------------------------------------------
+
+      if (resumen) {
+        resumen.style.display = 'none';
       }
-    );
-  }
 
-  // -------------------------------------------------
-  // ELIMINAR ALERTAS ANTERIORES
-  // -------------------------------------------------
+      // -------------------------------------------------
+      // MOSTRAR RESULTADOS
+      // -------------------------------------------------
 
-  const alertaAnterior =
-    document.getElementById(
-      'reporteAlertasMGP'
-    );
+      if (resultados) {
+        resultados.style.display = 'block';
+      }
 
-  if (alertaAnterior) {
-    alertaAnterior.remove();
-  }
+      // -------------------------------------------------
+      // OCULTAR TABLA NORMAL
+      // -------------------------------------------------
 
-  // -------------------------------------------------
-  // CONTENEDOR PRINCIPAL DE ALERTAS
-  // -------------------------------------------------
+      if (tabla) {
 
-  const contenedorAlertas =
-    document.createElement('div');
+        const tablaNormal =
+          tabla.closest('table');
 
-  contenedorAlertas.id =
-    'reporteAlertasMGP';
+        if (tablaNormal) {
+          tablaNormal.style.display = 'none';
+        }
+      }
 
-  contenedorAlertas.style.marginTop =
-    '10px';
+      // -------------------------------------------------
+      // OCULTAR SOLO EL ENCABEZADO "Detalle"
+      // -------------------------------------------------
+      // Se marca la clase para poder restaurarlo al cambiar
+      // a Mensual, Asistencia, Faltas o Tardanzas.
+      // -------------------------------------------------
 
-  contenedorAlertas.style.width =
-    '100%';
+      if (resultados) {
 
-  contenedorAlertas.style.maxWidth =
-    '100%';
+        const elementosDetalle =
+          resultados.querySelectorAll(
+            'h1,h2,h3,h4,h5,h6,strong,p,div,span,th,td'
+          );
 
-  contenedorAlertas.style.overflowX =
-    'auto';
+        elementosDetalle.forEach(
+          function(elemento) {
 
-  contenedorAlertas.style.overflowY =
-    'visible';
+            const texto =
+              String(
+                elemento.textContent || ''
+              ).trim();
 
-  // -------------------------------------------------
-  // TÍTULO
-  // -------------------------------------------------
+            if (texto === 'Detalle') {
+              elemento.classList.add(
+                'alertasOcultoMGP'
+              );
+              elemento.style.display = 'none';
+            }
 
-  const tituloAlertas =
-    document.createElement('h3');
+          }
+        );
+      }
 
-  tituloAlertas.textContent =
-    'Alertas del mes';
+      // -------------------------------------------------
+      // ELIMINAR ALERTAS ANTERIORES
+      // -------------------------------------------------
 
-  tituloAlertas.style.margin =
-    '0 0 10px 0';
+      const alertaAnterior =
+        document.getElementById(
+          'reporteAlertasMGP'
+        );
 
-  tituloAlertas.style.color =
-    '#172033';
+      if (alertaAnterior) {
+        alertaAnterior.remove();
+      }
 
-  contenedorAlertas.appendChild(
-    tituloAlertas
-  );
+      // -------------------------------------------------
+      // CONTENEDOR PRINCIPAL DE ALERTAS
+      // -------------------------------------------------
 
-  // -------------------------------------------------
-  // RESUMEN DE ALERTAS
-  // -------------------------------------------------
+      const contenedorAlertas =
+        document.createElement('div');
 
-  const resumenAlertas =
-    document.createElement('div');
+      contenedorAlertas.id =
+        'reporteAlertasMGP';
 
-  const totalAlertas =
-    resultado.resumen &&
-    resultado.resumen.total !== undefined
-      ? resultado.resumen.total
-      : alertas.length;
+      contenedorAlertas.style.marginTop =
+        '10px';
 
-  const altas =
-    resultado.resumen &&
-    resultado.resumen.altas !== undefined
-      ? resultado.resumen.altas
-      : 0;
+      contenedorAlertas.style.width =
+        '100%';
 
-  const medias =
-    resultado.resumen &&
-    resultado.resumen.medias !== undefined
-      ? resultado.resumen.medias
-      : 0;
+      contenedorAlertas.style.maxWidth =
+        '100%';
 
-  resumenAlertas.textContent =
-    'Total: ' +
-    totalAlertas +
-    ' | Alta: ' +
-    altas +
-    ' | Media: ' +
-    medias;
+      contenedorAlertas.style.overflowX =
+        'auto';
 
-  resumenAlertas.style.fontWeight =
-    'bold';
+      contenedorAlertas.style.overflowY =
+        'visible';
 
-  resumenAlertas.style.marginBottom =
-    '12px';
+      // -------------------------------------------------
+      // TÍTULO
+      // -------------------------------------------------
 
-  resumenAlertas.style.color =
-    '#172033';
+      const tituloAlertas =
+        document.createElement('h3');
 
-  contenedorAlertas.appendChild(
-    resumenAlertas
-  );
+      tituloAlertas.textContent =
+        'Alertas del mes';
 
-  // -------------------------------------------------
-  // CONTENEDOR DE TABLA
-  // -------------------------------------------------
+      tituloAlertas.style.margin =
+        '0 0 10px 0';
 
-  const contenedorTablaAlertas =
-    document.createElement('div');
-
-  contenedorTablaAlertas.style.width =
-    '100%';
-
-  contenedorTablaAlertas.style.overflowX =
-    'auto';
-
-  contenedorTablaAlertas.style.overflowY =
-    'visible';
-
-  // -------------------------------------------------
-  // TABLA DE ALERTAS
-  // -------------------------------------------------
-
-  const tablaAlertas =
-    document.createElement('table');
-
-  tablaAlertas.style.width =
-    '100%';
-
-  tablaAlertas.style.minWidth =
-    '1100px';
-
-  tablaAlertas.style.borderCollapse =
-    'collapse';
-
-  tablaAlertas.style.color =
-    '#172033';
-
-  tablaAlertas.style.background =
-    '#ffffff';
-
-  tablaAlertas.style.tableLayout =
-    'auto';
-
-  // -------------------------------------------------
-  // CABECERA
-  // -------------------------------------------------
-
-  const theadAlertas =
-    document.createElement('thead');
-
-  const filaCabecera =
-    document.createElement('tr');
-
-  [
-    'Nivel',
-    'Tipo',
-    'Código',
-    'DNI',
-    'Estudiante',
-    'Grado / Sección',
-    'Mensaje',
-    'Valor'
-  ].forEach(
-    function(texto) {
-
-      const th =
-        document.createElement('th');
-
-      th.textContent =
-        texto;
-
-      th.style.padding =
-        '8px';
-
-      th.style.borderBottom =
-        '1px solid #d7dee8';
-
-      th.style.textAlign =
-        'left';
-
-      th.style.background =
-        '#eef3f8';
-
-      th.style.color =
+      tituloAlertas.style.color =
         '#172033';
 
-      th.style.whiteSpace =
-        'nowrap';
-
-      th.style.verticalAlign =
-        'top';
-
-      filaCabecera.appendChild(
-        th
+      contenedorAlertas.appendChild(
+        tituloAlertas
       );
 
-    }
-  );
+      // -------------------------------------------------
+      // RESUMEN DE ALERTAS
+      // -------------------------------------------------
 
-  theadAlertas.appendChild(
-    filaCabecera
-  );
+      const resumenAlertas =
+        document.createElement('div');
 
-  tablaAlertas.appendChild(
-    theadAlertas
-  );
+      const totalAlertas =
+        resultado.resumen &&
+        resultado.resumen.total !== undefined
+          ? resultado.resumen.total
+          : alertas.length;
 
-  // -------------------------------------------------
-  // CUERPO
-  // -------------------------------------------------
+      const altas =
+        resultado.resumen &&
+        resultado.resumen.altas !== undefined
+          ? resultado.resumen.altas
+          : 0;
 
-  const tbodyAlertas =
-    document.createElement('tbody');
+      const medias =
+        resultado.resumen &&
+        resultado.resumen.medias !== undefined
+          ? resultado.resumen.medias
+          : 0;
 
-  alertas.forEach(
-    function(alerta) {
+      resumenAlertas.textContent =
+        'Total: ' +
+        totalAlertas +
+        ' | Alta: ' +
+        altas +
+        ' | Media: ' +
+        medias;
 
-      const fila =
+      resumenAlertas.style.fontWeight =
+        'bold';
+
+      resumenAlertas.style.marginBottom =
+        '12px';
+
+      resumenAlertas.style.color =
+        '#172033';
+
+      contenedorAlertas.appendChild(
+        resumenAlertas
+      );
+
+      // -------------------------------------------------
+      // CONTENEDOR DE TABLA
+      // -------------------------------------------------
+
+      const contenedorTablaAlertas =
+        document.createElement('div');
+
+      contenedorTablaAlertas.style.width =
+        '100%';
+
+      contenedorTablaAlertas.style.overflowX =
+        'auto';
+
+      contenedorTablaAlertas.style.overflowY =
+        'visible';
+
+      // -------------------------------------------------
+      // TABLA DE ALERTAS
+      // -------------------------------------------------
+
+      const tablaAlertas =
+        document.createElement('table');
+
+      tablaAlertas.style.width =
+        '100%';
+
+      tablaAlertas.style.minWidth =
+        '1100px';
+
+      tablaAlertas.style.borderCollapse =
+        'collapse';
+
+      tablaAlertas.style.color =
+        '#172033';
+
+      tablaAlertas.style.background =
+        '#ffffff';
+
+      tablaAlertas.style.tableLayout =
+        'auto';
+
+      // -------------------------------------------------
+      // CABECERA
+      // -------------------------------------------------
+
+      const theadAlertas =
+        document.createElement('thead');
+
+      const filaCabecera =
         document.createElement('tr');
 
-      const valores = [
-        alerta.nivel || '',
-        alerta.tipo || '',
-        alerta.codigo || '',
-        alerta.dni || '',
-        alerta.nombre || '',
-        alerta.gradoSeccion || '',
-        alerta.mensaje || '',
-        alerta.valor !== undefined &&
-        alerta.valor !== null
-          ? alerta.valor
-          : ''
-      ];
+      [
+        'Nivel',
+        'Tipo',
+        'Código',
+        'DNI',
+        'Estudiante',
+        'Grado / Sección',
+        'Mensaje',
+        'Valor'
+      ].forEach(
+        function(texto) {
 
-      valores.forEach(
-        function(valor) {
+          const th =
+            document.createElement('th');
 
-          const celda =
-            document.createElement('td');
+          th.textContent =
+            texto;
 
-          celda.textContent =
-            valor === undefined ||
-            valor === null
-              ? ''
-              : String(valor);
-
-          celda.style.padding =
+          th.style.padding =
             '8px';
 
-          celda.style.borderBottom =
-            '1px solid #ddd';
+          th.style.borderBottom =
+            '1px solid #d7dee8';
 
-          celda.style.color =
+          th.style.textAlign =
+            'left';
+
+          th.style.background =
+            '#eef3f8';
+
+          th.style.color =
             '#172033';
 
-          celda.style.background =
-            '#ffffff';
+          th.style.whiteSpace =
+            'nowrap';
 
-          celda.style.verticalAlign =
+          th.style.verticalAlign =
             'top';
 
-          celda.style.whiteSpace =
-            'normal';
-
-          celda.style.wordBreak =
-            'break-word';
-
-          fila.appendChild(
-            celda
+          filaCabecera.appendChild(
+            th
           );
 
         }
       );
 
-      tbodyAlertas.appendChild(
-        fila
+      theadAlertas.appendChild(
+        filaCabecera
       );
 
+      tablaAlertas.appendChild(
+        theadAlertas
+      );
+
+      // -------------------------------------------------
+      // CUERPO
+      // -------------------------------------------------
+
+      const tbodyAlertas =
+        document.createElement('tbody');
+
+      alertas.forEach(
+        function(alerta) {
+
+          const fila =
+            document.createElement('tr');
+
+          const valores = [
+            alerta.nivel || '',
+            alerta.tipo || '',
+            alerta.codigo || '',
+            alerta.dni || '',
+            alerta.nombre || '',
+            alerta.gradoSeccion || '',
+            alerta.mensaje || '',
+            alerta.valor !== undefined &&
+            alerta.valor !== null
+              ? alerta.valor
+              : ''
+          ];
+
+          valores.forEach(
+            function(valor) {
+
+              const celda =
+                document.createElement('td');
+
+              celda.textContent =
+                valor === undefined ||
+                valor === null
+                  ? ''
+                  : String(valor);
+
+              celda.style.padding =
+                '8px';
+
+              celda.style.borderBottom =
+                '1px solid #ddd';
+
+              celda.style.color =
+                '#172033';
+
+              celda.style.background =
+                '#ffffff';
+
+              celda.style.verticalAlign =
+                'top';
+
+              celda.style.whiteSpace =
+                'normal';
+
+              celda.style.wordBreak =
+                'break-word';
+
+              fila.appendChild(
+                celda
+              );
+
+            }
+          );
+
+          tbodyAlertas.appendChild(
+            fila
+          );
+
+        }
+      );
+
+      // -------------------------------------------------
+      // SIN ALERTAS
+      // -------------------------------------------------
+
+      if (!alertas.length) {
+
+        const filaSinAlertas =
+          document.createElement('tr');
+
+        const celdaSinAlertas =
+          document.createElement('td');
+
+        celdaSinAlertas.colSpan =
+          8;
+
+        celdaSinAlertas.textContent =
+          'No se encontraron alertas para el período seleccionado.';
+
+        celdaSinAlertas.style.padding =
+          '10px';
+
+        celdaSinAlertas.style.color =
+          '#172033';
+
+        filaSinAlertas.appendChild(
+          celdaSinAlertas
+        );
+
+        tbodyAlertas.appendChild(
+          filaSinAlertas
+        );
+
+      }
+
+      tablaAlertas.appendChild(
+        tbodyAlertas
+      );
+
+      contenedorTablaAlertas.appendChild(
+        tablaAlertas
+      );
+
+      contenedorAlertas.appendChild(
+        contenedorTablaAlertas
+      );
+
+      // -------------------------------------------------
+      // INSERTAR DIRECTAMENTE EN RESULTADOS
+      // -------------------------------------------------
+
+      if (resultados) {
+        resultados.appendChild(
+          contenedorAlertas
+        );
+      }
+
+      // -------------------------------------------------
+      // MENSAJE
+      // -------------------------------------------------
+
+      if (mensaje) {
+        mensaje.textContent =
+          '✅ Alertas generadas correctamente.';
+      }
+
+      // -------------------------------------------------
+      // NO CONTINUAR CON REPORTES NORMALES
+      // -------------------------------------------------
+
+      return;
     }
-  );
-
-  // -------------------------------------------------
-  // SIN ALERTAS
-  // -------------------------------------------------
-
-  if (!alertas.length) {
-
-    const filaSinAlertas =
-      document.createElement('tr');
-
-    const celdaSinAlertas =
-      document.createElement('td');
-
-    celdaSinAlertas.colSpan =
-      8;
-
-    celdaSinAlertas.textContent =
-      'No se encontraron alertas para el período seleccionado.';
-
-    celdaSinAlertas.style.padding =
-      '10px';
-
-    celdaSinAlertas.style.color =
-      '#172033';
-
-    filaSinAlertas.appendChild(
-      celdaSinAlertas
-    );
-
-    tbodyAlertas.appendChild(
-      filaSinAlertas
-    );
-
-  }
-
-  tablaAlertas.appendChild(
-    tbodyAlertas
-  );
-
-  contenedorTablaAlertas.appendChild(
-    tablaAlertas
-  );
-
-  contenedorAlertas.appendChild(
-    contenedorTablaAlertas
-  );
-
-  // -------------------------------------------------
-  // INSERTAR DIRECTAMENTE EN RESULTADOS
-  // -------------------------------------------------
-
-  if (resultados) {
-
-    resultados.appendChild(
-      contenedorAlertas
-    );
-
-  }
-
-  // -------------------------------------------------
-  // MENSAJE
-  // -------------------------------------------------
-
-  if (mensaje) {
-
-    mensaje.textContent =
-      '✅ Alertas generadas correctamente.';
-
-  }
-
-  // -------------------------------------------------
-  // NO CONTINUAR CON REPORTES NORMALES
-  // -------------------------------------------------
-
-  return;
-}
-
-// -------------------------------------------------
-// RESUMEN
-// -------------------------------------------------
-// -------------------------------------------------
-// RESUMEN
-// -------------------------------------------------
     
     // -------------------------------------------------
     // RESUMEN
