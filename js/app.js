@@ -70,7 +70,7 @@ const cameraState = {
   // etiquetas/mapeos incorrectos.
   esMovil: false,
 
-  facingMode: 'environment',
+  facingMode: 'user',
 
   // V6: cámara móvil nativa
   mobileCameras: [],
@@ -78,7 +78,14 @@ const cameraState = {
   mobileVideo: null,
   mobileDetector: null,
   mobileScanActivo: false,
-  procesandoQR: false
+  procesandoQR: false,
+
+  // Evita que el mismo QR se procese nuevamente
+  // mientras el estudiante todavía mantiene el carnet
+  // frente a la cámara. Se libera cuando aparece otro QR
+  // o cuando cambia INGRESO/SALIDA.
+  ultimoQRProcesado: '',
+  ultimoEstadoQRProcesado: ''
 
 };
 
@@ -796,6 +803,11 @@ document
           boton.dataset.e ||
           boton.dataset.estado ||
           'INGRESO';
+
+        // Al cambiar INGRESO/SALIDA se permite nuevamente
+        // el mismo QR, porque es una operación diferente.
+        cameraState.ultimoQRProcesado = '';
+        cameraState.ultimoEstadoQRProcesado = '';
 
       }
     );
@@ -1592,6 +1604,10 @@ function registrarAsistenciaBackend(id) {
 //   camaraFrontal = false  -> environment (trasera)
 //   camaraFrontal = true   -> user        (frontal)
 //
+// En el puesto fijo de la tablet, la frontal es la cámara
+// inicial para que el estudiante pueda presentar el carnet
+// directamente frente al dispositivo.
+//
 // En móvil NO usamos:
 //   - getCameras() para decidir frontal/trasera
 //   - deviceId
@@ -1602,7 +1618,7 @@ function registrarAsistenciaBackend(id) {
 // html5-qrcode recibe directamente el facingMode.
 // =====================================================
 
-let camaraFrontal = false;
+let camaraFrontal = true;
 
 
 // =====================================================
@@ -1765,6 +1781,8 @@ function asegurarHtml5QrCode() {
 // TRASERA  -> environment
 // FRONTAL  -> user
 //
+// La frontal es la opción inicial para el puesto fijo.
+//
 // No usa deviceId.
 // No enumera cámaras.
 // No intenta adivinar cuál es frontal.
@@ -1926,6 +1944,18 @@ async function iniciarCamara() {
         decodedText
       ) {
 
+        const qrActual =
+          String(decodedText || '').trim();
+
+        const estadoActualQR =
+          String(state.estado || 'INGRESO')
+            .trim()
+            .toUpperCase();
+
+        if (!qrActual) {
+          return;
+        }
+
         if (
           cameraState.procesandoQR
         ) {
@@ -1934,13 +1964,36 @@ async function iniciarCamara() {
 
         }
 
+        // -------------------------------------------------
+        // ANTIDUPLICADO DE LECTURA INMEDIATA
+        // -------------------------------------------------
+        // Después de registrar, la cámara vuelve a iniciarse.
+        // Si el estudiante todavía mantiene el mismo carnet
+        // delante de la tablet, html5-qrcode puede detectarlo
+        // nuevamente. No enviamos ese segundo intento.
+        // El mismo QR podrá registrarse otra vez cuando cambie
+        // INGRESO/SALIDA o cuando aparezca otro QR.
+        // -------------------------------------------------
+        if (
+          cameraState.ultimoQRProcesado === qrActual &&
+          cameraState.ultimoEstadoQRProcesado === estadoActualQR
+        ) {
+
+          return;
+
+        }
 
         cameraState.procesandoQR =
           true;
 
+        cameraState.ultimoQRProcesado =
+          qrActual;
+
+        cameraState.ultimoEstadoQRProcesado =
+          estadoActualQR;
 
         state.qr =
-          decodedText;
+          qrActual;
 
 
         mensajeCamara(
