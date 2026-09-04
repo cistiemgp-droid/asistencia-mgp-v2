@@ -3382,6 +3382,32 @@ celda.style.wordBreak =
       }
 
       // -------------------------------------------------
+// OCULTAR ENCABEZADO "DETALLE" EN ALERTAS
+// -------------------------------------------------
+
+if (resultados) {
+
+  const elementosDetalle =
+    resultados.querySelectorAll(
+      'h1, h2, h3, h4, h5, h6, strong, p, div'
+    );
+
+  elementosDetalle.forEach(
+    function(elemento) {
+
+      if (
+        elemento.children.length === 0 &&
+        elemento.textContent.trim() === 'Detalle'
+      ) {
+        elemento.style.display = 'none';
+      }
+
+    }
+  );
+
+}
+      
+      // -------------------------------------------------
       // MOSTRAR RESULTADO
       // -------------------------------------------------
 
