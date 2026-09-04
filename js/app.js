@@ -3085,20 +3085,24 @@ const usaFiltroMensual =
     // Se recibe directamente en resultado.alertas.
     // -------------------------------------------------
 
-    if (esAlertas) {
+   if (esAlertas) {
 
-      const alertas =
-        Array.isArray(resultado.alertas)
-          ? resultado.alertas
-          : [];
+  const alertas =
+    Array.isArray(resultado.alertas)
+      ? resultado.alertas
+      : [];
 
-      console.log(
-        'Alertas recibidas:',
-        alertas.length
-      );
+  console.log(
+    'Alertas recibidas:',
+    alertas.length
+  );
 
-    }
+  console.log(
+    'Primera alerta:',
+    alertas[0]
+  );
 
+}
     
     // -------------------------------------------------
     // RESUMEN
