@@ -2680,11 +2680,17 @@ function actualizarFiltroReporte() {
   const esMensual =
     tipo === 'mensual';
 
+  const esAlertas =
+    tipo === 'alertas';
+
+  const usaFiltroMensual =
+    esMensual || esAlertas;
+
 
   if (reporteFecha) {
 
     reporteFecha.style.display =
-      esMensual
+      usaFiltroMensual
         ? 'none'
         : '';
 
@@ -2694,7 +2700,7 @@ function actualizarFiltroReporte() {
   if (reporteMensualFiltros) {
 
     reporteMensualFiltros.style.display =
-      esMensual
+      usaFiltroMensual
         ? 'block'
         : 'none';
 
