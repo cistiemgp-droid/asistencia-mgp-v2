@@ -2757,6 +2757,29 @@ async function consultarReporte() {
       'reporteTablaBody'
     );
 
+  // -------------------------------------------------
+  // ESTILO FUNCIONAL DE TABLAS DE REPORTES
+  // -------------------------------------------------
+  // Ajusta el contenido al ancho disponible.
+  // Reduce padding y permite salto de texto para evitar
+  // desplazamiento horizontal innecesario en los reportes.
+  // -------------------------------------------------
+
+  if (tabla) {
+
+    const tablaReporteBase =
+      tabla.closest('table');
+
+    if (tablaReporteBase) {
+      tablaReporteBase.style.width = '100%';
+      tablaReporteBase.style.minWidth = '0';
+      tablaReporteBase.style.maxWidth = '100%';
+      tablaReporteBase.style.tableLayout = 'fixed';
+      tablaReporteBase.style.borderCollapse = 'collapse';
+      tablaReporteBase.style.fontSize = '12px';
+    }
+  }
+
 
   const fecha =
     fechaElemento
@@ -3252,8 +3275,20 @@ const usaFiltroMensual =
       contenedorAlertas.style.maxWidth =
         '100%';
 
+      contenedorAlertas.style.border =
+        '1px solid #2563eb';
+
+      contenedorAlertas.style.borderRadius =
+        '8px';
+
+      contenedorAlertas.style.padding =
+        '10px';
+
+      contenedorAlertas.style.background =
+        '#ffffff';
+
       contenedorAlertas.style.overflowX =
-        'auto';
+        'hidden';
 
       contenedorAlertas.style.overflowY =
         'visible';
@@ -3335,7 +3370,7 @@ const usaFiltroMensual =
         '100%';
 
       contenedorTablaAlertas.style.overflowX =
-        'auto';
+        'hidden';
 
       contenedorTablaAlertas.style.overflowY =
         'visible';
@@ -3351,7 +3386,7 @@ const usaFiltroMensual =
         '100%';
 
       tablaAlertas.style.minWidth =
-        '1100px';
+        '0';
 
       tablaAlertas.style.borderCollapse =
         'collapse';
@@ -3363,7 +3398,29 @@ const usaFiltroMensual =
         '#ffffff';
 
       tablaAlertas.style.tableLayout =
-        'auto';
+        'fixed';
+
+      const colgroupAlertas =
+        document.createElement('colgroup');
+
+      [
+        '8%',
+        '8%',
+        '13%',
+        '10%',
+        '20%',
+        '10%',
+        '24%',
+        '7%'
+      ].forEach(function(ancho) {
+        const col = document.createElement('col');
+        col.style.width = ancho;
+        colgroupAlertas.appendChild(col);
+      });
+
+      tablaAlertas.appendChild(
+        colgroupAlertas
+      );
 
       // -------------------------------------------------
       // CABECERA
@@ -4244,6 +4301,21 @@ const usaFiltroMensual =
         }
       );
 
+      // Ajuste final de celdas del reporte principal.
+      // No altera valores ni estructura; solo presentación.
+      const celdasReporte =
+        tabla.querySelectorAll('th, td');
+
+      celdasReporte.forEach(
+        function(celda) {
+          celda.style.padding = '4px';
+          celda.style.whiteSpace = 'normal';
+          celda.style.wordBreak = 'break-word';
+          celda.style.overflowWrap = 'anywhere';
+          celda.style.verticalAlign = 'top';
+        }
+      );
+
     }
 
 
@@ -4409,8 +4481,10 @@ function renderizarMatrizMensualMGP() {
     document.createElement('table');
 
   tablaMatriz.style.borderCollapse = 'collapse';
-  tablaMatriz.style.minWidth = '1100px';
+  tablaMatriz.style.minWidth = '0';
   tablaMatriz.style.width = '100%';
+  tablaMatriz.style.tableLayout = 'fixed';
+  tablaMatriz.style.fontSize = '10px';
 
   const thead =
     document.createElement('thead');
@@ -4424,19 +4498,20 @@ function renderizarMatrizMensualMGP() {
   ].forEach(function(texto) {
     const th = document.createElement('th');
     th.textContent = texto;
-    th.style.padding = '5px';
+    th.style.padding = '3px';
     th.style.border = '1px solid #ccc';
-    th.style.whiteSpace = 'nowrap';
+    th.style.whiteSpace = 'normal';
+    th.style.wordBreak = 'break-word';
     filaCabecera.appendChild(th);
   });
 
   for (let dia = 1; dia <= ultimoDia; dia++) {
     const th = document.createElement('th');
     th.textContent = String(dia);
-    th.style.padding = '5px';
+    th.style.padding = '3px';
     th.style.border = '1px solid #ccc';
     th.style.textAlign = 'center';
-    th.style.minWidth = '28px';
+    th.style.width = '2.2%';
     filaCabecera.appendChild(th);
   }
 
@@ -4455,9 +4530,10 @@ function renderizarMatrizMensualMGP() {
     ].forEach(function(valor) {
       const td = document.createElement('td');
       td.textContent = valor;
-      td.style.padding = '5px';
+      td.style.padding = '3px';
       td.style.border = '1px solid #ccc';
-      td.style.whiteSpace = 'nowrap';
+      td.style.whiteSpace = 'normal';
+      td.style.wordBreak = 'break-word';
       fila.appendChild(td);
     });
 
@@ -4479,11 +4555,11 @@ function renderizarMatrizMensualMGP() {
       }
 
       td.textContent = codigo;
-      td.style.padding = '5px';
+      td.style.padding = '3px';
       td.style.border = '1px solid #ccc';
       td.style.textAlign = 'center';
       td.style.fontWeight = 'bold';
-      td.style.minWidth = '28px';
+      td.style.width = '2.2%';
       fila.appendChild(td);
 
       if (
@@ -4576,7 +4652,9 @@ function renderizarMatrizMensualMGP() {
 
   tablaIncidencias.style.borderCollapse = 'collapse';
   tablaIncidencias.style.width = '100%';
-  tablaIncidencias.style.minWidth = '650px';
+  tablaIncidencias.style.minWidth = '0';
+  tablaIncidencias.style.tableLayout = 'fixed';
+  tablaIncidencias.style.fontSize = '11px';
 
   const filaIncidenciasCabecera =
     document.createElement('tr');
@@ -4591,9 +4669,11 @@ function renderizarMatrizMensualMGP() {
   ].forEach(function(texto) {
     const th = document.createElement('th');
     th.textContent = texto;
-    th.style.padding = '6px';
+    th.style.padding = '4px';
     th.style.border = '1px solid #ccc';
     th.style.textAlign = 'left';
+    th.style.whiteSpace = 'normal';
+    th.style.wordBreak = 'break-word';
     filaIncidenciasCabecera.appendChild(th);
   });
 
@@ -4618,8 +4698,10 @@ function renderizarMatrizMensualMGP() {
     ].forEach(function(valor) {
       const td = document.createElement('td');
       td.textContent = valor;
-      td.style.padding = '6px';
+      td.style.padding = '4px';
       td.style.border = '1px solid #ccc';
+      td.style.whiteSpace = 'normal';
+      td.style.wordBreak = 'break-word';
       fila.appendChild(td);
     });
 
