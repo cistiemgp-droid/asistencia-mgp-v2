@@ -3301,18 +3301,20 @@ tablaAlertas.style.tableLayout =
                 const celda =
                   document.createElement('td');
 
-                celda.textContent =
-                  String(valor);
+               celda.style.padding =
+  '6px';
 
-                celda.style.padding =
-                  '6px';
+celda.style.borderBottom =
+  '1px solid #ddd';
 
-                celda.style.borderBottom =
-                  '1px solid #ddd';
+celda.style.verticalAlign =
+  'top';
 
-                celda.style.verticalAlign =
-                  'top';
+celda.style.whiteSpace =
+  'normal';
 
+celda.style.wordBreak =
+  'break-word';
                 fila.appendChild(
                   celda
                 );
