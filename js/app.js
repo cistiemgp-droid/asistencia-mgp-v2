@@ -4324,6 +4324,27 @@ const usaFiltroMensual =
       resultados.style.display =
         'block';
 
+      // -------------------------------------------------
+      // MARCO AZUL PARA TODOS LOS REPORTES NORMALES
+      // -------------------------------------------------
+      // Mismo lenguaje visual utilizado en Alertas.
+      // Solo modifica presentación.
+      // -------------------------------------------------
+      resultados.style.border =
+        '1px solid #2563eb';
+
+      resultados.style.borderRadius =
+        '8px';
+
+      resultados.style.padding =
+        '10px';
+
+      resultados.style.background =
+        '#ffffff';
+
+      resultados.style.boxSizing =
+        'border-box';
+
     }
 
 
@@ -4717,6 +4738,15 @@ function renderizarMatrizMensualMGP() {
   }
 
   contenedorPrincipal.style.display = 'block';
+
+  // ---------------------------------------------------
+  // MARCO AZUL DE LA MATRIZ MENSUAL
+  // ---------------------------------------------------
+  contenedorPrincipal.style.border = '1px solid #2563eb';
+  contenedorPrincipal.style.borderRadius = '8px';
+  contenedorPrincipal.style.padding = '10px';
+  contenedorPrincipal.style.background = '#ffffff';
+  contenedorPrincipal.style.boxSizing = 'border-box';
 }
 
 
