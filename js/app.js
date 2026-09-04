@@ -2796,8 +2796,10 @@ const usaFiltroMensual =
   // -------------------------------------------------
   // VALIDACIONES
   // -------------------------------------------------
-if (
-  esMensual
+
+
+  if (
+  usaFiltroMensual
     ? !mes
     : !fecha
 ) {
@@ -2805,7 +2807,7 @@ if (
   if (mensaje) {
 
     mensaje.textContent =
-      esMensual
+      usaFiltroMensual
         ? 'Ingrese el mes del reporte.'
         : 'Ingrese la fecha del reporte.';
 
