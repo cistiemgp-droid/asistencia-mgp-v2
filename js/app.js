@@ -2760,26 +2760,10 @@ async function consultarReporte() {
   // -------------------------------------------------
   // ESTILO FUNCIONAL DE TABLAS DE REPORTES
   // -------------------------------------------------
-  // Ajusta el contenido al ancho disponible.
-  // Reduce padding y permite salto de texto para evitar
-  // desplazamiento horizontal innecesario en los reportes.
+  // Las tablas conservan un ancho mínimo funcional.
+  // En celular se desplazan horizontalmente dentro del
+  // área del reporte para evitar que las columnas se pisen.
   // -------------------------------------------------
-
-  if (tabla) {
-
-    const tablaReporteBase =
-      tabla.closest('table');
-
-    if (tablaReporteBase) {
-      tablaReporteBase.style.width = '100%';
-      tablaReporteBase.style.minWidth = '0';
-      tablaReporteBase.style.maxWidth = '100%';
-      tablaReporteBase.style.tableLayout = 'fixed';
-      tablaReporteBase.style.borderCollapse = 'collapse';
-      tablaReporteBase.style.fontSize = '12px';
-    }
-  }
-
 
   const fecha =
     fechaElemento
@@ -2795,6 +2779,36 @@ async function consultarReporte() {
     tipoElemento
       ? tipoElemento.value.trim().toLowerCase()
       : 'asistencia';
+
+  if (tabla) {
+
+    const tablaReporteBase =
+      tabla.closest('table');
+
+    if (tablaReporteBase) {
+      tablaReporteBase.style.width = 'max-content';
+      tablaReporteBase.style.maxWidth = 'none';
+      tablaReporteBase.style.minWidth =
+        tipoReporte === 'mensual'
+          ? '1050px'
+          : '720px';
+      tablaReporteBase.style.tableLayout = 'auto';
+      tablaReporteBase.style.borderCollapse = 'collapse';
+      tablaReporteBase.style.fontSize = '12px';
+    }
+
+    const contenedorTablaReporte =
+      tabla.closest('table')
+        ? tabla.closest('table').parentElement
+        : null;
+
+    if (contenedorTablaReporte) {
+      contenedorTablaReporte.style.maxWidth = '100%';
+      contenedorTablaReporte.style.overflowX = 'auto';
+      contenedorTablaReporte.style.overflowY = 'visible';
+      contenedorTablaReporte.style.webkitOverflowScrolling = 'touch';
+    }
+  }
 
  
   const mesElemento =
@@ -3288,7 +3302,7 @@ const usaFiltroMensual =
         '#ffffff';
 
       contenedorAlertas.style.overflowX =
-        'hidden';
+        'visible';
 
       contenedorAlertas.style.overflowY =
         'visible';
@@ -3370,7 +3384,7 @@ const usaFiltroMensual =
         '100%';
 
       contenedorTablaAlertas.style.overflowX =
-        'hidden';
+        'auto';
 
       contenedorTablaAlertas.style.overflowY =
         'visible';
@@ -3386,7 +3400,7 @@ const usaFiltroMensual =
         '100%';
 
       tablaAlertas.style.minWidth =
-        '0';
+        '900px';
 
       tablaAlertas.style.borderCollapse =
         'collapse';
@@ -3398,7 +3412,7 @@ const usaFiltroMensual =
         '#ffffff';
 
       tablaAlertas.style.tableLayout =
-        'fixed';
+        'auto';
 
       const colgroupAlertas =
         document.createElement('colgroup');
@@ -4308,10 +4322,10 @@ const usaFiltroMensual =
 
       celdasReporte.forEach(
         function(celda) {
-          celda.style.padding = '4px';
+          celda.style.padding = '6px';
           celda.style.whiteSpace = 'normal';
           celda.style.wordBreak = 'break-word';
-          celda.style.overflowWrap = 'anywhere';
+          celda.style.overflowWrap = 'break-word';
           celda.style.verticalAlign = 'top';
         }
       );
@@ -4502,9 +4516,9 @@ function renderizarMatrizMensualMGP() {
     document.createElement('table');
 
   tablaMatriz.style.borderCollapse = 'collapse';
-  tablaMatriz.style.minWidth = '0';
+  tablaMatriz.style.minWidth = '1100px';
   tablaMatriz.style.width = '100%';
-  tablaMatriz.style.tableLayout = 'fixed';
+  tablaMatriz.style.tableLayout = 'auto';
   tablaMatriz.style.fontSize = '10px';
 
   const thead =
@@ -4602,6 +4616,12 @@ function renderizarMatrizMensualMGP() {
   });
 
   tablaMatriz.appendChild(tbody);
+
+  contenedorMatriz.style.maxWidth = '100%';
+  contenedorMatriz.style.overflowX = 'auto';
+  contenedorMatriz.style.overflowY = 'visible';
+  contenedorMatriz.style.webkitOverflowScrolling = 'touch';
+
   contenedorMatriz.appendChild(tablaMatriz);
 
   // ---------------------------------------------------
@@ -4673,8 +4693,8 @@ function renderizarMatrizMensualMGP() {
 
   tablaIncidencias.style.borderCollapse = 'collapse';
   tablaIncidencias.style.width = '100%';
-  tablaIncidencias.style.minWidth = '0';
-  tablaIncidencias.style.tableLayout = 'fixed';
+  tablaIncidencias.style.minWidth = '700px';
+  tablaIncidencias.style.tableLayout = 'auto';
   tablaIncidencias.style.fontSize = '11px';
 
   const filaIncidenciasCabecera =
@@ -4730,6 +4750,12 @@ function renderizarMatrizMensualMGP() {
   });
 
   tablaIncidencias.appendChild(tbodyIncidencias);
+
+  contenedorIncidencias.style.maxWidth = '100%';
+  contenedorIncidencias.style.overflowX = 'auto';
+  contenedorIncidencias.style.overflowY = 'visible';
+  contenedorIncidencias.style.webkitOverflowScrolling = 'touch';
+
   contenedorIncidencias.appendChild(tablaIncidencias);
 
   if (!incidencias.length) {
