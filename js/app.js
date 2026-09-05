@@ -85,7 +85,8 @@ const cameraState = {
   // frente a la cámara. Se libera cuando aparece otro QR
   // o cuando cambia INGRESO/SALIDA.
   ultimoQRProcesado: '',
-  ultimoEstadoQRProcesado: ''
+  ultimoEstadoQRProcesado: '',
+  ultimoQRProcesadoHasta: 0
 
 };
 
@@ -808,6 +809,7 @@ document
         // el mismo QR, porque es una operación diferente.
         cameraState.ultimoQRProcesado = '';
         cameraState.ultimoEstadoQRProcesado = '';
+        cameraState.ultimoQRProcesadoHasta = 0;
 
       }
     );
@@ -1965,18 +1967,24 @@ async function iniciarCamara() {
         }
 
         // -------------------------------------------------
-        // ANTIDUPLICADO DE LECTURA INMEDIATA
+        // ANTIDUPLICADO SOLO DURANTE LA REINICIALIZACIÓN
         // -------------------------------------------------
         // Después de registrar, la cámara vuelve a iniciarse.
-        // Si el estudiante todavía mantiene el mismo carnet
-        // delante de la tablet, html5-qrcode puede detectarlo
-        // nuevamente. No enviamos ese segundo intento.
-        // El mismo QR podrá registrarse otra vez cuando cambie
-        // INGRESO/SALIDA o cuando aparezca otro QR.
+        // Si el mismo carnet continúa frente a la tablet,
+        // html5-qrcode puede detectarlo varias veces de inmediato.
+        // Bloqueamos únicamente ese periodo corto de relectura.
+        // Después del intervalo, una nueva lectura del mismo QR
+        // SÍ se envía al backend, para que el servidor responda
+        // correctamente: INGRESO YA REGISTRADO / SALIDA YA REGISTRADA.
         // -------------------------------------------------
-        if (
+        const ahoraQR = Date.now();
+        const mismoQR =
           cameraState.ultimoQRProcesado === qrActual &&
-          cameraState.ultimoEstadoQRProcesado === estadoActualQR
+          cameraState.ultimoEstadoQRProcesado === estadoActualQR;
+
+        if (
+          mismoQR &&
+          cameraState.ultimoQRProcesadoHasta > ahoraQR
         ) {
 
           return;
@@ -1991,6 +1999,9 @@ async function iniciarCamara() {
 
         cameraState.ultimoEstadoQRProcesado =
           estadoActualQR;
+
+        cameraState.ultimoQRProcesadoHasta =
+          Date.now() + 2000;
 
         state.qr =
           qrActual;
