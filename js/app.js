@@ -1458,6 +1458,30 @@ function eliminarRegistroScript() {
 
 function registrarAsistenciaBackend(id) {
 
+  const diagnosticoInicio =
+    (window.performance && typeof window.performance.now === 'function')
+      ? window.performance.now()
+      : Date.now();
+
+  window.diagnosticoFrontendMGP = {
+    qrDetectado: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.qrDetectado
+      ? window.diagnosticoFrontendMGP.qrDetectado
+      : diagnosticoInicio,
+    registroInicio: diagnosticoInicio,
+    peticionCreada: null,
+    peticionEnviada: null,
+    respuestaRecibida: null,
+    mensajePintado: null,
+    camaraDetencionInicio: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.camaraDetencionInicio
+      ? window.diagnosticoFrontendMGP.camaraDetencionInicio
+      : null,
+    camaraDetencionFin: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.camaraDetencionFin
+      ? window.diagnosticoFrontendMGP.camaraDetencionFin
+      : null,
+    camaraReinicioInicio: null,
+    camaraReinicioFin: null
+  };
+
   return new Promise(function(resolve) {
 
     const mensaje =
@@ -1498,6 +1522,15 @@ function registrarAsistenciaBackend(id) {
 
     window.respuestaRegistroMGP =
       function(data) {
+
+        window.diagnosticoFrontendMGP.respuestaRecibida =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
+        window.diagnosticoFrontendMGP.msRespuestaDesdeInicio =
+          window.diagnosticoFrontendMGP.respuestaRecibida -
+          window.diagnosticoFrontendMGP.registroInicio;
 
         eliminarRegistroScript();
 
@@ -1547,6 +1580,15 @@ function registrarAsistenciaBackend(id) {
               'Estado: ' + (data.estado || estado) + '<br>' +
               'Hora: ' + (data.hora || '--:--:--') + '<br>' +
               'Puntualidad: ' + (data.puntualidad || 'N/A');
+
+            window.diagnosticoFrontendMGP.mensajePintado =
+              (window.performance && typeof window.performance.now === 'function')
+                ? window.performance.now()
+                : Date.now();
+
+            window.diagnosticoFrontendMGP.msRespuestaAMensaje =
+              window.diagnosticoFrontendMGP.mensajePintado -
+              window.diagnosticoFrontendMGP.respuestaRecibida;
           }
 
           resolve(data);
@@ -1587,9 +1629,26 @@ function registrarAsistenciaBackend(id) {
         resolve({ exito: false });
       };
 
+    window.diagnosticoFrontendMGP.peticionCreada =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
+    registroScript.dataset.diagnosticoFrontendMGP =
+      'apiRegistrar';
+
     document.body.appendChild(
       registroScript
     );
+
+    window.diagnosticoFrontendMGP.peticionEnviada =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
+    window.diagnosticoFrontendMGP.msInicioAPeticion =
+      window.diagnosticoFrontendMGP.peticionEnviada -
+      window.diagnosticoFrontendMGP.registroInicio;
 
   });
 
@@ -2007,42 +2066,103 @@ async function iniciarCamara() {
           qrActual;
 
 
+        const diagnosticoQRInicio =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
+        window.diagnosticoFrontendMGP = {
+          qrDetectado: diagnosticoQRInicio,
+          registroInicio: diagnosticoQRInicio,
+          peticionCreada: null,
+          peticionEnviada: null,
+          respuestaRecibida: null,
+          mensajePintado: null,
+          camaraDetencionInicio: null,
+          camaraDetencionFin: null,
+          camaraReinicioInicio: null,
+          camaraReinicioFin: null
+        };
+
         mensajeCamara(
           '✅ QR leído. Consultando servidor...'
         );
 
 
-        // IMPORTANTE: no esperamos a detener la cámara antes de recibir
-        // la respuesta del servidor. Mientras procesandoQR sea true,
-        // cualquier nueva lectura queda bloqueada en el callback.
-        // Así el tiempo de apagado de la cámara no se suma al tiempo
-        // que el usuario espera el resultado confirmado.
-        try {
-
-          await registrarAsistenciaBackend(
+        // Iniciamos el registro inmediatamente y detenemos la cámara
+        // en paralelo. Así no hacemos que el tiempo de apagado de la
+        // cámara se sume al tiempo de respuesta del servidor.
+        const registroPromise =
+          registrarAsistenciaBackend(
             decodedText
           );
+
+        window.diagnosticoFrontendMGP.camaraDetencionInicio =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
+        await detenerCamara();
+
+        window.diagnosticoFrontendMGP.camaraDetencionFin =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
+        window.diagnosticoFrontendMGP.msDetenerCamara =
+          window.diagnosticoFrontendMGP.camaraDetencionFin -
+          window.diagnosticoFrontendMGP.camaraDetencionInicio;
+
+        try {
+
+          // Esperamos el mismo registro que ya se inició arriba.
+          // No se realiza una segunda consulta HTTP.
+          await registroPromise;
 
         }
 
         finally {
 
-          // El resultado ya fue recibido y mostrado. Mantener
-          // procesandoQR=true hasta detener la cámara evita una nueva
-          // lectura mientras el lector sigue activo.
-          setTimeout(async function() {
+          cameraState.procesandoQR =
+            false;
 
-            await detenerCamara();
+          // IMPORTANTE: no bloquear la actualización visual del mensaje
+          // esperando la reinicialización de la cámara. Primero dejamos
+          // que el navegador pinte "REGISTRADO" y luego reactivamos
+          // la cámara en una nueva tarea. Esto evita que el usuario vea
+          // la cámara reiniciarse antes del resultado del registro.
+          setTimeout(function() {
+            window.diagnosticoFrontendMGP.camaraReinicioInicio =
+              (window.performance && typeof window.performance.now === 'function')
+                ? window.performance.now()
+                : Date.now();
 
-            cameraState.procesandoQR =
-              false;
+            const reinicioPromise = iniciarCamara();
 
-            await iniciarCamara();
+            if (reinicioPromise && typeof reinicioPromise.then === 'function') {
+              reinicioPromise.then(function() {
+                window.diagnosticoFrontendMGP.camaraReinicioFin =
+                  (window.performance && typeof window.performance.now === 'function')
+                    ? window.performance.now()
+                    : Date.now();
 
+                window.diagnosticoFrontendMGP.msReiniciarCamara =
+                  window.diagnosticoFrontendMGP.camaraReinicioFin -
+                  window.diagnosticoFrontendMGP.camaraReinicioInicio;
+
+                window.diagnosticoFrontendMGP.totalQR =
+                  window.diagnosticoFrontendMGP.camaraReinicioFin -
+                  window.diagnosticoFrontendMGP.qrDetectado;
+
+                console.log(
+                  'DIAGNOSTICO FRONTEND MGP:',
+                  window.diagnosticoFrontendMGP
+                );
+              });
+            }
           }, 0);
 
         }
-
 
       },
 
