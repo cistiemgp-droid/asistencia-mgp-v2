@@ -1,4 +1,43 @@
 // =====================================================
+// OPTIMIZACIÓN CONTROLADA DE CONEXIÓN API — PRUEBA #1
+// =====================================================
+// Prepara las conexiones antes de que ocurra el primer registro QR.
+// NO modifica la lógica de registro, cámara, reportes ni backend.
+(function prepararConexionAPIMGP() {
+  try {
+    if (!document.head) return;
+
+    const origenes = [
+      'https://script.google.com',
+      'https://script.googleusercontent.com'
+    ];
+
+    origenes.forEach(function(origen) {
+      const existente = document.head.querySelector(
+        'link[rel="preconnect"][href="' + origen + '"]'
+      );
+
+      if (existente) return;
+
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origen;
+      link.crossOrigin = 'anonymous';
+      document.head.appendChild(link);
+
+      const dns = document.createElement('link');
+      dns.rel = 'dns-prefetch';
+      dns.href = origen;
+      document.head.appendChild(dns);
+    });
+  }
+  catch (error) {
+    // La optimización es opcional: si el navegador no la admite,
+    // la aplicación continúa exactamente con el flujo normal.
+  }
+})();
+
+// =====================================================
 // ASISTENCIA MGP V2
 // FRONTEND - GITHUB
 // =====================================================
