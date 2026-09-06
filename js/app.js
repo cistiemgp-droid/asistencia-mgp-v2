@@ -147,6 +147,65 @@ const vistas = [
 // =====================================================
 // WARMUP API V2 - OPTIMIZACIÓN CONTROLADA #16
 // =====================================================
+// =====================================================
+// DIAGNÓSTICO VISIBLE #19 - RED / JSONP
+// TEMPORAL: SOLO PARA MEDIR EL CUELLO DE BOTELLA.
+// =====================================================
+function actualizarDiagnosticoVisibleMGP() {
+  try {
+    const d = window.diagnosticoFrontendMGP || {};
+    let panel = document.getElementById('mgpDiagVisible19');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'mgpDiagVisible19';
+      panel.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;background:rgba(0,0,0,.88);color:#fff;padding:10px 12px;border-radius:8px;font:12px Arial,sans-serif;max-width:430px;line-height:1.4;box-shadow:0 2px 12px rgba(0,0,0,.35);';
+      document.body.appendChild(panel);
+    }
+    const total = d.respuestaRecibida != null && d.registroInicio != null ? (d.respuestaRecibida - d.registroInicio).toFixed(0) : '-';
+    const red = d.respuestaRecibida != null && d.peticionEnviada != null ? (d.respuestaRecibida - d.peticionEnviada).toFixed(0) : '-';
+    const r = d.recursoRed || {};
+    panel.textContent = 'MGP DIAGNÓSTICO #19 | TOTAL: ' + total + ' ms | RED: ' + red + ' ms' +
+      (r.duracion != null ? ' | RECURSO: ' + Number(r.duracion).toFixed(0) + ' ms' : '') +
+      (r.redirect != null ? ' | REDIRECT: ' + Number(r.redirect).toFixed(0) + ' ms' : '') +
+      (r.dns != null ? ' | DNS: ' + Number(r.dns).toFixed(0) + ' ms' : '') +
+      (r.conexion != null ? ' | CONEXIÓN: ' + Number(r.conexion).toFixed(0) + ' ms' : '') +
+      (r.solicitud != null ? ' | SOLICITUD: ' + Number(r.solicitud).toFixed(0) + ' ms' : '') +
+      (r.respuesta != null ? ' | RESPUESTA: ' + Number(r.respuesta).toFixed(0) + ' ms' : '');
+  } catch (error) {}
+}
+
+function capturarRecursoRedMGP() {
+  try {
+    if (!window.performance || !performance.getEntriesByType) return;
+    const entradas = performance.getEntriesByType('resource');
+    const api = String(CONFIG.API_URL || '');
+    let candidato = null;
+    for (let i = entradas.length - 1; i >= 0; i--) {
+      const e = entradas[i];
+      if (e && e.name && e.name.indexOf(api) === 0 && e.initiatorType === 'script') {
+        candidato = e;
+        break;
+      }
+    }
+    if (!candidato) return;
+    const dns = Number(candidato.domainLookupEnd || 0) - Number(candidato.domainLookupStart || 0);
+    const conexion = Number(candidato.connectEnd || 0) - Number(candidato.connectStart || 0);
+    const solicitud = Number(candidato.responseStart || 0) - Number(candidato.requestStart || 0);
+    const respuesta = Number(candidato.responseEnd || 0) - Number(candidato.responseStart || 0);
+    const redirect = Number(candidato.redirectEnd || 0) - Number(candidato.redirectStart || 0);
+    window.diagnosticoFrontendMGP.recursoRed = {
+      inicio: Number(candidato.startTime || 0),
+      duracion: Number(candidato.duration || 0),
+      redirect: Math.max(0, redirect),
+      dns: Math.max(0, dns),
+      conexion: Math.max(0, conexion),
+      solicitud: Math.max(0, solicitud),
+      respuesta: Math.max(0, respuesta),
+      transferSize: Number(candidato.transferSize || 0)
+    };
+  } catch (error) {}
+}
+
 let warmupMGPActivo = false;
 let warmupMGPIntervalo = null;
 let warmupMGPEnCurso = false;
@@ -1703,6 +1762,8 @@ function registrarAsistenciaBackend(id) {
           (window.performance && typeof window.performance.now === 'function')
             ? window.performance.now()
             : Date.now();
+        capturarRecursoRedMGP();
+        actualizarDiagnosticoVisibleMGP();
 
         window.diagnosticoFrontendMGP.msRespuestaDesdeInicio =
           window.diagnosticoFrontendMGP.respuestaRecibida -
