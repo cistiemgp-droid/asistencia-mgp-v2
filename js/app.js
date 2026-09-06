@@ -1571,6 +1571,58 @@ function registrarAsistenciaBackend(id) {
           window.diagnosticoFrontendMGP.respuestaRecibida -
           window.diagnosticoFrontendMGP.registroInicio;
 
+        // =====================================================
+        // DIAGNÓSTICO VISIBLE TEMPORAL — NO CAMBIA EL REGISTRO
+        // =====================================================
+        try {
+          let recurso = null;
+
+          if (
+            window.performance &&
+            typeof window.performance.getEntriesByType === 'function'
+          ) {
+            const recursos = window.performance.getEntriesByType('resource');
+            for (let i = recursos.length - 1; i >= 0; i--) {
+              if (
+                recursos[i] &&
+                typeof recursos[i].name === 'string' &&
+                recursos[i].name.indexOf('action=apiRegistrar') !== -1
+              ) {
+                recurso = recursos[i];
+                break;
+              }
+            }
+          }
+
+          if (recurso) {
+            window.diagnosticoFrontendMGP.recursoRed = {
+              inicio: recurso.startTime,
+              duracion: recurso.duration,
+              redirect: recurso.redirectEnd > recurso.redirectStart
+                ? recurso.redirectEnd - recurso.redirectStart
+                : 0,
+              dns: recurso.domainLookupEnd > recurso.domainLookupStart
+                ? recurso.domainLookupEnd - recurso.domainLookupStart
+                : 0,
+              conexion: recurso.connectEnd > recurso.connectStart
+                ? recurso.connectEnd - recurso.connectStart
+                : 0,
+              solicitud: recurso.responseStart > recurso.requestStart
+                ? recurso.responseStart - recurso.requestStart
+                : 0,
+              respuesta: recurso.responseEnd > recurso.responseStart
+                ? recurso.responseEnd - recurso.responseStart
+                : 0
+            };
+          } else {
+            window.diagnosticoFrontendMGP.recursoRed = null;
+          }
+        }
+        catch (errorDiagnosticoRed) {
+          window.diagnosticoFrontendMGP.recursoRedError =
+            String(errorDiagnosticoRed && errorDiagnosticoRed.message || errorDiagnosticoRed);
+        }
+
         eliminarRegistroScript();
 
         if (!data) {
