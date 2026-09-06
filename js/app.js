@@ -1,43 +1,4 @@
 // =====================================================
-// OPTIMIZACIÓN CONTROLADA DE CONEXIÓN API — PRUEBA #1
-// =====================================================
-// Prepara las conexiones antes de que ocurra el primer registro QR.
-// NO modifica la lógica de registro, cámara, reportes ni backend.
-(function prepararConexionAPIMGP() {
-  try {
-    if (!document.head) return;
-
-    const origenes = [
-      'https://script.google.com',
-      'https://script.googleusercontent.com'
-    ];
-
-    origenes.forEach(function(origen) {
-      const existente = document.head.querySelector(
-        'link[rel="preconnect"][href="' + origen + '"]'
-      );
-
-      if (existente) return;
-
-      const link = document.createElement('link');
-      link.rel = 'preconnect';
-      link.href = origen;
-      link.crossOrigin = 'anonymous';
-      document.head.appendChild(link);
-
-      const dns = document.createElement('link');
-      dns.rel = 'dns-prefetch';
-      dns.href = origen;
-      document.head.appendChild(dns);
-    });
-  }
-  catch (error) {
-    // La optimización es opcional: si el navegador no la admite,
-    // la aplicación continúa exactamente con el flujo normal.
-  }
-})();
-
-// =====================================================
 // ASISTENCIA MGP V2
 // FRONTEND - GITHUB
 // =====================================================
@@ -148,6 +109,139 @@ const vistas = [
 ];
 
 
+// =====================================================
+// WARMUP API V2 - OPTIMIZACIÓN CONTROLADA #16
+// =====================================================
+let warmupMGPActivo = false;
+let warmupMGPIntervalo = null;
+let warmupMGPEnCurso = false;
+
+function warmupAPIMGP() {
+
+  if (warmupMGPEnCurso) {
+    return;
+  }
+
+  warmupMGPEnCurso = true;
+
+  const inicio =
+    (window.performance && typeof window.performance.now === 'function')
+      ? window.performance.now()
+      : Date.now();
+
+  window.diagnosticoWarmupMGP = {
+    inicio: inicio,
+    respuesta: null,
+    exito: null,
+    ms: null
+  };
+
+  const nombreCallback =
+    'respuestaWarmupMGP_' + Date.now();
+
+  let script = null;
+  let terminado = false;
+
+  function limpiar() {
+    if (script && script.parentNode) {
+      script.parentNode.removeChild(script);
+    }
+
+    script = null;
+
+    try {
+      delete window[nombreCallback];
+    }
+    catch (error) {}
+
+    warmupMGPEnCurso = false;
+  }
+
+  window[nombreCallback] = function(data) {
+    if (terminado) {
+      return;
+    }
+
+    terminado = true;
+
+    const respuesta =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
+    window.diagnosticoWarmupMGP.respuesta = respuesta;
+    window.diagnosticoWarmupMGP.exito = !!(data && data.exito);
+    window.diagnosticoWarmupMGP.ms =
+      respuesta - window.diagnosticoWarmupMGP.inicio;
+
+    limpiar();
+  };
+
+  script = document.createElement('script');
+  script.async = true;
+  script.src =
+    CONFIG.API_URL +
+    '?action=apiWarmup' +
+    '&callback=' + encodeURIComponent(nombreCallback) +
+    '&_=' + Date.now();
+
+  script.onerror = function() {
+    if (terminado) {
+      return;
+    }
+
+    terminado = true;
+
+    const respuesta =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
+    window.diagnosticoWarmupMGP.respuesta = respuesta;
+    window.diagnosticoWarmupMGP.exito = false;
+    window.diagnosticoWarmupMGP.ms = null;
+
+    limpiar();
+  };
+
+  document.head.appendChild(script);
+}
+
+function iniciarWarmupMGP() {
+
+  if (warmupMGPActivo) {
+    return;
+  }
+
+  warmupMGPActivo = true;
+
+  // Primer calentamiento al entrar a REGISTRO.
+  warmupAPIMGP();
+
+  // Renovar cada 2 minutos mientras REGISTRO permanece abierto.
+  warmupMGPIntervalo = setInterval(function() {
+    const registro =
+      document.getElementById('registro');
+
+    if (!registro || !registro.classList.contains('active')) {
+      return;
+    }
+
+    warmupAPIMGP();
+  }, 120000);
+}
+
+function detenerWarmupMGP() {
+
+  warmupMGPActivo = false;
+
+  if (warmupMGPIntervalo) {
+    clearInterval(warmupMGPIntervalo);
+    warmupMGPIntervalo = null;
+  }
+}
+
+
 function mostrarVista(nombre) {
 
   vistas.forEach(function(vista) {
@@ -170,6 +264,12 @@ function mostrarVista(nombre) {
   if (nombre !== 'registro') {
 
     detenerCamara();
+    detenerWarmupMGP();
+
+  }
+  else {
+
+    iniciarWarmupMGP();
 
   }
 
@@ -1570,58 +1670,6 @@ function registrarAsistenciaBackend(id) {
         window.diagnosticoFrontendMGP.msRespuestaDesdeInicio =
           window.diagnosticoFrontendMGP.respuestaRecibida -
           window.diagnosticoFrontendMGP.registroInicio;
-
-        // =====================================================
-        // DIAGNÓSTICO VISIBLE TEMPORAL — NO CAMBIA EL REGISTRO
-        // =====================================================
-        try {
-          let recurso = null;
-
-          if (
-            window.performance &&
-            typeof window.performance.getEntriesByType === 'function'
-          ) {
-            const recursos = window.performance.getEntriesByType('resource');
-            for (let i = recursos.length - 1; i >= 0; i--) {
-              if (
-                recursos[i] &&
-                typeof recursos[i].name === 'string' &&
-                recursos[i].name.indexOf('action=apiRegistrar') !== -1
-              ) {
-                recurso = recursos[i];
-                break;
-              }
-            }
-          }
-
-          if (recurso) {
-            window.diagnosticoFrontendMGP.recursoRed = {
-              inicio: recurso.startTime,
-              duracion: recurso.duration,
-              redirect: recurso.redirectEnd > recurso.redirectStart
-                ? recurso.redirectEnd - recurso.redirectStart
-                : 0,
-              dns: recurso.domainLookupEnd > recurso.domainLookupStart
-                ? recurso.domainLookupEnd - recurso.domainLookupStart
-                : 0,
-              conexion: recurso.connectEnd > recurso.connectStart
-                ? recurso.connectEnd - recurso.connectStart
-                : 0,
-              solicitud: recurso.responseStart > recurso.requestStart
-                ? recurso.responseStart - recurso.requestStart
-                : 0,
-              respuesta: recurso.responseEnd > recurso.responseStart
-                ? recurso.responseEnd - recurso.responseStart
-                : 0
-            };
-          } else {
-            window.diagnosticoFrontendMGP.recursoRed = null;
-          }
-        }
-        catch (errorDiagnosticoRed) {
-          window.diagnosticoFrontendMGP.recursoRedError =
-            String(errorDiagnosticoRed && errorDiagnosticoRed.message || errorDiagnosticoRed);
-        }
 
         eliminarRegistroScript();
 
