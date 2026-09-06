@@ -2012,17 +2012,21 @@ async function iniciarCamara() {
         );
 
 
+        // Iniciamos el registro inmediatamente y detenemos la cámara
+        // en paralelo. Así no hacemos que el tiempo de apagado de la
+        // cámara se sume al tiempo de respuesta del servidor.
+        const registroPromise =
+          registrarAsistenciaBackend(
+            decodedText
+          );
+
         await detenerCamara();
 
         try {
 
-          // El endpoint apiRegistrar ya acepta el QR completo,
-          // lo procesa en el servidor y realiza la identificación
-          // antes de guardar la asistencia. Así evitamos una
-          // segunda consulta HTTP innecesaria.
-          await registrarAsistenciaBackend(
-            decodedText
-          );
+          // Esperamos el mismo registro que ya se inició arriba.
+          // No se realiza una segunda consulta HTTP.
+          await registroPromise;
 
         }
 
