@@ -2031,7 +2031,14 @@ async function iniciarCamara() {
           cameraState.procesandoQR =
             false;
 
-          await iniciarCamara();
+          // IMPORTANTE: no bloquear la actualización visual del mensaje
+          // esperando la reinicialización de la cámara. Primero dejamos
+          // que el navegador pinte "REGISTRADO" y luego reactivamos
+          // la cámara en una nueva tarea. Esto evita que el usuario vea
+          // la cámara reiniciarse antes del resultado del registro.
+          setTimeout(function() {
+            iniciarCamara();
+          }, 0);
 
         }
 
