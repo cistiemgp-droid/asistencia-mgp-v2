@@ -3,6 +3,41 @@
 // FRONTEND - GITHUB
 // =====================================================
 
+// =====================================================
+// OPTIMIZACIÓN CONTROLADA DE CONEXIÓN API #17
+// =====================================================
+(function prepararConexionAPIMGP() {
+  try {
+    if (!document.head) return;
+
+    const origenes = [
+      'https://script.google.com',
+      'https://script.googleusercontent.com'
+    ];
+
+    origenes.forEach(function(origen) {
+      if (!document.head.querySelector(
+        'link[rel="preconnect"][href="' + origen + '"]'
+      )) {
+        const link = document.createElement('link');
+        link.rel = 'preconnect';
+        link.href = origen;
+        link.crossOrigin = 'anonymous';
+        document.head.appendChild(link);
+      }
+
+      if (!document.head.querySelector(
+        'link[rel="dns-prefetch"][href="' + origen + '"]'
+      )) {
+        const dns = document.createElement('link');
+        dns.rel = 'dns-prefetch';
+        dns.href = origen;
+        document.head.appendChild(dns);
+      }
+    });
+  } catch (error) {}
+})();
+
 
 // =====================================================
 // CONFIGURACIÓN
@@ -218,7 +253,9 @@ function iniciarWarmupMGP() {
   // Primer calentamiento al entrar a REGISTRO.
   warmupAPIMGP();
 
-  // Renovar cada 2 minutos mientras REGISTRO permanece abierto.
+  // Renovar cada 60 segundos mientras REGISTRO permanece abierto.
+  // Esta frecuencia es deliberadamente corta para reducir la probabilidad
+  // de que la Web App vuelva a quedar inactiva entre lecturas QR.
   warmupMGPIntervalo = setInterval(function() {
     const registro =
       document.getElementById('registro');
@@ -228,7 +265,7 @@ function iniciarWarmupMGP() {
     }
 
     warmupAPIMGP();
-  }, 120000);
+  }, 60000);
 }
 
 function detenerWarmupMGP() {
