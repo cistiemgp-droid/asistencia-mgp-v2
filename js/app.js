@@ -1477,23 +1477,23 @@ function reproducirPitidoRegistroMGP() {
     const oscilador = ctx.createOscillator();
     const ganancia = ctx.createGain();
 
-    oscilador.type = 'sine';
-    oscilador.frequency.setValueAtTime(1200, ahora);
+    // Sonido tipo lector de código de barras: corto, agudo y marcado.
+    oscilador.type = 'square';
+    oscilador.frequency.setValueAtTime(2200, ahora);
 
     ganancia.gain.setValueAtTime(0.0001, ahora);
-    ganancia.gain.exponentialRampToValueAtTime(0.12, ahora + 0.01);
-    ganancia.gain.exponentialRampToValueAtTime(0.0001, ahora + 0.16);
+    ganancia.gain.exponentialRampToValueAtTime(0.24, ahora + 0.004);
+    ganancia.gain.exponentialRampToValueAtTime(0.0001, ahora + 0.085);
 
     oscilador.connect(ganancia);
     ganancia.connect(ctx.destination);
 
     oscilador.start(ahora);
-    oscilador.stop(ahora + 0.14);
+    oscilador.stop(ahora + 0.09);
 
   } catch (error) {}
 
 }
-
 
 function registrarAsistenciaBackend(id) {
 
