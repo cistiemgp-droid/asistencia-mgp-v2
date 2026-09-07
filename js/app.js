@@ -3,41 +3,6 @@
 // FRONTEND - GITHUB
 // =====================================================
 
-// =====================================================
-// OPTIMIZACIÓN CONTROLADA DE CONEXIÓN API #17
-// =====================================================
-(function prepararConexionAPIMGP() {
-  try {
-    if (!document.head) return;
-
-    const origenes = [
-      'https://script.google.com',
-      'https://script.googleusercontent.com'
-    ];
-
-    origenes.forEach(function(origen) {
-      if (!document.head.querySelector(
-        'link[rel="preconnect"][href="' + origen + '"]'
-      )) {
-        const link = document.createElement('link');
-        link.rel = 'preconnect';
-        link.href = origen;
-        link.crossOrigin = 'anonymous';
-        document.head.appendChild(link);
-      }
-
-      if (!document.head.querySelector(
-        'link[rel="dns-prefetch"][href="' + origen + '"]'
-      )) {
-        const dns = document.createElement('link');
-        dns.rel = 'dns-prefetch';
-        dns.href = origen;
-        document.head.appendChild(dns);
-      }
-    });
-  } catch (error) {}
-})();
-
 
 // =====================================================
 // CONFIGURACIÓN
@@ -144,374 +109,6 @@ const vistas = [
 ];
 
 
-// =====================================================
-// WARMUP API V2 - OPTIMIZACIÓN CONTROLADA #16
-// =====================================================
-// =====================================================
-// DIAGNÓSTICO VISIBLE #26 - ETAPAS SERVIDOR / RED
-// TEMPORAL: SOLO PARA MEDIR EL CUELLO DE BOTELLA.
-// =====================================================
-function actualizarDiagnosticoVisibleMGP() {
-  try {
-    const d = window.diagnosticoFrontendMGP || {};
-    let panel = document.getElementById('mgpDiagVisible19');
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = 'mgpDiagVisible19';
-      panel.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;background:rgba(0,0,0,.88);color:#fff;padding:10px 12px;border-radius:8px;font:12px Arial,sans-serif;max-width:430px;line-height:1.4;box-shadow:0 2px 12px rgba(0,0,0,.35);';
-      document.body.appendChild(panel);
-    }
-    const total = d.respuestaRecibida != null && d.registroInicio != null ? (d.respuestaRecibida - d.registroInicio).toFixed(0) : '-';
-    const red = d.respuestaRecibida != null && d.peticionEnviada != null ? (d.respuestaRecibida - d.peticionEnviada).toFixed(0) : '-';
-    const r = d.recursoRed || {};
-    const s = d.diagnosticoServidor || {};
-    const servidor =
-      s.accionFin != null && s.doGetInicio != null
-        ? Number(s.accionFin) - Number(s.doGetInicio)
-        : null;
-    panel.innerHTML = '';
-    const texto = document.createElement('div');
-    texto.textContent = 'MGP DIAGNÓSTICO #28 | TOTAL: ' + total + ' ms | RED: ' + red +
-      ' ms' +
-      (servidor != null ? ' | SERVIDOR: ' + Number(servidor).toFixed(0) + ' ms' : '') +
-      (r.duracion != null ? ' | RECURSO: ' + Number(r.duracion).toFixed(0) + ' ms' : '') +
-      (r.redirect != null ? ' | REDIRECT: ' + Number(r.redirect).toFixed(0) + ' ms' : '') +
-      (r.dns != null ? ' | DNS: ' + Number(r.dns).toFixed(0) + ' ms' : '') +
-      (r.conexion != null ? ' | CONEXIÓN: ' + Number(r.conexion).toFixed(0) + ' ms' : '') +
-      (r.solicitud != null ? ' | SOLICITUD: ' + Number(r.solicitud).toFixed(0) + ' ms' : '') +
-      (r.respuesta != null ? ' | RESPUESTA: ' + Number(r.respuesta).toFixed(0) + ' ms' : '');
-    panel.appendChild(texto);
-
-    if (s && servidor != null) {
-      const detalle = document.createElement('div');
-      detalle.style.marginTop = '6px';
-      detalle.style.paddingTop = '6px';
-      detalle.style.borderTop = '1px solid rgba(255,255,255,.25)';
-      detalle.textContent =
-        'ETAPAS | SESIÓN: ' + (s.validacionMs != null ? Number(s.validacionMs).toFixed(0) : '-') + ' ms' +
-        ' | OPEN: ' + (s.openSpreadsheetMs != null ? Number(s.openSpreadsheetMs).toFixed(0) : '-') + ' ms' +
-        ' | PERSONA: ' + (s.personaMs != null ? Number(s.personaMs).toFixed(0) : '-') + ' ms' +
-        ' | CARNET: ' + (s.carnetMs != null ? Number(s.carnetMs).toFixed(0) : '-') + ' ms';
-      panel.appendChild(detalle);
-
-      const detalleCache = document.createElement('div');
-      detalleCache.textContent =
-        'CACHE | PERSONA: ' + (s.cachePersonaMs != null ? Number(s.cachePersonaMs).toFixed(0) : '-') + ' ms' +
-        ' | CARNET: ' + (s.cacheCarnetMs != null ? Number(s.cacheCarnetMs).toFixed(0) : '-') + ' ms' +
-        ' | HOJA: ' + (s.hojaAsistenciaMs != null ? Number(s.hojaAsistenciaMs).toFixed(0) : '-') + ' ms';
-      panel.appendChild(detalleCache);
-
-      const detalle2 = document.createElement('div');
-      detalle2.textContent =
-        'REGISTRO | PREP: ' + (s.registroPreparacionMs != null ? Number(s.registroPreparacionMs).toFixed(0) : '-') + ' ms' +
-        ' | HORARIO: ' + (s.horarioMs != null ? Number(s.horarioMs).toFixed(0) : '-') + ' ms' +
-        ' | LOCK: ' + (s.lockMs != null ? Number(s.lockMs).toFixed(0) : '-') + ' ms';
-      panel.appendChild(detalle2);
-
-      const detalleInterno = document.createElement('div');
-      detalleInterno.textContent =
-        'SHEETS | LASTROW: ' + (s.getLastRowMs != null ? Number(s.getLastRowMs).toFixed(0) : '-') + ' ms' +
-        ' | FIND: ' + (s.findAllMs != null ? Number(s.findAllMs).toFixed(0) : '-') + ' ms' +
-        ' | READ: ' + (s.lecturaDuplicadosMs != null ? Number(s.lecturaDuplicadosMs).toFixed(0) : '-') + ' ms';
-      panel.appendChild(detalleInterno);
-
-      const detalle3 = document.createElement('div');
-      detalle3.textContent =
-        'CIERRE | DUPLICADO: ' + (s.duplicadoMs != null ? Number(s.duplicadoMs).toFixed(0) : '-') + ' ms' +
-        ' | UUID: ' + (s.idUuidMs != null ? Number(s.idUuidMs).toFixed(0) : '-') + ' ms' +
-        ' | APPEND: ' + (s.appendRowMs != null ? Number(s.appendRowMs).toFixed(0) : '-') + ' ms' +
-        ' | REGISTRO: ' + (s.registrarAsistenciaMs != null ? Number(s.registrarAsistenciaMs).toFixed(0) : '-') + ' ms';
-      panel.appendChild(detalle3);
-    }
-
-    let boton = document.getElementById('mgpDiagTransporte21');
-    if (!boton) {
-      boton = document.createElement('button');
-      boton.id = 'mgpDiagTransporte21';
-      boton.textContent = 'PRUEBA TRANSPORTE';
-      boton.style.cssText = 'margin-top:8px;width:100%;padding:7px 8px;border:0;border-radius:6px;cursor:pointer;font:bold 12px Arial,sans-serif;';
-      boton.onclick = ejecutarDiagnosticoTransporteMGP21;
-      panel.appendChild(boton);
-
-      let botonFetch = document.getElementById('mgpDiagFetch24');
-      if (!botonFetch) {
-        botonFetch = document.createElement('button');
-        botonFetch.id = 'mgpDiagFetch24';
-        botonFetch.textContent = 'PRUEBA FETCH #24';
-        botonFetch.style.cssText = 'margin-top:6px;width:100%;padding:7px 8px;border:0;border-radius:6px;cursor:pointer;font:bold 12px Arial,sans-serif;';
-        botonFetch.onclick = ejecutarComparacionTransporteMGP24;
-        panel.appendChild(botonFetch);
-      }
-    }
-  } catch (error) {}
-}
-
-// =====================================================
-// DIAGNÓSTICO CONTROLADO #24 - JSONP vs FETCH
-// Prueba aislada de transporte. NO toca apiRegistrar.
-// FETCH usa mode:no-cors porque Apps Script ContentService
-// no permite configurar CORS desde este Web App. Por ello
-// solo medimos el tiempo de ida/vuelta del recurso opaco.
-// =====================================================
-function ejecutarComparacionTransporteMGP24() {
-  try {
-    const panel = document.getElementById('mgpDiagVisible19');
-    const base = CONFIG.API_URL +
-      '?action=apiWarmup' +
-      '&_diagTransporte=1' +
-      '&_=' + Date.now();
-
-    const inicioFetch = (window.performance && typeof window.performance.now === 'function')
-      ? window.performance.now() : Date.now();
-
-    fetch(base, {
-      method: 'GET',
-      mode: 'no-cors',
-      cache: 'no-store'
-    })
-      .then(function() {
-        const finFetch = (window.performance && typeof window.performance.now === 'function')
-          ? window.performance.now() : Date.now();
-        const totalFetch = Math.round(finFetch - inicioFetch);
-
-        if (panel) {
-          const prueba = document.createElement('div');
-          prueba.style.marginTop = '8px';
-          prueba.style.paddingTop = '8px';
-          prueba.style.borderTop = '1px solid rgba(255,255,255,.35)';
-          prueba.textContent = 'FETCH #24: ' + totalFetch +
-            ' ms | MODO: no-cors | RESPUESTA: OK';
-          panel.appendChild(prueba);
-        }
-      })
-      .catch(function(error) {
-        const finFetch = (window.performance && typeof window.performance.now === 'function')
-          ? window.performance.now() : Date.now();
-        const totalFetch = Math.round(finFetch - inicioFetch);
-
-        if (panel) {
-          const prueba = document.createElement('div');
-          prueba.style.marginTop = '8px';
-          prueba.style.paddingTop = '8px';
-          prueba.style.borderTop = '1px solid rgba(255,255,255,.35)';
-          prueba.textContent = 'FETCH #24: ERROR | ' + totalFetch +
-            ' ms | ' + (error && error.message ? error.message : 'fetch');
-          panel.appendChild(prueba);
-        }
-      });
-  } catch (error) {}
-}
-
-function ejecutarDiagnosticoTransporteMGP21() {
-  try {
-    const inicio = (window.performance && typeof window.performance.now === 'function')
-      ? window.performance.now() : Date.now();
-    const callback = 'respuestaTransporteMGP21_' + Date.now();
-    const script = document.createElement('script');
-    const panel = document.getElementById('mgpDiagVisible19');
-
-    window[callback] = function(data) {
-      const fin = (window.performance && typeof window.performance.now === 'function')
-        ? window.performance.now() : Date.now();
-      const total = Math.round(fin - inicio);
-      if (panel) {
-        const prueba = document.createElement('div');
-        prueba.style.marginTop = '8px';
-        prueba.style.paddingTop = '8px';
-        prueba.style.borderTop = '1px solid rgba(255,255,255,.35)';
-        prueba.textContent = 'TRANSPORTE #21: ' + total + ' ms | SERVIDOR: ' +
-          (data && data._diagnosticoTransporte && data._diagnosticoTransporte.servidorMs != null
-            ? data._diagnosticoTransporte.servidorMs + ' ms' : '?') +
-          ' | RESPUESTA: OK';
-        panel.appendChild(prueba);
-      }
-      delete window[callback];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    };
-
-    script.onerror = function() {
-      if (panel) {
-        const error = document.createElement('div');
-        error.style.marginTop = '8px';
-        error.textContent = 'TRANSPORTE #21: ERROR DE RED';
-        panel.appendChild(error);
-      }
-      delete window[callback];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    };
-
-    script.src = CONFIG.API_URL +
-      '?action=apiWarmup' +
-      '&_diagTransporte=1' +
-      '&callback=' + encodeURIComponent(callback);
-    document.body.appendChild(script);
-  } catch (error) {}
-}
-
-function capturarRecursoRedMGP() {
-  try {
-    if (!window.performance || !performance.getEntriesByType) return;
-    const entradas = performance.getEntriesByType('resource');
-    const api = String(CONFIG.API_URL || '');
-    let candidato = null;
-    for (let i = entradas.length - 1; i >= 0; i--) {
-      const e = entradas[i];
-      if (e && e.name && e.name.indexOf(api) === 0 && e.initiatorType === 'script') {
-        candidato = e;
-        break;
-      }
-    }
-    if (!candidato) return;
-    const dns = Number(candidato.domainLookupEnd || 0) - Number(candidato.domainLookupStart || 0);
-    const conexion = Number(candidato.connectEnd || 0) - Number(candidato.connectStart || 0);
-    const solicitud = Number(candidato.responseStart || 0) - Number(candidato.requestStart || 0);
-    const respuesta = Number(candidato.responseEnd || 0) - Number(candidato.responseStart || 0);
-    const redirect = Number(candidato.redirectEnd || 0) - Number(candidato.redirectStart || 0);
-    window.diagnosticoFrontendMGP.recursoRed = {
-      inicio: Number(candidato.startTime || 0),
-      duracion: Number(candidato.duration || 0),
-      redirect: Math.max(0, redirect),
-      dns: Math.max(0, dns),
-      conexion: Math.max(0, conexion),
-      solicitud: Math.max(0, solicitud),
-      respuesta: Math.max(0, respuesta),
-      transferSize: Number(candidato.transferSize || 0)
-    };
-  } catch (error) {}
-}
-
-let warmupMGPActivo = false;
-let warmupMGPIntervalo = null;
-let warmupMGPEnCurso = false;
-
-function warmupAPIMGP() {
-
-  if (warmupMGPEnCurso) {
-    return;
-  }
-
-  warmupMGPEnCurso = true;
-
-  const inicio =
-    (window.performance && typeof window.performance.now === 'function')
-      ? window.performance.now()
-      : Date.now();
-
-  window.diagnosticoWarmupMGP = {
-    inicio: inicio,
-    respuesta: null,
-    exito: null,
-    ms: null
-  };
-
-  const nombreCallback =
-    'respuestaWarmupMGP_' + Date.now();
-
-  let script = null;
-  let terminado = false;
-
-  function limpiar() {
-    if (script && script.parentNode) {
-      script.parentNode.removeChild(script);
-    }
-
-    script = null;
-
-    try {
-      delete window[nombreCallback];
-    }
-    catch (error) {}
-
-    warmupMGPEnCurso = false;
-  }
-
-  window[nombreCallback] = function(data) {
-    if (terminado) {
-      return;
-    }
-
-    terminado = true;
-
-    const respuesta =
-      (window.performance && typeof window.performance.now === 'function')
-        ? window.performance.now()
-        : Date.now();
-
-    window.diagnosticoWarmupMGP.respuesta = respuesta;
-    window.diagnosticoWarmupMGP.exito = !!(data && data.exito);
-    window.diagnosticoWarmupMGP.ms =
-      respuesta - window.diagnosticoWarmupMGP.inicio;
-
-    limpiar();
-  };
-
-  script = document.createElement('script');
-  script.async = true;
-  script.src =
-    CONFIG.API_URL +
-    '?action=apiWarmup' +
-    '&callback=' + encodeURIComponent(nombreCallback) +
-    '&_=' + Date.now();
-
-  script.onerror = function() {
-    if (terminado) {
-      return;
-    }
-
-    terminado = true;
-
-    const respuesta =
-      (window.performance && typeof window.performance.now === 'function')
-        ? window.performance.now()
-        : Date.now();
-
-    window.diagnosticoWarmupMGP.respuesta = respuesta;
-    window.diagnosticoWarmupMGP.exito = false;
-    window.diagnosticoWarmupMGP.ms = null;
-
-    limpiar();
-  };
-
-  document.head.appendChild(script);
-}
-
-function iniciarWarmupMGP() {
-
-  if (warmupMGPActivo) {
-    return;
-  }
-
-  warmupMGPActivo = true;
-
-  // Primer calentamiento al entrar a REGISTRO.
-  warmupAPIMGP();
-
-  // Renovar cada 60 segundos mientras REGISTRO permanece abierto.
-  // Esta frecuencia es deliberadamente corta para reducir la probabilidad
-  // de que la Web App vuelva a quedar inactiva entre lecturas QR.
-  warmupMGPIntervalo = setInterval(function() {
-    const registro =
-      document.getElementById('registro');
-
-    if (!registro || !registro.classList.contains('active')) {
-      return;
-    }
-
-    warmupAPIMGP();
-  }, 60000);
-}
-
-function detenerWarmupMGP() {
-
-  warmupMGPActivo = false;
-
-  if (warmupMGPIntervalo) {
-    clearInterval(warmupMGPIntervalo);
-    warmupMGPIntervalo = null;
-  }
-}
-
-
 function mostrarVista(nombre) {
 
   vistas.forEach(function(vista) {
@@ -534,12 +131,6 @@ function mostrarVista(nombre) {
   if (nombre !== 'registro') {
 
     detenerCamara();
-    detenerWarmupMGP();
-
-  }
-  else {
-
-    iniciarWarmupMGP();
 
   }
 
@@ -1867,30 +1458,6 @@ function eliminarRegistroScript() {
 
 function registrarAsistenciaBackend(id) {
 
-  const diagnosticoInicio =
-    (window.performance && typeof window.performance.now === 'function')
-      ? window.performance.now()
-      : Date.now();
-
-  window.diagnosticoFrontendMGP = {
-    qrDetectado: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.qrDetectado
-      ? window.diagnosticoFrontendMGP.qrDetectado
-      : diagnosticoInicio,
-    registroInicio: diagnosticoInicio,
-    peticionCreada: null,
-    peticionEnviada: null,
-    respuestaRecibida: null,
-    mensajePintado: null,
-    camaraDetencionInicio: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.camaraDetencionInicio
-      ? window.diagnosticoFrontendMGP.camaraDetencionInicio
-      : null,
-    camaraDetencionFin: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.camaraDetencionFin
-      ? window.diagnosticoFrontendMGP.camaraDetencionFin
-      : null,
-    camaraReinicioInicio: null,
-    camaraReinicioFin: null
-  };
-
   return new Promise(function(resolve) {
 
     const mensaje =
@@ -1932,23 +1499,6 @@ function registrarAsistenciaBackend(id) {
     window.respuestaRegistroMGP =
       function(data) {
 
-        window.diagnosticoFrontendMGP.respuestaRecibida =
-          (window.performance && typeof window.performance.now === 'function')
-            ? window.performance.now()
-            : Date.now();
-        capturarRecursoRedMGP();
-
-        window.diagnosticoFrontendMGP.diagnosticoServidor =
-          data && data._diagnosticoServidor
-            ? data._diagnosticoServidor
-            : null;
-
-        actualizarDiagnosticoVisibleMGP();
-
-        window.diagnosticoFrontendMGP.msRespuestaDesdeInicio =
-          window.diagnosticoFrontendMGP.respuestaRecibida -
-          window.diagnosticoFrontendMGP.registroInicio;
-
         eliminarRegistroScript();
 
         if (!data) {
@@ -1959,11 +1509,6 @@ function registrarAsistenciaBackend(id) {
           resolve({ exito: false });
           return;
         }
-
-        console.log(
-          'Respuesta registro asistencia:',
-          data
-        );
 
         if (data.exito) {
 
@@ -1997,15 +1542,6 @@ function registrarAsistenciaBackend(id) {
               'Estado: ' + (data.estado || estado) + '<br>' +
               'Hora: ' + (data.hora || '--:--:--') + '<br>' +
               'Puntualidad: ' + (data.puntualidad || 'N/A');
-
-            window.diagnosticoFrontendMGP.mensajePintado =
-              (window.performance && typeof window.performance.now === 'function')
-                ? window.performance.now()
-                : Date.now();
-
-            window.diagnosticoFrontendMGP.msRespuestaAMensaje =
-              window.diagnosticoFrontendMGP.mensajePintado -
-              window.diagnosticoFrontendMGP.respuestaRecibida;
           }
 
           resolve(data);
@@ -2031,7 +1567,6 @@ function registrarAsistenciaBackend(id) {
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
       '&token=' + encodeURIComponent(state.token || '') +
-      '&_diag=1' +
       '&callback=respuestaRegistroMGP';
 
     registroScript.onerror =
@@ -2047,31 +1582,13 @@ function registrarAsistenciaBackend(id) {
         resolve({ exito: false });
       };
 
-    window.diagnosticoFrontendMGP.peticionCreada =
-      (window.performance && typeof window.performance.now === 'function')
-        ? window.performance.now()
-        : Date.now();
-
-    registroScript.dataset.diagnosticoFrontendMGP =
-      'apiRegistrar';
-
     document.body.appendChild(
       registroScript
     );
 
-    window.diagnosticoFrontendMGP.peticionEnviada =
-      (window.performance && typeof window.performance.now === 'function')
-        ? window.performance.now()
-        : Date.now();
-
-    window.diagnosticoFrontendMGP.msInicioAPeticion =
-      window.diagnosticoFrontendMGP.peticionEnviada -
-      window.diagnosticoFrontendMGP.registroInicio;
-
   });
 
 }
-
 
 // =====================================================
 // CÁMARA — ARQUITECTURA RECUPERADA DE ASISTENCIAV1
@@ -2483,25 +2000,6 @@ async function iniciarCamara() {
         state.qr =
           qrActual;
 
-
-        const diagnosticoQRInicio =
-          (window.performance && typeof window.performance.now === 'function')
-            ? window.performance.now()
-            : Date.now();
-
-        window.diagnosticoFrontendMGP = {
-          qrDetectado: diagnosticoQRInicio,
-          registroInicio: diagnosticoQRInicio,
-          peticionCreada: null,
-          peticionEnviada: null,
-          respuestaRecibida: null,
-          mensajePintado: null,
-          camaraDetencionInicio: null,
-          camaraDetencionFin: null,
-          camaraReinicioInicio: null,
-          camaraReinicioFin: null
-        };
-
         mensajeCamara(
           '✅ QR leído. Consultando servidor...'
         );
@@ -2515,21 +2013,10 @@ async function iniciarCamara() {
             decodedText
           );
 
-        window.diagnosticoFrontendMGP.camaraDetencionInicio =
-          (window.performance && typeof window.performance.now === 'function')
-            ? window.performance.now()
-            : Date.now();
-
         await detenerCamara();
 
-        window.diagnosticoFrontendMGP.camaraDetencionFin =
-          (window.performance && typeof window.performance.now === 'function')
-            ? window.performance.now()
-            : Date.now();
+        
 
-        window.diagnosticoFrontendMGP.msDetenerCamara =
-          window.diagnosticoFrontendMGP.camaraDetencionFin -
-          window.diagnosticoFrontendMGP.camaraDetencionInicio;
 
         try {
 
@@ -2550,34 +2037,7 @@ async function iniciarCamara() {
           // la cámara en una nueva tarea. Esto evita que el usuario vea
           // la cámara reiniciarse antes del resultado del registro.
           setTimeout(function() {
-            window.diagnosticoFrontendMGP.camaraReinicioInicio =
-              (window.performance && typeof window.performance.now === 'function')
-                ? window.performance.now()
-                : Date.now();
-
-            const reinicioPromise = iniciarCamara();
-
-            if (reinicioPromise && typeof reinicioPromise.then === 'function') {
-              reinicioPromise.then(function() {
-                window.diagnosticoFrontendMGP.camaraReinicioFin =
-                  (window.performance && typeof window.performance.now === 'function')
-                    ? window.performance.now()
-                    : Date.now();
-
-                window.diagnosticoFrontendMGP.msReiniciarCamara =
-                  window.diagnosticoFrontendMGP.camaraReinicioFin -
-                  window.diagnosticoFrontendMGP.camaraReinicioInicio;
-
-                window.diagnosticoFrontendMGP.totalQR =
-                  window.diagnosticoFrontendMGP.camaraReinicioFin -
-                  window.diagnosticoFrontendMGP.qrDetectado;
-
-                console.log(
-                  'DIAGNOSTICO FRONTEND MGP:',
-                  window.diagnosticoFrontendMGP
-                );
-              });
-            }
+            iniciarCamara();
           }, 0);
 
         }
