@@ -190,7 +190,73 @@ function actualizarDiagnosticoVisibleMGP() {
       boton.style.cssText = 'margin-top:8px;width:100%;padding:7px 8px;border:0;border-radius:6px;cursor:pointer;font:bold 12px Arial,sans-serif;';
       boton.onclick = ejecutarDiagnosticoTransporteMGP21;
       panel.appendChild(boton);
+
+      let botonFetch = document.getElementById('mgpDiagFetch24');
+      if (!botonFetch) {
+        botonFetch = document.createElement('button');
+        botonFetch.id = 'mgpDiagFetch24';
+        botonFetch.textContent = 'PRUEBA FETCH #24';
+        botonFetch.style.cssText = 'margin-top:6px;width:100%;padding:7px 8px;border:0;border-radius:6px;cursor:pointer;font:bold 12px Arial,sans-serif;';
+        botonFetch.onclick = ejecutarComparacionTransporteMGP24;
+        panel.appendChild(botonFetch);
+      }
     }
+  } catch (error) {}
+}
+
+// =====================================================
+// DIAGNÓSTICO CONTROLADO #24 - JSONP vs FETCH
+// Prueba aislada de transporte. NO toca apiRegistrar.
+// FETCH usa mode:no-cors porque Apps Script ContentService
+// no permite configurar CORS desde este Web App. Por ello
+// solo medimos el tiempo de ida/vuelta del recurso opaco.
+// =====================================================
+function ejecutarComparacionTransporteMGP24() {
+  try {
+    const panel = document.getElementById('mgpDiagVisible19');
+    const base = CONFIG.API_URL +
+      '?action=apiWarmup' +
+      '&_diagTransporte=1' +
+      '&_=' + Date.now();
+
+    const inicioFetch = (window.performance && typeof window.performance.now === 'function')
+      ? window.performance.now() : Date.now();
+
+    fetch(base, {
+      method: 'GET',
+      mode: 'no-cors',
+      cache: 'no-store'
+    })
+      .then(function() {
+        const finFetch = (window.performance && typeof window.performance.now === 'function')
+          ? window.performance.now() : Date.now();
+        const totalFetch = Math.round(finFetch - inicioFetch);
+
+        if (panel) {
+          const prueba = document.createElement('div');
+          prueba.style.marginTop = '8px';
+          prueba.style.paddingTop = '8px';
+          prueba.style.borderTop = '1px solid rgba(255,255,255,.35)';
+          prueba.textContent = 'FETCH #24: ' + totalFetch +
+            ' ms | MODO: no-cors | RESPUESTA: OK';
+          panel.appendChild(prueba);
+        }
+      })
+      .catch(function(error) {
+        const finFetch = (window.performance && typeof window.performance.now === 'function')
+          ? window.performance.now() : Date.now();
+        const totalFetch = Math.round(finFetch - inicioFetch);
+
+        if (panel) {
+          const prueba = document.createElement('div');
+          prueba.style.marginTop = '8px';
+          prueba.style.paddingTop = '8px';
+          prueba.style.borderTop = '1px solid rgba(255,255,255,.35)';
+          prueba.textContent = 'FETCH #24: ERROR | ' + totalFetch +
+            ' ms | ' + (error && error.message ? error.message : 'fetch');
+          panel.appendChild(prueba);
+        }
+      });
   } catch (error) {}
 }
 
