@@ -164,7 +164,14 @@ function actualizarDiagnosticoVisibleMGP() {
     const total = d.respuestaRecibida != null && d.registroInicio != null ? (d.respuestaRecibida - d.registroInicio).toFixed(0) : '-';
     const red = d.respuestaRecibida != null && d.peticionEnviada != null ? (d.respuestaRecibida - d.peticionEnviada).toFixed(0) : '-';
     const r = d.recursoRed || {};
-    panel.textContent = 'MGP DIAGNÓSTICO #19 | TOTAL: ' + total + ' ms | RED: ' + red + ' ms' +
+    const s = d.diagnosticoServidor || {};
+    const servidor =
+      s.accionFin != null && s.doGetInicio != null
+        ? Number(s.accionFin) - Number(s.doGetInicio)
+        : null;
+    panel.textContent = 'MGP DIAGNÓSTICO #20 | TOTAL: ' + total + ' ms | RED: ' + red +
+      ' ms' +
+      (servidor != null ? ' | SERVIDOR: ' + Number(servidor).toFixed(0) + ' ms' : '') +
       (r.duracion != null ? ' | RECURSO: ' + Number(r.duracion).toFixed(0) + ' ms' : '') +
       (r.redirect != null ? ' | REDIRECT: ' + Number(r.redirect).toFixed(0) + ' ms' : '') +
       (r.dns != null ? ' | DNS: ' + Number(r.dns).toFixed(0) + ' ms' : '') +
@@ -1763,6 +1770,12 @@ function registrarAsistenciaBackend(id) {
             ? window.performance.now()
             : Date.now();
         capturarRecursoRedMGP();
+
+        window.diagnosticoFrontendMGP.diagnosticoServidor =
+          data && data._diagnosticoServidor
+            ? data._diagnosticoServidor
+            : null;
+
         actualizarDiagnosticoVisibleMGP();
 
         window.diagnosticoFrontendMGP.msRespuestaDesdeInicio =
@@ -1851,6 +1864,7 @@ function registrarAsistenciaBackend(id) {
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
       '&token=' + encodeURIComponent(state.token || '') +
+      '&_diag=1' +
       '&callback=respuestaRegistroMGP';
 
     registroScript.onerror =
