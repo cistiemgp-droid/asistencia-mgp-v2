@@ -171,7 +171,7 @@ function actualizarDiagnosticoVisibleMGP() {
         : null;
     panel.innerHTML = '';
     const texto = document.createElement('div');
-    texto.textContent = 'MGP DIAGNÓSTICO #26 | TOTAL: ' + total + ' ms | RED: ' + red +
+    texto.textContent = 'MGP DIAGNÓSTICO #28 | TOTAL: ' + total + ' ms | RED: ' + red +
       ' ms' +
       (servidor != null ? ' | SERVIDOR: ' + Number(servidor).toFixed(0) + ' ms' : '') +
       (r.duracion != null ? ' | RECURSO: ' + Number(r.duracion).toFixed(0) + ' ms' : '') +
@@ -207,6 +207,13 @@ function actualizarDiagnosticoVisibleMGP() {
         ' | HORARIO: ' + (s.horarioMs != null ? Number(s.horarioMs).toFixed(0) : '-') + ' ms' +
         ' | LOCK: ' + (s.lockMs != null ? Number(s.lockMs).toFixed(0) : '-') + ' ms';
       panel.appendChild(detalle2);
+
+      const detalleInterno = document.createElement('div');
+      detalleInterno.textContent =
+        'SHEETS | LASTROW: ' + (s.getLastRowMs != null ? Number(s.getLastRowMs).toFixed(0) : '-') + ' ms' +
+        ' | FIND: ' + (s.findAllMs != null ? Number(s.findAllMs).toFixed(0) : '-') + ' ms' +
+        ' | READ: ' + (s.lecturaDuplicadosMs != null ? Number(s.lecturaDuplicadosMs).toFixed(0) : '-') + ' ms';
+      panel.appendChild(detalleInterno);
 
       const detalle3 = document.createElement('div');
       detalle3.textContent =
