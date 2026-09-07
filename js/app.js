@@ -148,7 +148,7 @@ const vistas = [
 // WARMUP API V2 - OPTIMIZACIÓN CONTROLADA #16
 // =====================================================
 // =====================================================
-// DIAGNÓSTICO VISIBLE #19 - RED / JSONP
+// DIAGNÓSTICO VISIBLE #25 - ETAPAS SERVIDOR / RED
 // TEMPORAL: SOLO PARA MEDIR EL CUELLO DE BOTELLA.
 // =====================================================
 function actualizarDiagnosticoVisibleMGP() {
@@ -171,7 +171,7 @@ function actualizarDiagnosticoVisibleMGP() {
         : null;
     panel.innerHTML = '';
     const texto = document.createElement('div');
-    texto.textContent = 'MGP DIAGNÓSTICO #21 | TOTAL: ' + total + ' ms | RED: ' + red +
+    texto.textContent = 'MGP DIAGNÓSTICO #25 | TOTAL: ' + total + ' ms | RED: ' + red +
       ' ms' +
       (servidor != null ? ' | SERVIDOR: ' + Number(servidor).toFixed(0) + ' ms' : '') +
       (r.duracion != null ? ' | RECURSO: ' + Number(r.duracion).toFixed(0) + ' ms' : '') +
@@ -181,6 +181,27 @@ function actualizarDiagnosticoVisibleMGP() {
       (r.solicitud != null ? ' | SOLICITUD: ' + Number(r.solicitud).toFixed(0) + ' ms' : '') +
       (r.respuesta != null ? ' | RESPUESTA: ' + Number(r.respuesta).toFixed(0) + ' ms' : '');
     panel.appendChild(texto);
+
+    if (s && servidor != null) {
+      const detalle = document.createElement('div');
+      detalle.style.marginTop = '6px';
+      detalle.style.paddingTop = '6px';
+      detalle.style.borderTop = '1px solid rgba(255,255,255,.25)';
+      detalle.textContent =
+        'ETAPAS | SESIÓN: ' + (s.validacionMs != null ? Number(s.validacionMs).toFixed(0) : '-') + ' ms' +
+        ' | OPEN: ' + (s.openSpreadsheetMs != null ? Number(s.openSpreadsheetMs).toFixed(0) : '-') + ' ms' +
+        ' | PERSONA: ' + (s.personaMs != null ? Number(s.personaMs).toFixed(0) : '-') + ' ms' +
+        ' | CARNET: ' + (s.carnetMs != null ? Number(s.carnetMs).toFixed(0) : '-') + ' ms';
+      panel.appendChild(detalle);
+
+      const detalle2 = document.createElement('div');
+      detalle2.textContent =
+        'REGISTRO | HORARIO: ' + (s.horarioMs != null ? Number(s.horarioMs).toFixed(0) : '-') + ' ms' +
+        ' | LOCK: ' + (s.lockMs != null ? Number(s.lockMs).toFixed(0) : '-') + ' ms' +
+        ' | DUPLICADO: ' + (s.duplicadoMs != null ? Number(s.duplicadoMs).toFixed(0) : '-') + ' ms' +
+        ' | APPEND: ' + (s.appendRowMs != null ? Number(s.appendRowMs).toFixed(0) : '-') + ' ms';
+      panel.appendChild(detalle2);
+    }
 
     let boton = document.getElementById('mgpDiagTransporte21');
     if (!boton) {
