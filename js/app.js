@@ -148,7 +148,7 @@ const vistas = [
 // WARMUP API V2 - OPTIMIZACIÓN CONTROLADA #16
 // =====================================================
 // =====================================================
-// DIAGNÓSTICO VISIBLE #25 - ETAPAS SERVIDOR / RED
+// DIAGNÓSTICO VISIBLE #26 - ETAPAS SERVIDOR / RED
 // TEMPORAL: SOLO PARA MEDIR EL CUELLO DE BOTELLA.
 // =====================================================
 function actualizarDiagnosticoVisibleMGP() {
@@ -171,7 +171,7 @@ function actualizarDiagnosticoVisibleMGP() {
         : null;
     panel.innerHTML = '';
     const texto = document.createElement('div');
-    texto.textContent = 'MGP DIAGNÓSTICO #25 | TOTAL: ' + total + ' ms | RED: ' + red +
+    texto.textContent = 'MGP DIAGNÓSTICO #26 | TOTAL: ' + total + ' ms | RED: ' + red +
       ' ms' +
       (servidor != null ? ' | SERVIDOR: ' + Number(servidor).toFixed(0) + ' ms' : '') +
       (r.duracion != null ? ' | RECURSO: ' + Number(r.duracion).toFixed(0) + ' ms' : '') +
@@ -194,13 +194,27 @@ function actualizarDiagnosticoVisibleMGP() {
         ' | CARNET: ' + (s.carnetMs != null ? Number(s.carnetMs).toFixed(0) : '-') + ' ms';
       panel.appendChild(detalle);
 
+      const detalleCache = document.createElement('div');
+      detalleCache.textContent =
+        'CACHE | PERSONA: ' + (s.cachePersonaMs != null ? Number(s.cachePersonaMs).toFixed(0) : '-') + ' ms' +
+        ' | CARNET: ' + (s.cacheCarnetMs != null ? Number(s.cacheCarnetMs).toFixed(0) : '-') + ' ms' +
+        ' | HOJA: ' + (s.hojaAsistenciaMs != null ? Number(s.hojaAsistenciaMs).toFixed(0) : '-') + ' ms';
+      panel.appendChild(detalleCache);
+
       const detalle2 = document.createElement('div');
       detalle2.textContent =
-        'REGISTRO | HORARIO: ' + (s.horarioMs != null ? Number(s.horarioMs).toFixed(0) : '-') + ' ms' +
-        ' | LOCK: ' + (s.lockMs != null ? Number(s.lockMs).toFixed(0) : '-') + ' ms' +
-        ' | DUPLICADO: ' + (s.duplicadoMs != null ? Number(s.duplicadoMs).toFixed(0) : '-') + ' ms' +
-        ' | APPEND: ' + (s.appendRowMs != null ? Number(s.appendRowMs).toFixed(0) : '-') + ' ms';
+        'REGISTRO | PREP: ' + (s.registroPreparacionMs != null ? Number(s.registroPreparacionMs).toFixed(0) : '-') + ' ms' +
+        ' | HORARIO: ' + (s.horarioMs != null ? Number(s.horarioMs).toFixed(0) : '-') + ' ms' +
+        ' | LOCK: ' + (s.lockMs != null ? Number(s.lockMs).toFixed(0) : '-') + ' ms';
       panel.appendChild(detalle2);
+
+      const detalle3 = document.createElement('div');
+      detalle3.textContent =
+        'CIERRE | DUPLICADO: ' + (s.duplicadoMs != null ? Number(s.duplicadoMs).toFixed(0) : '-') + ' ms' +
+        ' | UUID: ' + (s.idUuidMs != null ? Number(s.idUuidMs).toFixed(0) : '-') + ' ms' +
+        ' | APPEND: ' + (s.appendRowMs != null ? Number(s.appendRowMs).toFixed(0) : '-') + ' ms' +
+        ' | REGISTRO: ' + (s.registrarAsistenciaMs != null ? Number(s.registrarAsistenciaMs).toFixed(0) : '-') + ' ms';
+      panel.appendChild(detalle3);
     }
 
     let boton = document.getElementById('mgpDiagTransporte21');
