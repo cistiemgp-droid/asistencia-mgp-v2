@@ -169,7 +169,9 @@ function actualizarDiagnosticoVisibleMGP() {
       s.accionFin != null && s.doGetInicio != null
         ? Number(s.accionFin) - Number(s.doGetInicio)
         : null;
-    panel.textContent = 'MGP DIAGNÓSTICO #20 | TOTAL: ' + total + ' ms | RED: ' + red +
+    panel.innerHTML = '';
+    const texto = document.createElement('div');
+    texto.textContent = 'MGP DIAGNÓSTICO #21 | TOTAL: ' + total + ' ms | RED: ' + red +
       ' ms' +
       (servidor != null ? ' | SERVIDOR: ' + Number(servidor).toFixed(0) + ' ms' : '') +
       (r.duracion != null ? ' | RECURSO: ' + Number(r.duracion).toFixed(0) + ' ms' : '') +
@@ -178,6 +180,63 @@ function actualizarDiagnosticoVisibleMGP() {
       (r.conexion != null ? ' | CONEXIÓN: ' + Number(r.conexion).toFixed(0) + ' ms' : '') +
       (r.solicitud != null ? ' | SOLICITUD: ' + Number(r.solicitud).toFixed(0) + ' ms' : '') +
       (r.respuesta != null ? ' | RESPUESTA: ' + Number(r.respuesta).toFixed(0) + ' ms' : '');
+    panel.appendChild(texto);
+
+    let boton = document.getElementById('mgpDiagTransporte21');
+    if (!boton) {
+      boton = document.createElement('button');
+      boton.id = 'mgpDiagTransporte21';
+      boton.textContent = 'PRUEBA TRANSPORTE';
+      boton.style.cssText = 'margin-top:8px;width:100%;padding:7px 8px;border:0;border-radius:6px;cursor:pointer;font:bold 12px Arial,sans-serif;';
+      boton.onclick = ejecutarDiagnosticoTransporteMGP21;
+      panel.appendChild(boton);
+    }
+  } catch (error) {}
+}
+
+function ejecutarDiagnosticoTransporteMGP21() {
+  try {
+    const inicio = (window.performance && typeof window.performance.now === 'function')
+      ? window.performance.now() : Date.now();
+    const callback = 'respuestaTransporteMGP21_' + Date.now();
+    const script = document.createElement('script');
+    const panel = document.getElementById('mgpDiagVisible19');
+
+    window[callback] = function(data) {
+      const fin = (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now() : Date.now();
+      const total = Math.round(fin - inicio);
+      if (panel) {
+        const prueba = document.createElement('div');
+        prueba.style.marginTop = '8px';
+        prueba.style.paddingTop = '8px';
+        prueba.style.borderTop = '1px solid rgba(255,255,255,.35)';
+        prueba.textContent = 'TRANSPORTE #21: ' + total + ' ms | SERVIDOR: ' +
+          (data && data._diagnosticoTransporte && data._diagnosticoTransporte.servidorMs != null
+            ? data._diagnosticoTransporte.servidorMs + ' ms' : '?') +
+          ' | RESPUESTA: OK';
+        panel.appendChild(prueba);
+      }
+      delete window[callback];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+
+    script.onerror = function() {
+      if (panel) {
+        const error = document.createElement('div');
+        error.style.marginTop = '8px';
+        error.textContent = 'TRANSPORTE #21: ERROR DE RED';
+        panel.appendChild(error);
+      }
+      delete window[callback];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+
+    script.src = CONFIG.API_URL +
+      '?action=apiWarmup' +
+      '&_diagTransporte=1' +
+      '&callback=' + encodeURIComponent(callback);
+    document.body.appendChild(script);
   } catch (error) {}
 }
 
