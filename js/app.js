@@ -1478,7 +1478,7 @@ function reproducirPitidoRegistroMGP() {
     const ganancia = ctx.createGain();
 
     oscilador.type = 'sine';
-    oscilador.frequency.setValueAtTime(880, ahora);
+    oscilador.frequency.setValueAtTime(1200, ahora);
 
     ganancia.gain.setValueAtTime(0.0001, ahora);
     ganancia.gain.exponentialRampToValueAtTime(0.12, ahora + 0.01);
@@ -1488,7 +1488,7 @@ function reproducirPitidoRegistroMGP() {
     ganancia.connect(ctx.destination);
 
     oscilador.start(ahora);
-    oscilador.stop(ahora + 0.17);
+    oscilador.stop(ahora + 0.14);
 
   } catch (error) {}
 
