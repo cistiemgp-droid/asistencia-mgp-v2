@@ -1456,6 +1456,45 @@ function eliminarRegistroScript() {
 }
 
 
+function reproducirPitidoRegistroMGP() {
+
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioCtx) return;
+
+    if (!window.audioContextMGP) {
+      window.audioContextMGP = new AudioCtx();
+    }
+
+    const ctx = window.audioContextMGP;
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(function() {});
+    }
+
+    const ahora = ctx.currentTime;
+    const oscilador = ctx.createOscillator();
+    const ganancia = ctx.createGain();
+
+    oscilador.type = 'sine';
+    oscilador.frequency.setValueAtTime(880, ahora);
+
+    ganancia.gain.setValueAtTime(0.0001, ahora);
+    ganancia.gain.exponentialRampToValueAtTime(0.12, ahora + 0.01);
+    ganancia.gain.exponentialRampToValueAtTime(0.0001, ahora + 0.16);
+
+    oscilador.connect(ganancia);
+    ganancia.connect(ctx.destination);
+
+    oscilador.start(ahora);
+    oscilador.stop(ahora + 0.17);
+
+  } catch (error) {}
+
+}
+
+
 function registrarAsistenciaBackend(id) {
 
   return new Promise(function(resolve) {
@@ -1511,6 +1550,8 @@ function registrarAsistenciaBackend(id) {
         }
 
         if (data.exito) {
+
+          reproducirPitidoRegistroMGP();
 
           const datos = data.datos || {};
 
