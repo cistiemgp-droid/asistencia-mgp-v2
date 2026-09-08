@@ -46,7 +46,10 @@ const state = {
   registroModo: 'ONLINE',
 
   // Cantidad de registros OFFLINE pendientes en este equipo.
-  registrosOfflinePendientes: 0
+  registrosOfflinePendientes: 0,
+
+  // Cantidad de registros OFFLINE rechazados por el servidor.
+  registrosOfflineError: 0
 
 };
 
@@ -280,7 +283,7 @@ function guardarRegistroOfflineMGP(id) {
 
 }
 
-function contarRegistrosOfflineMGP() {
+function contarEstadosOfflineMGP() {
 
   return abrirDBOfflineMGP()
     .then(function(db) {
@@ -296,11 +299,39 @@ function contarRegistrosOfflineMGP() {
           OFFLINE_STORE_MGP
         );
 
-        const indice = store.index('estadoSincronizacion');
-        const solicitud = indice.count('PENDIENTE');
+        const solicitud = store.getAll();
 
         solicitud.onsuccess = function() {
-          resolve(Number(solicitud.result || 0));
+
+          const registros =
+            Array.isArray(solicitud.result)
+              ? solicitud.result
+              : [];
+
+          let pendientes = 0;
+          let errores = 0;
+
+          registros.forEach(function(registro) {
+
+            const estado = String(
+              registro.estadoSincronizacion || 'PENDIENTE'
+            ).toUpperCase();
+
+            if (estado === 'PENDIENTE') {
+              pendientes++;
+            }
+
+            if (estado === 'ERROR') {
+              errores++;
+            }
+
+          });
+
+          resolve({
+            pendientes: pendientes,
+            errores: errores
+          });
+
         };
 
         solicitud.onerror = function() {
@@ -312,6 +343,15 @@ function contarRegistrosOfflineMGP() {
 
       });
 
+    });
+
+}
+
+function contarRegistrosOfflineMGP() {
+
+  return contarEstadosOfflineMGP()
+    .then(function(resumen) {
+      return resumen.pendientes;
     });
 
 }
@@ -747,22 +787,329 @@ async function sincronizarRegistrosOfflineMGP() {
 
 }
 
+function obtenerRegistrosOfflineErrorMGP() {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readonly'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        const solicitud = store.getAll();
+
+        solicitud.onsuccess = function() {
+
+          const registros =
+            Array.isArray(solicitud.result)
+              ? solicitud.result
+              : [];
+
+          registros.sort(function(a, b) {
+            return String(a.fechaHoraCliente || '')
+              .localeCompare(String(b.fechaHoraCliente || ''));
+          });
+
+          resolve(
+            registros.filter(function(registro) {
+              return String(
+                registro.estadoSincronizacion || ''
+              ).toUpperCase() === 'ERROR';
+            })
+          );
+
+        };
+
+        solicitud.onerror = function() {
+          reject(
+            solicitud.error ||
+            new Error('No fue posible leer los registros con error.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+function cambiarErroresOfflineAPendienteMGP() {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readwrite'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        const solicitud = store.getAll();
+
+        solicitud.onsuccess = function() {
+
+          const registros =
+            Array.isArray(solicitud.result)
+              ? solicitud.result
+              : [];
+
+          let cantidad = 0;
+
+          registros.forEach(function(registro) {
+
+            if (
+              String(
+                registro.estadoSincronizacion || ''
+              ).toUpperCase() !== 'ERROR'
+            ) {
+              return;
+            }
+
+            registro.estadoSincronizacion = 'PENDIENTE';
+            registro.errorSincronizacion = '';
+            registro.fechaUltimoIntento = '';
+            store.put(registro);
+            cantidad++;
+
+          });
+
+          tx.__cantidadReintentosMGP = cantidad;
+
+        };
+
+        tx.oncomplete = function() {
+          resolve(Number(tx.__cantidadReintentosMGP || 0));
+        };
+
+        tx.onerror = function() {
+          reject(
+            tx.error ||
+            new Error('No fue posible preparar los registros para reintento.')
+          );
+        };
+
+        tx.onabort = function() {
+          reject(
+            tx.error ||
+            new Error('El reintento de registros offline fue cancelado.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+async function reintentarErroresOfflineMGP() {
+
+  if (sincronizacionOfflineEnCursoMGP) {
+    return;
+  }
+
+  if (state.registroModo === 'OFFLINE') {
+    const mensaje = document.getElementById('regMsg');
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>🟠 MODO OFFLINE</strong><br>' +
+        'Cambia a ONLINE para reintentar los registros con error.';
+    }
+    return;
+  }
+
+  const errores =
+    await obtenerRegistrosOfflineErrorMGP();
+
+  if (!errores.length) {
+    await actualizarContadorOfflineMGP();
+    return;
+  }
+
+  const confirmado = window.confirm(
+    'Hay ' + errores.length +
+    ' registro(s) con error.\n\n' +
+    '¿Quieres pasarlos a PENDIENTE y volver a intentar sincronizarlos?'
+  );
+
+  if (!confirmado) {
+    return;
+  }
+
+  const cantidad =
+    await cambiarErroresOfflineAPendienteMGP();
+
+  const mensaje = document.getElementById('regMsg');
+
+  if (mensaje) {
+    mensaje.innerHTML =
+      '<strong>🔄 REINTENTANDO ERRORES</strong><br>' +
+      'Registros preparados: ' + cantidad;
+  }
+
+  actualizarContadorOfflineMGP();
+  await sincronizarRegistrosOfflineMGP();
+
+}
+
+async function eliminarErroresOfflineMGP() {
+
+  if (sincronizacionOfflineEnCursoMGP) {
+    const mensaje = document.getElementById('regMsg');
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>⏳ SINCRONIZACIÓN EN CURSO</strong><br>' +
+        'Espera a que termine antes de eliminar registros con error.';
+    }
+    return;
+  }
+
+  const errores =
+    await obtenerRegistrosOfflineErrorMGP();
+
+  if (!errores.length) {
+    await actualizarContadorOfflineMGP();
+    return;
+  }
+
+  let detalle = '';
+
+  errores.slice(0, 5).forEach(function(registro, indice) {
+    detalle +=
+      '\n' + (indice + 1) + '. DNI ' +
+      String(registro.id || '') +
+      ' — ' +
+      String(registro.estado || 'INGRESO') +
+      ' — ' +
+      String(registro.errorSincronizacion || 'Error desconocido');
+  });
+
+  if (errores.length > 5) {
+    detalle += '\n... y ' + (errores.length - 5) + ' más.';
+  }
+
+  const confirmado = window.confirm(
+    'Se eliminarán DEFINITIVAMENTE ' + errores.length +
+    ' registro(s) con error de este equipo.' +
+    '\n\nRegistros:' + detalle +
+    '\n\nEsta acción NO borra nada de Google Sheets.' +
+    '\n\n¿Continuar?'
+  );
+
+  if (!confirmado) {
+    return;
+  }
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readwrite'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        errores.forEach(function(registro) {
+          store.delete(registro.idOffline);
+        });
+
+        tx.oncomplete = function() {
+          resolve(true);
+        };
+
+        tx.onerror = function() {
+          reject(
+            tx.error ||
+            new Error('No fue posible eliminar los registros con error.')
+          );
+        };
+
+        tx.onabort = function() {
+          reject(
+            tx.error ||
+            new Error('La eliminación de registros con error fue cancelada.')
+          );
+        };
+
+      });
+
+    })
+    .then(function() {
+
+      const mensaje = document.getElementById('regMsg');
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>🗑️ ERRORES ELIMINADOS</strong><br>' +
+          'Registros eliminados del almacenamiento local: ' +
+          errores.length;
+      }
+
+      return actualizarContadorOfflineMGP();
+
+    })
+    .catch(function(error) {
+
+      const mensaje = document.getElementById('regMsg');
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>❌ NO SE PUDIERON ELIMINAR LOS ERRORES</strong><br>' +
+          String(error.message || error);
+      }
+
+      console.error(
+        'Error eliminando registros offline con error:',
+        error
+      );
+
+    });
+
+}
+
 function actualizarContadorOfflineMGP() {
 
-  contarRegistrosOfflineMGP()
-    .then(function(cantidad) {
+  contarEstadosOfflineMGP()
+    .then(function(resumen) {
 
-      state.registrosOfflinePendientes = cantidad;
+      state.registrosOfflinePendientes = resumen.pendientes;
+      state.registrosOfflineError = resumen.errores;
 
       const contador =
         document.getElementById('modoRegistroPendientesMGP');
 
       if (contador) {
-        contador.textContent =
-          cantidad > 0
-            ? 'Pendientes: ' + cantidad
+
+        let texto =
+          resumen.pendientes > 0
+            ? 'Pendientes: ' + resumen.pendientes
             : 'Sin pendientes';
+
+        if (resumen.errores > 0) {
+          texto +=
+            ' · ⚠️ Errores: ' + resumen.errores;
+        }
+
+        contador.textContent = texto;
       }
+
+      actualizarControlesErroresOfflineMGP();
 
     })
     .catch(function(error) {
@@ -773,6 +1120,40 @@ function actualizarContadorOfflineMGP() {
       );
 
     });
+
+}
+
+function actualizarControlesErroresOfflineMGP() {
+
+  const reintentarBtn =
+    document.getElementById('reintentarErroresOfflineBtnMGP');
+
+  const eliminarBtn =
+    document.getElementById('eliminarErroresOfflineBtnMGP');
+
+  const cantidadErrores =
+    Number(state.registrosOfflineError || 0);
+
+  if (reintentarBtn) {
+    reintentarBtn.style.display =
+      cantidadErrores > 0 ? 'inline-block' : 'none';
+
+    reintentarBtn.disabled =
+      state.registroModo === 'OFFLINE';
+
+    reintentarBtn.style.opacity =
+      state.registroModo === 'OFFLINE' ? '0.55' : '1';
+
+    reintentarBtn.style.cursor =
+      state.registroModo === 'OFFLINE'
+        ? 'not-allowed'
+        : 'pointer';
+  }
+
+  if (eliminarBtn) {
+    eliminarBtn.style.display =
+      cantidadErrores > 0 ? 'inline-block' : 'none';
+  }
 
 }
 
@@ -810,11 +1191,20 @@ function actualizarModoRegistroMGP() {
     document.getElementById('modoRegistroPendientesMGP');
 
   if (contador) {
-    contador.textContent =
+    let texto =
       state.registrosOfflinePendientes > 0
         ? 'Pendientes: ' + state.registrosOfflinePendientes
         : 'Sin pendientes';
+
+    if (state.registrosOfflineError > 0) {
+      texto +=
+        ' · ⚠️ Errores: ' + state.registrosOfflineError;
+    }
+
+    contador.textContent = texto;
   }
+
+  actualizarControlesErroresOfflineMGP();
 
   const sincronizarBtn =
     document.getElementById('sincronizarOfflineBtnMGP');
@@ -925,6 +1315,42 @@ function crearControlModoRegistroMGP() {
     }
   );
 
+  const reintentarBtn =
+    document.createElement('button');
+
+  reintentarBtn.type = 'button';
+  reintentarBtn.id = 'reintentarErroresOfflineBtnMGP';
+  reintentarBtn.textContent = '🔄 REINTENTAR ERRORES';
+  reintentarBtn.style.cssText =
+    'display:none;border:0;border-radius:999px;padding:8px 12px;' +
+    'font-size:12px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#7c3aed;box-shadow:0 2px 5px rgba(0,0,0,.14);';
+
+  reintentarBtn.addEventListener(
+    'click',
+    function() {
+      reintentarErroresOfflineMGP();
+    }
+  );
+
+  const eliminarBtn =
+    document.createElement('button');
+
+  eliminarBtn.type = 'button';
+  eliminarBtn.id = 'eliminarErroresOfflineBtnMGP';
+  eliminarBtn.textContent = '🗑️ ELIMINAR ERRORES';
+  eliminarBtn.style.cssText =
+    'display:none;border:0;border-radius:999px;padding:8px 12px;' +
+    'font-size:12px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#dc2626;box-shadow:0 2px 5px rgba(0,0,0,.14);';
+
+  eliminarBtn.addEventListener(
+    'click',
+    function() {
+      eliminarErroresOfflineMGP();
+    }
+  );
+
   const contador =
     document.createElement('span');
 
@@ -936,6 +1362,8 @@ function crearControlModoRegistroMGP() {
   contenedor.appendChild(etiqueta);
   contenedor.appendChild(boton);
   contenedor.appendChild(sincronizarBtn);
+  contenedor.appendChild(reintentarBtn);
+  contenedor.appendChild(eliminarBtn);
   contenedor.appendChild(contador);
 
   registro.insertBefore(
