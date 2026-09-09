@@ -1266,13 +1266,31 @@ function crearControlModoRegistroMGP() {
     return;
   }
 
+  // =====================================================
+  // CONTROLES DE REGISTRO
+  // Separamos visualmente:
+  // 1) Modo de registro
+  // 2) Gestión de datos locales
+  // =====================================================
+
   const contenedor =
     document.createElement('div');
 
   contenedor.id = 'modoRegistroControlMGP';
   contenedor.style.cssText =
-    'display:flex;align-items:center;justify-content:flex-end;' +
-    'gap:8px;width:100%;margin:0 0 12px 0;flex-wrap:wrap;';
+    'display:flex;align-items:center;justify-content:space-between;' +
+    'gap:10px;width:100%;margin:0 0 12px 0;flex-wrap:wrap;' +
+    'box-sizing:border-box;';
+
+  // -----------------------------------------------------
+  // GRUPO 1 — MODO DE REGISTRO
+  // -----------------------------------------------------
+
+  const grupoModo =
+    document.createElement('div');
+
+  grupoModo.style.cssText =
+    'display:flex;align-items:center;gap:7px;flex-wrap:wrap;';
 
   const etiqueta =
     document.createElement('span');
@@ -1297,16 +1315,39 @@ function crearControlModoRegistroMGP() {
     alternarModoRegistroMGP
   );
 
+  grupoModo.appendChild(etiqueta);
+  grupoModo.appendChild(boton);
+
+  // -----------------------------------------------------
+  // GRUPO 2 — GESTIÓN DE DATOS LOCALES
+  // -----------------------------------------------------
+
+  const grupoLocal =
+    document.createElement('div');
+
+  grupoLocal.style.cssText =
+    'display:flex;align-items:center;justify-content:flex-end;' +
+    'gap:7px;flex-wrap:wrap;';
+
+  const etiquetaLocal =
+    document.createElement('span');
+
+  etiquetaLocal.textContent = 'Datos locales:';
+  etiquetaLocal.style.cssText =
+    'font-size:12px;font-weight:700;color:#64748b;';
+
   const sincronizarBtn =
     document.createElement('button');
 
   sincronizarBtn.type = 'button';
   sincronizarBtn.id = 'sincronizarOfflineBtnMGP';
   sincronizarBtn.textContent = '🔄 SINCRONIZAR';
+  sincronizarBtn.title =
+    'Enviar al servidor los registros pendientes guardados en este equipo.';
   sincronizarBtn.style.cssText =
-    'border:0;border-radius:999px;padding:8px 12px;' +
-    'font-size:12px;font-weight:800;color:#fff;cursor:pointer;' +
-    'background:#2563eb;box-shadow:0 2px 5px rgba(0,0,0,.14);';
+    'border:0;border-radius:999px;padding:7px 10px;' +
+    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#2563eb;box-shadow:0 1px 4px rgba(0,0,0,.12);';
 
   sincronizarBtn.addEventListener(
     'click',
@@ -1320,11 +1361,13 @@ function crearControlModoRegistroMGP() {
 
   reintentarBtn.type = 'button';
   reintentarBtn.id = 'reintentarErroresOfflineBtnMGP';
-  reintentarBtn.textContent = '🔄 REINTENTAR ERRORES';
+  reintentarBtn.textContent = '↻ REINTENTAR';
+  reintentarBtn.title =
+    'Volver a intentar la sincronización de los registros que tuvieron error.';
   reintentarBtn.style.cssText =
-    'display:none;border:0;border-radius:999px;padding:8px 12px;' +
-    'font-size:12px;font-weight:800;color:#fff;cursor:pointer;' +
-    'background:#7c3aed;box-shadow:0 2px 5px rgba(0,0,0,.14);';
+    'display:none;border:0;border-radius:999px;padding:7px 10px;' +
+    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#7c3aed;box-shadow:0 1px 4px rgba(0,0,0,.12);';
 
   reintentarBtn.addEventListener(
     'click',
@@ -1338,11 +1381,13 @@ function crearControlModoRegistroMGP() {
 
   eliminarBtn.type = 'button';
   eliminarBtn.id = 'eliminarErroresOfflineBtnMGP';
-  eliminarBtn.textContent = '🗑️ ELIMINAR ERRORES';
+  eliminarBtn.textContent = '🗑 ELIMINAR';
+  eliminarBtn.title =
+    'Eliminar solamente los errores guardados en este equipo.';
   eliminarBtn.style.cssText =
-    'display:none;border:0;border-radius:999px;padding:8px 12px;' +
-    'font-size:12px;font-weight:800;color:#fff;cursor:pointer;' +
-    'background:#dc2626;box-shadow:0 2px 5px rgba(0,0,0,.14);';
+    'display:none;border:0;border-radius:999px;padding:7px 10px;' +
+    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#dc2626;box-shadow:0 1px 4px rgba(0,0,0,.12);';
 
   eliminarBtn.addEventListener(
     'click',
@@ -1357,14 +1402,17 @@ function crearControlModoRegistroMGP() {
   contador.id = 'modoRegistroPendientesMGP';
   contador.textContent = 'Sin pendientes';
   contador.style.cssText =
-    'font-size:12px;font-weight:700;color:#64748b;';
+    'font-size:11px;font-weight:700;color:#64748b;' +
+    'white-space:nowrap;';
 
-  contenedor.appendChild(etiqueta);
-  contenedor.appendChild(boton);
-  contenedor.appendChild(sincronizarBtn);
-  contenedor.appendChild(reintentarBtn);
-  contenedor.appendChild(eliminarBtn);
-  contenedor.appendChild(contador);
+  grupoLocal.appendChild(etiquetaLocal);
+  grupoLocal.appendChild(sincronizarBtn);
+  grupoLocal.appendChild(reintentarBtn);
+  grupoLocal.appendChild(eliminarBtn);
+  grupoLocal.appendChild(contador);
+
+  contenedor.appendChild(grupoModo);
+  contenedor.appendChild(grupoLocal);
 
   registro.insertBefore(
     contenedor,
@@ -1375,7 +1423,6 @@ function crearControlModoRegistroMGP() {
   actualizarContadorOfflineMGP();
 
 }
-
 function iniciarControlModoRegistroMGP() {
 
   if (document.readyState === 'loading') {
