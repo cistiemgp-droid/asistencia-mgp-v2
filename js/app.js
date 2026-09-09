@@ -1774,6 +1774,23 @@ if (salirBtn) {
       state.persona = null;
       state.qr = null;
 
+      // ETAPA 07:
+      // Al cerrar sesión, limpiar los campos del formulario LOGIN.
+      // No modifica la sesión, permisos, cámara, QR ni registros offline.
+      const usuarioLoginElemento =
+        document.getElementById('usuario');
+
+      const passwordLoginElemento =
+        document.getElementById('password');
+
+      if (usuarioLoginElemento) {
+        usuarioLoginElemento.value = '';
+      }
+
+      if (passwordLoginElemento) {
+        passwordLoginElemento.value = '';
+      }
+
       mostrarVista('portal');
 
     }
