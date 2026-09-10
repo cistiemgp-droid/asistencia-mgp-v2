@@ -5683,6 +5683,7 @@ const usaFiltroMensual =
       // al desplazar horizontalmente la tabla, también en celular.
       if (esMensualPersonal && cabecera) {
         const encabezadosPersonal = cabecera.querySelectorAll('th');
+        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
 
         if (encabezadosPersonal.length >= 2) {
           encabezadosPersonal[0].style.position = 'sticky';
@@ -5692,12 +5693,14 @@ const usaFiltroMensual =
           encabezadosPersonal[0].style.minWidth = '95px';
           encabezadosPersonal[0].style.width = '95px';
 
-          encabezadosPersonal[1].style.position = 'sticky';
-          encabezadosPersonal[1].style.left = '95px';
-          encabezadosPersonal[1].style.zIndex = '3';
-          encabezadosPersonal[1].style.background = '#fff';
-          encabezadosPersonal[1].style.minWidth = '180px';
-          encabezadosPersonal[1].style.width = '180px';
+          if (!esCelularMGP) {
+            encabezadosPersonal[1].style.position = 'sticky';
+            encabezadosPersonal[1].style.left = '95px';
+            encabezadosPersonal[1].style.zIndex = '3';
+            encabezadosPersonal[1].style.background = '#fff';
+            encabezadosPersonal[1].style.minWidth = '180px';
+            encabezadosPersonal[1].style.width = '180px';
+          }
         }
       }
 
@@ -5773,12 +5776,16 @@ const usaFiltroMensual =
             celdaDni.style.minWidth = '95px';
             celdaDni.style.width = '95px';
 
-            celdaNombre.style.position = 'sticky';
-            celdaNombre.style.left = '95px';
-            celdaNombre.style.zIndex = '2';
-            celdaNombre.style.background = '#fff';
-            celdaNombre.style.minWidth = '180px';
-            celdaNombre.style.width = '180px';
+            const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+            if (!esCelularMGP) {
+              celdaNombre.style.position = 'sticky';
+              celdaNombre.style.left = '95px';
+              celdaNombre.style.zIndex = '2';
+              celdaNombre.style.background = '#fff';
+              celdaNombre.style.minWidth = '180px';
+              celdaNombre.style.width = '180px';
+            }
 
             fila.appendChild(celdaDni);
             fila.appendChild(celdaNombre);
