@@ -4242,6 +4242,11 @@ const reporteFecha =
     'reporteFecha'
   );
 
+const reporteGrado =
+  document.getElementById(
+    'reporteGrado'
+  );
+
 const reporteMes =
   document.getElementById(
     'reporteMes'
@@ -4251,6 +4256,29 @@ const reporteMensualFiltros =
   document.getElementById(
     'reporteMensualFiltros'
   );
+
+// DEV 03: habilitar reporte diario de PERSONAL sin modificar index.html.
+if (reporteTipo) {
+  const existePersonal = Array.from(reporteTipo.options).some(function(opcion) {
+    return String(opcion.value || '').toLowerCase() === 'personal';
+  });
+  if (!existePersonal) {
+    const opcionPersonal = document.createElement('option');
+    opcionPersonal.value = 'personal';
+    opcionPersonal.textContent = 'Diario — Personal';
+    reporteTipo.appendChild(opcionPersonal);
+  }
+
+  const existeMensualPersonal = Array.from(reporteTipo.options).some(function(opcion) {
+    return String(opcion.value || '').toLowerCase() === 'mensual_personal';
+  });
+  if (!existeMensualPersonal) {
+    const opcionMensualPersonal = document.createElement('option');
+    opcionMensualPersonal.value = 'mensual_personal';
+    opcionMensualPersonal.textContent = 'Mensual — Personal';
+    reporteTipo.appendChild(opcionMensualPersonal);
+  }
+}
 
 
 function actualizarFiltroReporte() {
@@ -4268,11 +4296,25 @@ function actualizarFiltroReporte() {
   const esMensual =
     tipo === 'mensual';
 
+  const esMensualPersonal =
+    tipo === 'mensual_personal';
+
   const esAlertas =
     tipo === 'alertas';
 
+  const esPersonal =
+    tipo === 'personal';
+
   const usaFiltroMensual =
-    esMensual || esAlertas;
+    esMensual || esMensualPersonal || esAlertas;
+
+  const grupoGrado = reporteGrado
+    ? reporteGrado.closest('.grupo')
+    : null;
+
+  if (grupoGrado) {
+    grupoGrado.style.display = (esPersonal || esMensualPersonal) ? 'none' : '';
+  }
 
 
   if (reporteFecha) {
@@ -4377,7 +4419,7 @@ async function consultarReporte() {
       tablaReporteBase.style.width = 'max-content';
       tablaReporteBase.style.maxWidth = 'none';
       tablaReporteBase.style.minWidth =
-        tipoReporte === 'mensual'
+        (tipoReporte === 'mensual' || tipoReporte === 'mensual_personal')
           ? '1050px'
           : '720px';
       tablaReporteBase.style.tableLayout = 'auto';
@@ -4412,11 +4454,14 @@ const mes =
 const esMensual =
   tipoReporte === 'mensual';
 
+const esMensualPersonal =
+  tipoReporte === 'mensual_personal';
+
 const esAlertas =
   tipoReporte === 'alertas';
 
 const usaFiltroMensual =
-  esMensual || esAlertas;
+  esMensual || esMensualPersonal || esAlertas;
 
   // -------------------------------------------------
   // VALIDACIONES
@@ -4727,6 +4772,150 @@ const usaFiltroMensual =
 
     }
 
+
+    // -------------------------------------------------
+    // DEV 03 — REPORTE DIARIO DE PERSONAL
+    // Rama independiente del reporte de estudiantes.
+    // -------------------------------------------------
+
+    if (tipoReporte === 'personal') {
+
+      const personal =
+        Array.isArray(resultado.personal)
+          ? resultado.personal
+          : [];
+
+      const datosResumenPersonal =
+        resultado.resumen || {};
+
+      const totalElemento = document.getElementById('reporteTotal');
+      const presentesElemento = document.getElementById('reportePresentes');
+      const puntualesElemento = document.getElementById('reportePuntuales');
+      const tardanzasElemento = document.getElementById('reporteTardanzas');
+      const faltasElemento = document.getElementById('reporteFaltas');
+
+      if (totalElemento) totalElemento.textContent = datosResumenPersonal.total || 0;
+      if (presentesElemento) presentesElemento.textContent = datosResumenPersonal.presentes || 0;
+      if (puntualesElemento) puntualesElemento.textContent = datosResumenPersonal.puntuales || 0;
+      if (tardanzasElemento) tardanzasElemento.textContent = datosResumenPersonal.tardanzas || 0;
+      if (faltasElemento) faltasElemento.textContent = datosResumenPersonal.ausentes || 0;
+
+      if (resumen) resumen.style.display = 'block';
+
+      const tablaElemento = tabla ? tabla.closest('table') : null;
+      const cabeceraPersonal = tablaElemento ? tablaElemento.querySelector('thead') : null;
+
+      if (cabeceraPersonal) {
+        cabeceraPersonal.innerHTML =
+          '<tr>' +
+          '<th>DNI</th>' +
+          '<th>Personal</th>' +
+          '<th>Cargo</th>' +
+          '<th>Área</th>' +
+          '<th>Estado</th>' +
+          '<th>Ingreso</th>' +
+          '<th>Salida</th>' +
+          '<th>Puntualidad</th>' +
+          '<th>Método</th>' +
+          '<th>Usuario</th>' +
+          '<th>Observación</th>' +
+          '</tr>';
+      }
+
+      if (tabla) {
+        // Asegurar que el cuerpo de la tabla sea visible.
+        // Algunas reglas de estilo del reporte pueden dejar el tbody
+        // con display:none después de cambiar entre tipos de reporte.
+        tabla.style.display = 'table-row-group';
+        tabla.hidden = false;
+        tabla.innerHTML = '';
+
+        if (!personal.length) {
+          const filaVacia = document.createElement('tr');
+          filaVacia.style.display = 'table-row';
+          const celdaVacia = document.createElement('td');
+          celdaVacia.colSpan = 11;
+          celdaVacia.textContent = 'No hay registros de personal para el mes seleccionado.';
+          celdaVacia.style.display = 'table-cell';
+          filaVacia.appendChild(celdaVacia);
+          tabla.appendChild(filaVacia);
+        }
+
+        personal.forEach(function(persona) {
+          const fila = document.createElement('tr');
+          fila.style.display = 'table-row';
+          const valores = [
+            persona.dni || '',
+            persona.nombre || '',
+            persona.cargo || '',
+            persona.area || '',
+            persona.estado || '',
+            persona.horaIngreso || '',
+            persona.horaSalida || '',
+            persona.puntualidad || '',
+            persona.metodo || '',
+            persona.usuarioRegistro || '',
+            persona.observacion || ''
+          ];
+
+          valores.forEach(function(valor) {
+            const celda = document.createElement('td');
+            celda.style.display = 'table-cell';
+            celda.textContent = String(valor);
+            fila.appendChild(celda);
+          });
+
+          tabla.appendChild(fila);
+        });
+      }
+
+      if (resultados) {
+        resultados.style.display = 'block';
+        resultados.style.height = 'auto';
+        resultados.style.maxHeight = 'none';
+        resultados.style.overflow = 'visible';
+      }
+
+      const contenedorTablaFinalMGP = tabla
+        ? tabla.closest('table')
+          ? tabla.closest('table').parentElement
+          : null
+        : null;
+
+      if (contenedorTablaFinalMGP) {
+        contenedorTablaFinalMGP.style.height = 'auto';
+        contenedorTablaFinalMGP.style.maxHeight = 'none';
+        contenedorTablaFinalMGP.style.overflowX = 'auto';
+        contenedorTablaFinalMGP.style.overflowY = 'visible';
+      }
+
+      if (tabla) {
+        tabla.style.display = 'table-row-group';
+        tabla.style.height = 'auto';
+        tabla.style.maxHeight = 'none';
+        tabla.style.overflow = 'visible';
+      }
+
+      ultimoReporteMGP = {
+        tipoReporte: 'personal',
+        fecha: fecha,
+        mes: '',
+        grado: '',
+        resumen: datosResumenPersonal,
+        personal: personal
+      };
+
+      actualizarBotonesDescargaReporte();
+      renderizarMatrizMensualMGP();
+
+      if (mensaje) {
+        mensaje.textContent =
+          '✅ Reporte diario de personal generado: ' +
+          personal.length + ' registro(s).';
+      }
+
+      return;
+    }
 
     // -------------------------------------------------
     // GUARDAR REPORTE ACTUAL PARA EXPORTACIÓN
@@ -5406,9 +5595,13 @@ const usaFiltroMensual =
     // -------------------------------------------------
 
     const alumnos =
-      Array.isArray(resultado.alumnos)
-        ? resultado.alumnos
-        : [];
+      esMensualPersonal
+        ? (Array.isArray(resultado.personal)
+            ? resultado.personal
+            : [])
+        : (Array.isArray(resultado.alumnos)
+            ? resultado.alumnos
+            : []);
 
 
     if (tabla) {
@@ -5426,7 +5619,25 @@ const usaFiltroMensual =
 
       if (cabecera) {
 
-        if (esMensual) {
+        if (esMensualPersonal) {
+
+          cabecera.innerHTML =
+            '<tr>' +
+            '<th>DNI</th>' +
+            '<th>Personal</th>' +
+            '<th>Cargo</th>' +
+            '<th>Área</th>' +
+            '<th>Días evaluados</th>' +
+            '<th>Asistencias</th>' +
+            '<th>Faltas</th>' +
+            '<th>Puntuales</th>' +
+            '<th>Tardanzas</th>' +
+            '<th>% Asistencia</th>' +
+            '<th>Salidas</th>' +
+            '<th>Detalle</th>' +
+            '</tr>';
+
+        } else if (esMensual) {
 
           cabecera.innerHTML =
             '<tr>' +
@@ -5497,6 +5708,105 @@ const usaFiltroMensual =
           celdaGrado.textContent =
             alumno.gradoSeccion || '';
 
+
+          if (esMensualPersonal) {
+
+            fila.appendChild(celdaDni);
+            fila.appendChild(celdaNombre);
+
+            [
+              alumno.cargo || '',
+              alumno.area || '',
+              alumno.diasEvaluados || 0,
+              alumno.presentes || 0,
+              alumno.faltas || 0,
+              alumno.puntuales || 0,
+              alumno.tardanzas || 0,
+              (alumno.porcentajeAsistencia || 0) + '%',
+              alumno.conSalida || 0
+            ].forEach(function(valor) {
+              const celda = document.createElement('td');
+              celda.textContent = String(valor);
+              fila.appendChild(celda);
+            });
+
+            const celdaDetallePersonal = document.createElement('td');
+            const botonDetallePersonal = document.createElement('button');
+            botonDetallePersonal.type = 'button';
+            botonDetallePersonal.textContent = 'Ver detalle';
+            botonDetallePersonal.style.cursor = 'pointer';
+            botonDetallePersonal.style.padding = '4px 8px';
+            botonDetallePersonal.style.borderRadius = '4px';
+            botonDetallePersonal.style.border = '1px solid #ccc';
+            botonDetallePersonal.style.background = '#f5f5f5';
+
+            botonDetallePersonal.addEventListener('click', function() {
+              const siguiente = fila.nextElementSibling;
+              if (siguiente && siguiente.dataset && siguiente.dataset.detallePersonal === '1') {
+                siguiente.remove();
+                botonDetallePersonal.textContent = 'Ver detalle';
+                return;
+              }
+
+              const filaDetalle = document.createElement('tr');
+              filaDetalle.dataset.detallePersonal = '1';
+              const celdaCompleta = document.createElement('td');
+              celdaCompleta.colSpan = 12;
+              celdaCompleta.style.padding = '10px';
+
+              const titulo = document.createElement('strong');
+              titulo.textContent = 'Detalle diario de ' + (alumno.nombre || 'personal');
+              celdaCompleta.appendChild(titulo);
+
+              const tablaDetalle = document.createElement('table');
+              tablaDetalle.style.width = '100%';
+              tablaDetalle.style.marginTop = '8px';
+              tablaDetalle.style.borderCollapse = 'collapse';
+
+              const filaCabecera = document.createElement('tr');
+              ['Fecha','Estado','Puntualidad','Ingreso','Salida','Método','Usuario','Observación'].forEach(function(texto) {
+                const th = document.createElement('th');
+                th.textContent = texto;
+                th.style.textAlign = 'left';
+                th.style.padding = '4px';
+                th.style.borderBottom = '1px solid #ddd';
+                filaCabecera.appendChild(th);
+              });
+              tablaDetalle.appendChild(filaCabecera);
+
+              const detalleDias = Array.isArray(alumno.detalleDias) ? alumno.detalleDias : [];
+              if (!detalleDias.length) {
+                const filaVacia = document.createElement('tr');
+                const celdaVacia = document.createElement('td');
+                celdaVacia.colSpan = 8;
+                celdaVacia.textContent = 'No hay detalle diario disponible.';
+                celdaVacia.style.padding = '6px';
+                filaVacia.appendChild(celdaVacia);
+                tablaDetalle.appendChild(filaVacia);
+              } else {
+                detalleDias.forEach(function(dia) {
+                  const filaDia = document.createElement('tr');
+                  [dia.fecha || '', dia.estado || '', dia.puntualidad || '', dia.horaIngreso || '', dia.horaSalida || '', dia.metodo || '', dia.usuarioRegistro || '', dia.observacion || ''].forEach(function(valor) {
+                    const td = document.createElement('td');
+                    td.textContent = String(valor);
+                    td.style.padding = '4px';
+                    td.style.borderBottom = '1px solid #eee';
+                    filaDia.appendChild(td);
+                  });
+                  tablaDetalle.appendChild(filaDia);
+                });
+              }
+
+              celdaCompleta.appendChild(tablaDetalle);
+              filaDetalle.appendChild(celdaCompleta);
+              fila.parentNode.insertBefore(filaDetalle, fila.nextSibling);
+              botonDetallePersonal.textContent = 'Ocultar detalle';
+            });
+
+            celdaDetallePersonal.appendChild(botonDetallePersonal);
+            fila.appendChild(celdaDetallePersonal);
+
+          } else {
 
           fila.appendChild(
             celdaDni
@@ -5892,6 +6202,8 @@ const usaFiltroMensual =
             fila.appendChild(
               celdaHora
             );
+
+          }
 
           }
 
@@ -6376,7 +6688,8 @@ function actualizarBotonesDescargaReporte() {
 
   const habilitado =
     !!ultimoReporteMGP &&
-    Array.isArray(ultimoReporteMGP.alumnos);
+    (Array.isArray(ultimoReporteMGP.alumnos) ||
+     Array.isArray(ultimoReporteMGP.personal));
 
   if (descargarReporteExcelBtn) {
     descargarReporteExcelBtn.disabled = !habilitado;
@@ -6416,12 +6729,77 @@ function obtenerDatosExportacionReporte() {
 
   const reporte = ultimoReporteMGP;
   const esMensual =
-    reporte.tipoReporte === 'mensual';
+    reporte.tipoReporte === 'mensual' ||
+    reporte.tipoReporte === 'mensual_personal';
 
   let encabezados = [];
   let filas = [];
 
-  if (esMensual) {
+  if (reporte.tipoReporte === 'personal') {
+
+    encabezados = [
+      'DNI',
+      'Personal',
+      'Cargo',
+      'Área',
+      'Estado',
+      'Ingreso',
+      'Salida',
+      'Puntualidad',
+      'Método',
+      'Usuario',
+      'Observación'
+    ];
+
+    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
+      return [
+        persona.dni || '',
+        persona.nombre || '',
+        persona.cargo || '',
+        persona.area || '',
+        persona.estado || '',
+        persona.horaIngreso || '',
+        persona.horaSalida || '',
+        persona.puntualidad || '',
+        persona.metodo || '',
+        persona.usuarioRegistro || '',
+        persona.observacion || ''
+      ];
+    });
+
+  } else if (reporte.tipoReporte === 'mensual_personal') {
+
+    encabezados = [
+      'DNI',
+      'Personal',
+      'Cargo',
+      'Área',
+      'Días evaluados',
+      'Asistencias',
+      'Faltas',
+      'Puntuales',
+      'Tardanzas',
+      '% Asistencia',
+      'Salidas'
+    ];
+
+    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
+      return [
+        persona.dni || '',
+        persona.nombre || '',
+        persona.cargo || '',
+        persona.area || '',
+        persona.diasEvaluados || 0,
+        persona.presentes || 0,
+        persona.faltas || 0,
+        persona.puntuales || 0,
+        persona.tardanzas || 0,
+        (persona.porcentajeAsistencia || 0) + '%',
+        persona.conSalida || 0
+      ];
+    });
+
+  } else if (esMensual) {
 
     encabezados = [
       'DNI',
@@ -6497,9 +6875,11 @@ function obtenerTituloReporteMGP(datos) {
 
   const nombres = {
     asistencia: 'REPORTE DE ASISTENCIA',
+    personal: 'REPORTE DIARIO DE PERSONAL',
     faltas: 'REPORTE DE FALTAS',
     tardanzas: 'REPORTE DE TARDANZAS',
-    mensual: 'REPORTE MENSUAL DE ASISTENCIA'
+    mensual: 'REPORTE MENSUAL DE ASISTENCIA',
+    mensual_personal: 'REPORTE MENSUAL DE PERSONAL'
   };
 
   return nombres[datos.reporte.tipoReporte] ||
@@ -6530,10 +6910,12 @@ function obtenerSubtituloReporteMGP(datos) {
     }
   }
 
-  partes.push(
-    'Grado / Sección: ' +
-    (reporte.grado || 'Todos')
-  );
+  if (reporte.tipoReporte !== 'personal') {
+    partes.push(
+      'Grado / Sección: ' +
+      (reporte.grado || 'Todos')
+    );
+  }
 
   return partes.join('   |   ');
 }
