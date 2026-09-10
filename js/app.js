@@ -4242,6 +4242,11 @@ const reporteFecha =
     'reporteFecha'
   );
 
+const reporteGrado =
+  document.getElementById(
+    'reporteGrado'
+  );
+
 const reporteMes =
   document.getElementById(
     'reporteMes'
@@ -4251,6 +4256,19 @@ const reporteMensualFiltros =
   document.getElementById(
     'reporteMensualFiltros'
   );
+
+// DEV 03: habilitar reporte diario de PERSONAL sin modificar index.html.
+if (reporteTipo) {
+  const existePersonal = Array.from(reporteTipo.options).some(function(opcion) {
+    return String(opcion.value || '').toLowerCase() === 'personal';
+  });
+  if (!existePersonal) {
+    const opcionPersonal = document.createElement('option');
+    opcionPersonal.value = 'personal';
+    opcionPersonal.textContent = 'Diario — Personal';
+    reporteTipo.appendChild(opcionPersonal);
+  }
+}
 
 
 function actualizarFiltroReporte() {
@@ -4271,8 +4289,19 @@ function actualizarFiltroReporte() {
   const esAlertas =
     tipo === 'alertas';
 
+  const esPersonal =
+    tipo === 'personal';
+
   const usaFiltroMensual =
     esMensual || esAlertas;
+
+  const grupoGrado = reporteGrado
+    ? reporteGrado.closest('.grupo')
+    : null;
+
+  if (grupoGrado) {
+    grupoGrado.style.display = esPersonal ? 'none' : '';
+  }
 
 
   if (reporteFecha) {
@@ -4727,6 +4756,105 @@ const usaFiltroMensual =
 
     }
 
+
+    // -------------------------------------------------
+    // DEV 03 — REPORTE DIARIO DE PERSONAL
+    // Rama independiente del reporte de estudiantes.
+    // -------------------------------------------------
+
+    if (tipoReporte === 'personal') {
+
+      const personal =
+        Array.isArray(resultado.personal)
+          ? resultado.personal
+          : [];
+
+      const datosResumenPersonal =
+        resultado.resumen || {};
+
+      const totalElemento = document.getElementById('reporteTotal');
+      const presentesElemento = document.getElementById('reportePresentes');
+      const puntualesElemento = document.getElementById('reportePuntuales');
+      const tardanzasElemento = document.getElementById('reporteTardanzas');
+      const faltasElemento = document.getElementById('reporteFaltas');
+
+      if (totalElemento) totalElemento.textContent = datosResumenPersonal.total || 0;
+      if (presentesElemento) presentesElemento.textContent = datosResumenPersonal.presentes || 0;
+      if (puntualesElemento) puntualesElemento.textContent = datosResumenPersonal.puntuales || 0;
+      if (tardanzasElemento) tardanzasElemento.textContent = datosResumenPersonal.tardanzas || 0;
+      if (faltasElemento) faltasElemento.textContent = datosResumenPersonal.ausentes || 0;
+
+      if (resumen) resumen.style.display = 'block';
+
+      const tablaElemento = tabla ? tabla.closest('table') : null;
+      const cabeceraPersonal = tablaElemento ? tablaElemento.querySelector('thead') : null;
+
+      if (cabeceraPersonal) {
+        cabeceraPersonal.innerHTML =
+          '<tr>' +
+          '<th>DNI</th>' +
+          '<th>Personal</th>' +
+          '<th>Cargo</th>' +
+          '<th>Área</th>' +
+          '<th>Estado</th>' +
+          '<th>Ingreso</th>' +
+          '<th>Salida</th>' +
+          '<th>Puntualidad</th>' +
+          '<th>Método</th>' +
+          '<th>Usuario</th>' +
+          '<th>Observación</th>' +
+          '</tr>';
+      }
+
+      if (tabla) {
+        personal.forEach(function(persona) {
+          const fila = document.createElement('tr');
+          const valores = [
+            persona.dni || '',
+            persona.nombre || '',
+            persona.cargo || '',
+            persona.area || '',
+            persona.estado || '',
+            persona.horaIngreso || '',
+            persona.horaSalida || '',
+            persona.puntualidad || '',
+            persona.metodo || '',
+            persona.usuarioRegistro || '',
+            persona.observacion || ''
+          ];
+
+          valores.forEach(function(valor) {
+            const celda = document.createElement('td');
+            celda.textContent = String(valor);
+            fila.appendChild(celda);
+          });
+
+          tabla.appendChild(fila);
+        });
+      }
+
+      if (resultados) resultados.style.display = 'block';
+
+      ultimoReporteMGP = {
+        tipoReporte: 'personal',
+        fecha: fecha,
+        mes: '',
+        grado: '',
+        resumen: datosResumenPersonal,
+        personal: personal
+      };
+
+      actualizarBotonesDescargaReporte();
+      renderizarMatrizMensualMGP();
+
+      if (mensaje) {
+        mensaje.textContent =
+          '✅ Reporte diario de personal generado: ' +
+          personal.length + ' registro(s).';
+      }
+
+      return;
+    }
 
     // -------------------------------------------------
     // GUARDAR REPORTE ACTUAL PARA EXPORTACIÓN
