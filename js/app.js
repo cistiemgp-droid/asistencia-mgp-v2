@@ -5701,6 +5701,31 @@ const usaFiltroMensual =
         }
       }
 
+      // ESTUDIANTES: en PC fijar DNI y Estudiante.
+      // En celular fijar solamente DNI para conservar espacio visible.
+      if (!esMensualPersonal && cabecera) {
+        const encabezadosEstudiante = cabecera.querySelectorAll('th');
+        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+        if (encabezadosEstudiante.length >= 2) {
+          encabezadosEstudiante[0].style.position = 'sticky';
+          encabezadosEstudiante[0].style.left = '0';
+          encabezadosEstudiante[0].style.zIndex = '3';
+          encabezadosEstudiante[0].style.background = '#fff';
+          encabezadosEstudiante[0].style.minWidth = '95px';
+          encabezadosEstudiante[0].style.width = '95px';
+
+          if (!esCelularMGP) {
+            encabezadosEstudiante[1].style.position = 'sticky';
+            encabezadosEstudiante[1].style.left = '95px';
+            encabezadosEstudiante[1].style.zIndex = '3';
+            encabezadosEstudiante[1].style.background = '#fff';
+            encabezadosEstudiante[1].style.minWidth = '180px';
+            encabezadosEstudiante[1].style.width = '180px';
+          }
+        }
+      }
+
 
       alumnos.forEach(
         function(alumno) {
@@ -5851,6 +5876,26 @@ const usaFiltroMensual =
             fila.appendChild(celdaDetallePersonal);
 
           } else {
+
+          // ESTUDIANTES: en PC fijar DNI y Estudiante.
+          // En celular fijar solamente DNI para conservar espacio visible.
+          const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+          celdaDni.style.position = 'sticky';
+          celdaDni.style.left = '0';
+          celdaDni.style.zIndex = '2';
+          celdaDni.style.background = '#fff';
+          celdaDni.style.minWidth = '95px';
+          celdaDni.style.width = '95px';
+
+          if (!esCelularMGP) {
+            celdaNombre.style.position = 'sticky';
+            celdaNombre.style.left = '95px';
+            celdaNombre.style.zIndex = '2';
+            celdaNombre.style.background = '#fff';
+            celdaNombre.style.minWidth = '180px';
+            celdaNombre.style.width = '180px';
+          }
 
           fila.appendChild(
             celdaDni
