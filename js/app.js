@@ -4210,7 +4210,8 @@ if (verMatrizMensualBtn) {
     'click',
     function() {
       if (!ultimoReporteMGP ||
-          ultimoReporteMGP.tipoReporte !== 'mensual') {
+          (ultimoReporteMGP.tipoReporte !== 'mensual' &&
+           ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
         return;
       }
 
@@ -4830,33 +4831,6 @@ const usaFiltroMensual =
       }
 
       if (tabla) {
-        // Diario — Personal: preparar columnas fijas igual que Mensual — Personal.
-        // PC: DNI + Personal fijos. Celular: solo DNI fijo.
-        const esCelularDiarioPersonalMGP =
-          window.matchMedia &&
-          window.matchMedia('(max-width: 767px)').matches;
-
-        if (cabeceraPersonal) {
-          const ths = cabeceraPersonal.querySelectorAll('th');
-          if (ths.length >= 2) {
-            ths[0].style.position = 'sticky';
-            ths[0].style.left = '0';
-            ths[0].style.zIndex = '3';
-            ths[0].style.background = '#fff';
-            ths[0].style.minWidth = '95px';
-            ths[0].style.width = '95px';
-
-            if (!esCelularDiarioPersonalMGP) {
-              ths[1].style.position = 'sticky';
-              ths[1].style.left = '95px';
-              ths[1].style.zIndex = '3';
-              ths[1].style.background = '#fff';
-              ths[1].style.minWidth = '180px';
-              ths[1].style.width = '180px';
-            }
-          }
-        }
-
         // Asegurar que el cuerpo de la tabla sea visible.
         // Algunas reglas de estilo del reporte pueden dejar el tbody
         // con display:none después de cambiar entre tipos de reporte.
@@ -4898,26 +4872,6 @@ const usaFiltroMensual =
             celda.textContent = String(valor);
             fila.appendChild(celda);
           });
-
-          // Diario — Personal: fijar las dos primeras celdas en PC.
-          const celdasDiarioPersonal = fila.querySelectorAll('td');
-          if (celdasDiarioPersonal.length >= 2) {
-            celdasDiarioPersonal[0].style.position = 'sticky';
-            celdasDiarioPersonal[0].style.left = '0';
-            celdasDiarioPersonal[0].style.zIndex = '2';
-            celdasDiarioPersonal[0].style.background = '#fff';
-            celdasDiarioPersonal[0].style.minWidth = '95px';
-            celdasDiarioPersonal[0].style.width = '95px';
-
-            if (!esCelularDiarioPersonalMGP) {
-              celdasDiarioPersonal[1].style.position = 'sticky';
-              celdasDiarioPersonal[1].style.left = '95px';
-              celdasDiarioPersonal[1].style.zIndex = '2';
-              celdasDiarioPersonal[1].style.background = '#fff';
-              celdasDiarioPersonal[1].style.minWidth = '180px';
-              celdasDiarioPersonal[1].style.width = '180px';
-            }
-          }
 
           tabla.appendChild(fila);
         });
@@ -4983,6 +4937,9 @@ const usaFiltroMensual =
       resumen: resultado.resumen || {},
       alumnos: Array.isArray(resultado.alumnos)
         ? resultado.alumnos
+        : [],
+      personal: Array.isArray(resultado.personal)
+        ? resultado.personal
         : []
     };
 
@@ -6445,6 +6402,301 @@ const usaFiltroMensual =
 // No modifica datos ni crea nuevos registros.
 // =====================================================
 
+function renderizarMatrizMensualPersonalMGP(
+  contenedorMatriz,
+  contenedorIncidencias,
+  contenedorPrincipal
+) {
+
+  const reporte = ultimoReporteMGP;
+  const mes = String(reporte.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+  const ultimoDia =
+    anio && numeroMes
+      ? new Date(anio, numeroMes, 0).getDate()
+      : 0;
+
+  if (!anio || !numeroMes || !ultimoDia) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No fue posible determinar el mes del reporte.';
+    contenedorIncidencias.textContent = '';
+    return;
+  }
+
+  const personal =
+    Array.isArray(reporte.personal)
+      ? reporte.personal
+      : [];
+
+  if (!personal.length) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No hay personal para mostrar.';
+    contenedorIncidencias.textContent =
+      'No hay incidencias para mostrar.';
+    return;
+  }
+
+  const diasEvaluados = new Set();
+  const datosPorPersona = [];
+  const incidencias = [];
+
+  personal.forEach(function(persona, indicePersona) {
+    const porFecha = {};
+    const detalleDias =
+      Array.isArray(persona.detalleDias)
+        ? persona.detalleDias
+        : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha = String(dia.fecha || '').trim();
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) return;
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) return;
+
+      diasEvaluados.add(diaNumero);
+
+      const estado =
+        String(dia.estado || '').trim().toUpperCase();
+      const puntualidad =
+        String(dia.puntualidad || '').trim().toUpperCase();
+
+      let codigo = 'F';
+      if (estado === 'PRESENTE') {
+        codigo = puntualidad === 'TARDE' ? 'T' : 'A';
+      }
+
+      porFecha[diaNumero] = {
+        codigo: codigo,
+        fecha: fecha
+      };
+    });
+
+    datosPorPersona.push({
+      numero: indicePersona + 1,
+      dni: persona.dni || '',
+      nombre: persona.nombre || '',
+      porFecha: porFecha
+    });
+  });
+
+  const tablaMatriz =
+    document.createElement('table');
+
+  tablaMatriz.style.borderCollapse = 'collapse';
+  tablaMatriz.style.minWidth = '1100px';
+  tablaMatriz.style.width = '100%';
+  tablaMatriz.style.tableLayout = 'auto';
+  tablaMatriz.style.fontSize = '10px';
+
+  const thead =
+    document.createElement('thead');
+  const filaCabecera =
+    document.createElement('tr');
+
+  ['N.º', 'DNI', 'PERSONAL'].forEach(function(texto) {
+    const th = document.createElement('th');
+    th.textContent = texto;
+    th.style.padding = '3px';
+    th.style.border = '1px solid #ccc';
+    th.style.whiteSpace = 'normal';
+    th.style.wordBreak = 'break-word';
+    filaCabecera.appendChild(th);
+  });
+
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    const th = document.createElement('th');
+    th.textContent = String(dia);
+    th.style.padding = '3px';
+    th.style.border = '1px solid #ccc';
+    th.style.textAlign = 'center';
+    th.style.width = '2.2%';
+    filaCabecera.appendChild(th);
+  }
+
+  thead.appendChild(filaCabecera);
+  tablaMatriz.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  datosPorPersona.forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    [
+      item.numero,
+      item.dni,
+      item.nombre
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '3px';
+      td.style.border = '1px solid #ccc';
+      td.style.whiteSpace = 'normal';
+      td.style.wordBreak = 'break-word';
+      fila.appendChild(td);
+    });
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const td = document.createElement('td');
+      const registro = item.porFecha[dia];
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      td.textContent = codigo;
+      td.style.padding = '3px';
+      td.style.border = '1px solid #ccc';
+      td.style.textAlign = 'center';
+      td.style.fontWeight = 'bold';
+      td.style.width = '2.2%';
+      fila.appendChild(td);
+
+      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
+        incidencias.push({
+          numero: item.numero,
+          nombre: item.nombre,
+          dni: item.dni,
+          dia: dia,
+          fecha: registro.fecha || '',
+          codigo: codigo
+        });
+      }
+    }
+
+    tbody.appendChild(fila);
+  });
+
+  tablaMatriz.appendChild(tbody);
+
+  contenedorMatriz.style.maxWidth = '100%';
+  contenedorMatriz.style.overflowX = 'auto';
+  contenedorMatriz.style.overflowY = 'visible';
+  contenedorMatriz.style.webkitOverflowScrolling = 'touch';
+  contenedorMatriz.appendChild(tablaMatriz);
+
+  const leyenda = document.createElement('div');
+  leyenda.style.marginTop = '12px';
+  leyenda.style.padding = '10px';
+  leyenda.style.border = '1px solid #ccc';
+  leyenda.style.background = '#f8f8f8';
+
+  const tituloLeyenda = document.createElement('strong');
+  tituloLeyenda.textContent = 'Leyenda de códigos';
+  leyenda.appendChild(tituloLeyenda);
+
+  const tablaLeyenda = document.createElement('table');
+  tablaLeyenda.style.borderCollapse = 'collapse';
+  tablaLeyenda.style.marginTop = '7px';
+
+  [
+    ['A', 'Asistió'],
+    ['T', 'Tardanza'],
+    ['F', 'Falta'],
+    ['D', 'Día no evaluable']
+  ].forEach(function(item) {
+    const fila = document.createElement('tr');
+    item.forEach(function(valor, indice) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '4px 10px';
+      td.style.border = '1px solid #ccc';
+      if (indice === 0) {
+        td.style.fontWeight = 'bold';
+        td.style.textAlign = 'center';
+      }
+      fila.appendChild(td);
+    });
+    tablaLeyenda.appendChild(fila);
+  });
+
+  leyenda.appendChild(tablaLeyenda);
+  contenedorMatriz.appendChild(leyenda);
+
+  incidencias.sort(function(a, b) {
+    if (a.numero !== b.numero) {
+      return a.numero - b.numero;
+    }
+    return a.dia - b.dia;
+  });
+
+  const tablaIncidencias = document.createElement('table');
+  tablaIncidencias.style.borderCollapse = 'collapse';
+  tablaIncidencias.style.width = '100%';
+  tablaIncidencias.style.minWidth = '700px';
+  tablaIncidencias.style.tableLayout = 'auto';
+  tablaIncidencias.style.fontSize = '11px';
+
+  const filaIncidenciasCabecera = document.createElement('tr');
+  [
+    'N.º', 'DNI', 'PERSONAL', 'DÍA', 'FECHA', 'CÓDIGO'
+  ].forEach(function(texto) {
+    const th = document.createElement('th');
+    th.textContent = texto;
+    th.style.padding = '4px';
+    th.style.border = '1px solid #ccc';
+    th.style.textAlign = 'left';
+    th.style.whiteSpace = 'normal';
+    th.style.wordBreak = 'break-word';
+    filaIncidenciasCabecera.appendChild(th);
+  });
+
+  const theadIncidencias = document.createElement('thead');
+  theadIncidencias.appendChild(filaIncidenciasCabecera);
+  tablaIncidencias.appendChild(theadIncidencias);
+
+  const tbodyIncidencias = document.createElement('tbody');
+  incidencias.forEach(function(item) {
+    const fila = document.createElement('tr');
+    [
+      item.numero,
+      item.dni,
+      item.nombre,
+      item.dia,
+      item.fecha,
+      item.codigo
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '4px';
+      td.style.border = '1px solid #ccc';
+      td.style.whiteSpace = 'normal';
+      td.style.wordBreak = 'break-word';
+      fila.appendChild(td);
+    });
+    tbodyIncidencias.appendChild(fila);
+  });
+
+  tablaIncidencias.appendChild(tbodyIncidencias);
+  contenedorIncidencias.style.maxWidth = '100%';
+  contenedorIncidencias.style.overflowX = 'auto';
+  contenedorIncidencias.style.overflowY = 'visible';
+  contenedorIncidencias.style.webkitOverflowScrolling = 'touch';
+  contenedorIncidencias.appendChild(tablaIncidencias);
+
+  if (!incidencias.length) {
+    contenedorIncidencias.textContent =
+      'No se encontraron faltas ni tardanzas en el período seleccionado.';
+  }
+
+  contenedorPrincipal.style.display = 'block';
+  contenedorPrincipal.style.border = '1px solid #2563eb';
+  contenedorPrincipal.style.borderRadius = '8px';
+  contenedorPrincipal.style.padding = '10px';
+  contenedorPrincipal.style.background = '#ffffff';
+  contenedorPrincipal.style.boxSizing = 'border-box';
+}
+
 function renderizarMatrizMensualMGP() {
 
   const contenedorMatriz =
@@ -6473,8 +6725,21 @@ function renderizarMatrizMensualMGP() {
 
   if (!matrizMensualVisibleMGP ||
       !ultimoReporteMGP ||
-      ultimoReporteMGP.tipoReporte !== 'mensual') {
+      (ultimoReporteMGP.tipoReporte !== 'mensual' &&
+       ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
     contenedorPrincipal.style.display = 'none';
+    return;
+  }
+
+  // MATRIZ MENSUAL DE PERSONAL: usa exactamente la misma
+  // estructura visual de la matriz mensual de estudiantes,
+  // pero trabaja exclusivamente con ultimoReporteMGP.personal.
+  if (ultimoReporteMGP.tipoReporte === 'mensual_personal') {
+    renderizarMatrizMensualPersonalMGP(
+      contenedorMatriz,
+      contenedorIncidencias,
+      contenedorPrincipal
+    );
     return;
   }
 
@@ -6844,7 +7109,8 @@ function actualizarBotonesDescargaReporte() {
 
   const esMensual =
     habilitado &&
-    ultimoReporteMGP.tipoReporte === 'mensual';
+    (ultimoReporteMGP.tipoReporte === 'mensual' ||
+     ultimoReporteMGP.tipoReporte === 'mensual_personal');
 
   if (verMatrizMensualBtn) {
     verMatrizMensualBtn.disabled = !esMensual;
@@ -7064,16 +7330,128 @@ function obtenerSubtituloReporteMGP(datos) {
 }
 
 
-function obtenerDatosMatrizMensualMGP() {
+function obtenerDatosMatrizMensualPersonalMGP(reporte) {
 
-  const reporte = ultimoReporteMGP;
+  const mes = String(reporte.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+  const ultimoDia =
+    anio && numeroMes
+      ? new Date(anio, numeroMes, 0).getDate()
+      : 0;
 
-  if (!reporte || reporte.tipoReporte !== 'mensual') {
+  if (!ultimoDia) {
     return {
       encabezados: [],
       filas: [],
       incidencias: []
     };
+  }
+
+  const diasEvaluados = new Set();
+  const datosPorPersona = [];
+  const incidencias = [];
+
+  (Array.isArray(reporte.personal) ? reporte.personal : []).forEach(function(persona, indicePersona) {
+    const porFecha = {};
+    const detalleDias = Array.isArray(persona.detalleDias)
+      ? persona.detalleDias
+      : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha = String(dia.fecha || '').trim();
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) return;
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) return;
+
+      diasEvaluados.add(diaNumero);
+
+      const estado = String(dia.estado || '').trim().toUpperCase();
+      const puntualidad = String(dia.puntualidad || '').trim().toUpperCase();
+      const codigo =
+        estado === 'PRESENTE'
+          ? (puntualidad === 'TARDE' ? 'T' : 'A')
+          : 'F';
+
+      porFecha[diaNumero] = {
+        codigo: codigo,
+        fecha: fecha
+      };
+    });
+
+    datosPorPersona.push({
+      numero: indicePersona + 1,
+      dni: persona.dni || '',
+      nombre: persona.nombre || '',
+      porFecha: porFecha
+    });
+  });
+
+  const encabezados = ['N.º', 'DNI', 'PERSONAL'];
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    encabezados.push(String(dia));
+  }
+
+  const filas = [];
+
+  datosPorPersona.forEach(function(item) {
+    const fila = [item.numero, item.dni, item.nombre];
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const registro = item.porFecha[dia];
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      fila.push(codigo);
+
+      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
+        incidencias.push([
+          item.numero,
+          item.dni,
+          item.nombre,
+          dia,
+          registro.fecha || '',
+          codigo
+        ]);
+      }
+    }
+
+    filas.push(fila);
+  });
+
+  return {
+    encabezados: encabezados,
+    filas: filas,
+    incidencias: incidencias
+  };
+}
+
+function obtenerDatosMatrizMensualMGP() {
+
+  const reporte = ultimoReporteMGP;
+
+  if (!reporte ||
+      (reporte.tipoReporte !== 'mensual' &&
+       reporte.tipoReporte !== 'mensual_personal')) {
+    return {
+      encabezados: [],
+      filas: [],
+      incidencias: []
+    };
+  }
+
+  if (reporte.tipoReporte === 'mensual_personal') {
+    return obtenerDatosMatrizMensualPersonalMGP(reporte);
   }
 
   const mes = String(reporte.mes || '').trim();
@@ -7230,19 +7608,30 @@ function descargarReporteExcel() {
       const matriz = obtenerDatosMatrizMensualMGP();
       const filasMatriz = [
         ['IE JEC MANUEL GONZALES PRADA'],
-        ['MATRIZ MENSUAL DE ASISTENCIA'],
+        [ultimoReporteMGP.tipoReporte === 'mensual_personal'
+          ? 'MATRIZ MENSUAL DE PERSONAL'
+          : 'MATRIZ MENSUAL DE ASISTENCIA'],
         [subtitulo],
         [],
         matriz.encabezados,
         ...matriz.filas,
         [],
         ['LEYENDA DE CÓDIGOS'],
-        ['A', 'Asistió'],
-        ['T', 'Tardanza'],
-        ['U', 'Tardanza justificada'],
-        ['F', 'Falta'],
-        ['J', 'Falta justificada'],
-        ['D', 'Día no evaluable']
+        ...(ultimoReporteMGP.tipoReporte === 'mensual_personal'
+          ? [
+              ['A', 'Asistió'],
+              ['T', 'Tardanza'],
+              ['F', 'Falta'],
+              ['D', 'Día no evaluable']
+            ]
+          : [
+              ['A', 'Asistió'],
+              ['T', 'Tardanza'],
+              ['U', 'Tardanza justificada'],
+              ['F', 'Falta'],
+              ['J', 'Falta justificada'],
+              ['D', 'Día no evaluable']
+            ])
       ];
 
       const hojaMatriz = XLSX.utils.aoa_to_sheet(filasMatriz);
@@ -7412,7 +7801,13 @@ function descargarReportePDF() {
       let siguienteY = doc.lastAutoTable.finalY + 8;
 
       doc.setFontSize(11);
-      doc.text('MATRIZ MENSUAL DE ASISTENCIA', 10, siguienteY);
+      doc.text(
+        ultimoReporteMGP.tipoReporte === 'mensual_personal'
+          ? 'MATRIZ MENSUAL DE PERSONAL'
+          : 'MATRIZ MENSUAL DE ASISTENCIA',
+        10,
+        siguienteY
+      );
       siguienteY += 4;
 
       doc.autoTable({
