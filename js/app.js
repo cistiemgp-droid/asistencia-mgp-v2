@@ -4830,6 +4830,33 @@ const usaFiltroMensual =
       }
 
       if (tabla) {
+        // Diario — Personal: preparar columnas fijas igual que Mensual — Personal.
+        // PC: DNI + Personal fijos. Celular: solo DNI fijo.
+        const esCelularDiarioPersonalMGP =
+          window.matchMedia &&
+          window.matchMedia('(max-width: 767px)').matches;
+
+        if (cabeceraPersonal) {
+          const ths = cabeceraPersonal.querySelectorAll('th');
+          if (ths.length >= 2) {
+            ths[0].style.position = 'sticky';
+            ths[0].style.left = '0';
+            ths[0].style.zIndex = '3';
+            ths[0].style.background = '#fff';
+            ths[0].style.minWidth = '95px';
+            ths[0].style.width = '95px';
+
+            if (!esCelularDiarioPersonalMGP) {
+              ths[1].style.position = 'sticky';
+              ths[1].style.left = '95px';
+              ths[1].style.zIndex = '3';
+              ths[1].style.background = '#fff';
+              ths[1].style.minWidth = '180px';
+              ths[1].style.width = '180px';
+            }
+          }
+        }
+
         // Asegurar que el cuerpo de la tabla sea visible.
         // Algunas reglas de estilo del reporte pueden dejar el tbody
         // con display:none después de cambiar entre tipos de reporte.
@@ -4872,6 +4899,26 @@ const usaFiltroMensual =
             fila.appendChild(celda);
           });
 
+          // Diario — Personal: fijar las dos primeras celdas en PC.
+          const celdasDiarioPersonal = fila.querySelectorAll('td');
+          if (celdasDiarioPersonal.length >= 2) {
+            celdasDiarioPersonal[0].style.position = 'sticky';
+            celdasDiarioPersonal[0].style.left = '0';
+            celdasDiarioPersonal[0].style.zIndex = '2';
+            celdasDiarioPersonal[0].style.background = '#fff';
+            celdasDiarioPersonal[0].style.minWidth = '95px';
+            celdasDiarioPersonal[0].style.width = '95px';
+
+            if (!esCelularDiarioPersonalMGP) {
+              celdasDiarioPersonal[1].style.position = 'sticky';
+              celdasDiarioPersonal[1].style.left = '95px';
+              celdasDiarioPersonal[1].style.zIndex = '2';
+              celdasDiarioPersonal[1].style.background = '#fff';
+              celdasDiarioPersonal[1].style.minWidth = '180px';
+              celdasDiarioPersonal[1].style.width = '180px';
+            }
+          }
+
           tabla.appendChild(fila);
         });
       }
@@ -4894,7 +4941,6 @@ const usaFiltroMensual =
         contenedorTablaFinalMGP.style.maxHeight = 'none';
         contenedorTablaFinalMGP.style.overflowX = 'auto';
         contenedorTablaFinalMGP.style.overflowY = 'visible';
-        contenedorTablaFinalMGP.scrollLeft = 0;
       }
 
       if (tabla) {
