@@ -6504,7 +6504,8 @@ function actualizarBotonesDescargaReporte() {
 
   const habilitado =
     !!ultimoReporteMGP &&
-    Array.isArray(ultimoReporteMGP.alumnos);
+    (Array.isArray(ultimoReporteMGP.alumnos) ||
+     Array.isArray(ultimoReporteMGP.personal));
 
   if (descargarReporteExcelBtn) {
     descargarReporteExcelBtn.disabled = !habilitado;
@@ -6549,7 +6550,39 @@ function obtenerDatosExportacionReporte() {
   let encabezados = [];
   let filas = [];
 
-  if (esMensual) {
+  if (reporte.tipoReporte === 'personal') {
+
+    encabezados = [
+      'DNI',
+      'Personal',
+      'Cargo',
+      'Área',
+      'Estado',
+      'Ingreso',
+      'Salida',
+      'Puntualidad',
+      'Método',
+      'Usuario',
+      'Observación'
+    ];
+
+    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
+      return [
+        persona.dni || '',
+        persona.nombre || '',
+        persona.cargo || '',
+        persona.area || '',
+        persona.estado || '',
+        persona.horaIngreso || '',
+        persona.horaSalida || '',
+        persona.puntualidad || '',
+        persona.metodo || '',
+        persona.usuarioRegistro || '',
+        persona.observacion || ''
+      ];
+    });
+
+  } else if (esMensual) {
 
     encabezados = [
       'DNI',
@@ -6625,6 +6658,7 @@ function obtenerTituloReporteMGP(datos) {
 
   const nombres = {
     asistencia: 'REPORTE DE ASISTENCIA',
+    personal: 'REPORTE DIARIO DE PERSONAL',
     faltas: 'REPORTE DE FALTAS',
     tardanzas: 'REPORTE DE TARDANZAS',
     mensual: 'REPORTE MENSUAL DE ASISTENCIA'
@@ -6658,10 +6692,12 @@ function obtenerSubtituloReporteMGP(datos) {
     }
   }
 
-  partes.push(
-    'Grado / Sección: ' +
-    (reporte.grado || 'Todos')
-  );
+  if (reporte.tipoReporte !== 'personal') {
+    partes.push(
+      'Grado / Sección: ' +
+      (reporte.grado || 'Todos')
+    );
+  }
 
   return partes.join('   |   ');
 }
