@@ -5550,9 +5550,13 @@ const usaFiltroMensual =
     // -------------------------------------------------
 
     const alumnos =
-      Array.isArray(resultado.alumnos)
-        ? resultado.alumnos
-        : [];
+      esMensualPersonal
+        ? (Array.isArray(resultado.personal)
+            ? resultado.personal
+            : [])
+        : (Array.isArray(resultado.alumnos)
+            ? resultado.alumnos
+            : []);
 
 
     if (tabla) {
