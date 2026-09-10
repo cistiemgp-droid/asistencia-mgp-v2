@@ -4869,32 +4869,7 @@ const usaFiltroMensual =
         });
       }
 
-      if (resultados) {
-        resultados.style.display = 'block';
-        resultados.style.height = 'auto';
-        resultados.style.maxHeight = 'none';
-        resultados.style.overflow = 'visible';
-      }
-
-      const contenedorTablaFinalMGP = tabla
-        ? tabla.closest('table')
-          ? tabla.closest('table').parentElement
-          : null
-        : null;
-
-      if (contenedorTablaFinalMGP) {
-        contenedorTablaFinalMGP.style.height = 'auto';
-        contenedorTablaFinalMGP.style.maxHeight = 'none';
-        contenedorTablaFinalMGP.style.overflowX = 'auto';
-        contenedorTablaFinalMGP.style.overflowY = 'visible';
-      }
-
-      if (tabla) {
-        tabla.style.display = 'table-row-group';
-        tabla.style.height = 'auto';
-        tabla.style.maxHeight = 'none';
-        tabla.style.overflow = 'visible';
-      }
+      if (resultados) resultados.style.display = 'block';
 
       ultimoReporteMGP = {
         tipoReporte: 'personal',
@@ -5758,8 +5733,17 @@ const usaFiltroMensual =
               titulo.textContent = 'Detalle diario de ' + (alumno.nombre || 'personal');
               celdaCompleta.appendChild(titulo);
 
+              const contenedorDetalle = document.createElement('div');
+              contenedorDetalle.style.width = '100%';
+              contenedorDetalle.style.maxWidth = '100%';
+              contenedorDetalle.style.overflowX = 'auto';
+              contenedorDetalle.style.overflowY = 'visible';
+              contenedorDetalle.style.webkitOverflowScrolling = 'touch';
+
               const tablaDetalle = document.createElement('table');
-              tablaDetalle.style.width = '100%';
+              tablaDetalle.style.width = 'max-content';
+              tablaDetalle.style.minWidth = '900px';
+              tablaDetalle.style.maxWidth = 'none';
               tablaDetalle.style.marginTop = '8px';
               tablaDetalle.style.borderCollapse = 'collapse';
 
@@ -5797,7 +5781,8 @@ const usaFiltroMensual =
                 });
               }
 
-              celdaCompleta.appendChild(tablaDetalle);
+              contenedorDetalle.appendChild(tablaDetalle);
+              celdaCompleta.appendChild(contenedorDetalle);
               filaDetalle.appendChild(celdaCompleta);
               fila.parentNode.insertBefore(filaDetalle, fila.nextSibling);
               botonDetallePersonal.textContent = 'Ocultar detalle';
@@ -6229,6 +6214,74 @@ const usaFiltroMensual =
           celda.style.verticalAlign = 'top';
         }
       );
+
+      // -------------------------------------------------
+      // TABLA RESPONSIVE PARA PC Y CELULAR
+      // -------------------------------------------------
+      // El contenido conserva todas sus columnas.
+      // En pantallas pequeñas se desplaza horizontalmente
+      // sin cortar las primeras columnas.
+      // -------------------------------------------------
+      const tablaPrincipalMGP =
+        tabla.closest('table');
+
+      if (tablaPrincipalMGP) {
+
+        const contenedorTablaMGP =
+          tablaPrincipalMGP.parentElement;
+
+        if (esMensualPersonal) {
+
+          tablaPrincipalMGP.style.width =
+            'max-content';
+
+          tablaPrincipalMGP.style.minWidth =
+            '1100px';
+
+          tablaPrincipalMGP.style.maxWidth =
+            'none';
+
+          tablaPrincipalMGP.style.tableLayout =
+            'auto';
+
+          if (contenedorTablaMGP) {
+
+            contenedorTablaMGP.style.width =
+              '100%';
+
+            contenedorTablaMGP.style.maxWidth =
+              '100%';
+
+            contenedorTablaMGP.style.overflowX =
+              'auto';
+
+            contenedorTablaMGP.style.overflowY =
+              'visible';
+
+            contenedorTablaMGP.style.webkitOverflowScrolling =
+              'touch';
+
+            // Al generar un reporte nuevo, comenzar siempre
+            // mostrando las primeras columnas.
+            contenedorTablaMGP.scrollLeft =
+              0;
+          }
+
+        } else {
+
+          if (contenedorTablaMGP) {
+
+            contenedorTablaMGP.style.maxWidth =
+              '100%';
+
+            contenedorTablaMGP.style.overflowX =
+              'auto';
+
+          }
+
+        }
+
+      }
 
     }
 
