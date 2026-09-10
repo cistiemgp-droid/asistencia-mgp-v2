@@ -6623,71 +6623,9 @@ function renderizarMatrizMensualPersonalMGP(
   leyenda.appendChild(tablaLeyenda);
   contenedorMatriz.appendChild(leyenda);
 
-  incidencias.sort(function(a, b) {
-    if (a.numero !== b.numero) {
-      return a.numero - b.numero;
-    }
-    return a.dia - b.dia;
-  });
-
-  const tablaIncidencias = document.createElement('table');
-  tablaIncidencias.style.borderCollapse = 'collapse';
-  tablaIncidencias.style.width = '100%';
-  tablaIncidencias.style.minWidth = '700px';
-  tablaIncidencias.style.tableLayout = 'auto';
-  tablaIncidencias.style.fontSize = '11px';
-
-  const filaIncidenciasCabecera = document.createElement('tr');
-  [
-    'N.º', 'DNI', 'PERSONAL', 'DÍA', 'FECHA', 'CÓDIGO'
-  ].forEach(function(texto) {
-    const th = document.createElement('th');
-    th.textContent = texto;
-    th.style.padding = '4px';
-    th.style.border = '1px solid #ccc';
-    th.style.textAlign = 'left';
-    th.style.whiteSpace = 'normal';
-    th.style.wordBreak = 'break-word';
-    filaIncidenciasCabecera.appendChild(th);
-  });
-
-  const theadIncidencias = document.createElement('thead');
-  theadIncidencias.appendChild(filaIncidenciasCabecera);
-  tablaIncidencias.appendChild(theadIncidencias);
-
-  const tbodyIncidencias = document.createElement('tbody');
-  incidencias.forEach(function(item) {
-    const fila = document.createElement('tr');
-    [
-      item.numero,
-      item.dni,
-      item.nombre,
-      item.dia,
-      item.fecha,
-      item.codigo
-    ].forEach(function(valor) {
-      const td = document.createElement('td');
-      td.textContent = valor;
-      td.style.padding = '4px';
-      td.style.border = '1px solid #ccc';
-      td.style.whiteSpace = 'normal';
-      td.style.wordBreak = 'break-word';
-      fila.appendChild(td);
-    });
-    tbodyIncidencias.appendChild(fila);
-  });
-
-  tablaIncidencias.appendChild(tbodyIncidencias);
-  contenedorIncidencias.style.maxWidth = '100%';
-  contenedorIncidencias.style.overflowX = 'auto';
-  contenedorIncidencias.style.overflowY = 'visible';
-  contenedorIncidencias.style.webkitOverflowScrolling = 'touch';
-  contenedorIncidencias.appendChild(tablaIncidencias);
-
-  if (!incidencias.length) {
-    contenedorIncidencias.textContent =
-      'No se encontraron faltas ni tardanzas en el período seleccionado.';
-  }
+  // PERSONAL: no muestra ni genera la sección de incidencias estudiantiles.
+  // Esa sección pertenece exclusivamente a la matriz de estudiantes.
+  contenedorIncidencias.innerHTML = '';
 
   contenedorPrincipal.style.display = 'block';
   contenedorPrincipal.style.border = '1px solid #2563eb';
@@ -7646,36 +7584,39 @@ function descargarReporteExcel() {
         'Matriz Mensual'
       );
 
-      const filasIncidencias = [
-        ['IE JEC MANUEL GONZALES PRADA'],
-        ['INCIDENCIAS PARA SIAGIE'],
-        [subtitulo],
-        [],
-        ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
-        ...matriz.incidencias,
-        [],
-        ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
-        ['T', 'Tardanza'],
-        ['U', 'Tardanza justificada'],
-        ['F', 'Falta'],
-        ['J', 'Falta justificada']
-      ];
+      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
+      if (ultimoReporteMGP.tipoReporte === 'mensual') {
+        const filasIncidencias = [
+          ['IE JEC MANUEL GONZALES PRADA'],
+          ['INCIDENCIAS PARA SIAGIE'],
+          [subtitulo],
+          [],
+          ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
+          ...matriz.incidencias,
+          [],
+          ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
+          ['T', 'Tardanza'],
+          ['U', 'Tardanza justificada'],
+          ['F', 'Falta'],
+          ['J', 'Falta justificada']
+        ];
 
-      const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
-      hojaIncidencias['!cols'] = [
-        { wch: 7 },
-        { wch: 14 },
-        { wch: 36 },
-        { wch: 8 },
-        { wch: 14 },
-        { wch: 10 }
-      ];
+        const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
+        hojaIncidencias['!cols'] = [
+          { wch: 7 },
+          { wch: 14 },
+          { wch: 36 },
+          { wch: 8 },
+          { wch: 14 },
+          { wch: 10 }
+        ];
 
-      XLSX.utils.book_append_sheet(
-        libro,
-        hojaIncidencias,
-        'Incidencias SIAGIE'
-      );
+        XLSX.utils.book_append_sheet(
+          libro,
+          hojaIncidencias,
+          'Incidencias SIAGIE'
+        );
+      }
     }
 
     const fechaArchivo =
@@ -7857,26 +7798,29 @@ function descargarReportePDF() {
         }
       });
 
-      siguienteY = doc.lastAutoTable.finalY + 6;
-      doc.setFontSize(10);
-      doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
-      siguienteY += 2;
+      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
+      if (ultimoReporteMGP.tipoReporte === 'mensual') {
+        siguienteY = doc.lastAutoTable.finalY + 6;
+        doc.setFontSize(10);
+        doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
+        siguienteY += 2;
 
-      doc.autoTable({
-        head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
-        body: matriz.incidencias,
-        startY: siguienteY,
-        theme: 'grid',
-        styles: {
-          fontSize: 7,
-          cellPadding: 1.5,
-          overflow: 'linebreak'
-        },
-        margin: {
-          left: 10,
-          right: 10
-        }
-      });
+        doc.autoTable({
+          head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
+          body: matriz.incidencias,
+          startY: siguienteY,
+          theme: 'grid',
+          styles: {
+            fontSize: 7,
+            cellPadding: 1.5,
+            overflow: 'linebreak'
+          },
+          margin: {
+            left: 10,
+            right: 10
+          }
+        });
+      }
     }
 
     const fechaArchivo =
