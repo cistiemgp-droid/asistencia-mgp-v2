@@ -4425,6 +4425,13 @@ async function consultarReporte() {
       tablaReporteBase.style.tableLayout = 'auto';
       tablaReporteBase.style.borderCollapse = 'collapse';
       tablaReporteBase.style.fontSize = '12px';
+
+      // SOLO mensual de personal: ancho funcional para PC y celular.
+      if (tipoReporte === 'mensual_personal') {
+        tablaReporteBase.style.minWidth = '1050px';
+        tablaReporteBase.style.width = 'max-content';
+        tablaReporteBase.style.maxWidth = 'none';
+      }
     }
 
     const contenedorTablaReporte =
@@ -5672,6 +5679,28 @@ const usaFiltroMensual =
 
       }
 
+      // Mensual de personal: mantener visibles DNI y Personal
+      // al desplazar horizontalmente la tabla, también en celular.
+      if (esMensualPersonal && cabecera) {
+        const encabezadosPersonal = cabecera.querySelectorAll('th');
+
+        if (encabezadosPersonal.length >= 2) {
+          encabezadosPersonal[0].style.position = 'sticky';
+          encabezadosPersonal[0].style.left = '0';
+          encabezadosPersonal[0].style.zIndex = '3';
+          encabezadosPersonal[0].style.background = '#fff';
+          encabezadosPersonal[0].style.minWidth = '95px';
+          encabezadosPersonal[0].style.width = '95px';
+
+          encabezadosPersonal[1].style.position = 'sticky';
+          encabezadosPersonal[1].style.left = '95px';
+          encabezadosPersonal[1].style.zIndex = '3';
+          encabezadosPersonal[1].style.background = '#fff';
+          encabezadosPersonal[1].style.minWidth = '180px';
+          encabezadosPersonal[1].style.width = '180px';
+        }
+      }
+
 
       alumnos.forEach(
         function(alumno) {
@@ -5710,6 +5739,21 @@ const usaFiltroMensual =
 
 
           if (esMensualPersonal) {
+
+            // Fijar DNI y Personal al desplazarse horizontalmente.
+            celdaDni.style.position = 'sticky';
+            celdaDni.style.left = '0';
+            celdaDni.style.zIndex = '2';
+            celdaDni.style.background = '#fff';
+            celdaDni.style.minWidth = '95px';
+            celdaDni.style.width = '95px';
+
+            celdaNombre.style.position = 'sticky';
+            celdaNombre.style.left = '95px';
+            celdaNombre.style.zIndex = '2';
+            celdaNombre.style.background = '#fff';
+            celdaNombre.style.minWidth = '180px';
+            celdaNombre.style.width = '180px';
 
             fila.appendChild(celdaDni);
             fila.appendChild(celdaNombre);
