@@ -4444,21 +4444,6 @@ async function consultarReporte() {
       contenedorTablaReporte.style.overflowX = 'auto';
       contenedorTablaReporte.style.overflowY = 'visible';
       contenedorTablaReporte.style.webkitOverflowScrolling = 'touch';
-
-      // SOLO en celular y para el mensual de personal:
-      // aprovechar el ancho completo disponible dentro de la tarjeta.
-      // El DNI sigue fijo; Personal y las demás columnas se desplazan.
-      const esCelularAnchoMGP =
-        window.matchMedia &&
-        window.matchMedia('(max-width: 767px)').matches;
-
-      if (esCelularAnchoMGP && tipoReporte === 'mensual_personal') {
-        contenedorTablaReporte.style.width = 'calc(100% + 40px)';
-        contenedorTablaReporte.style.maxWidth = 'none';
-        contenedorTablaReporte.style.marginLeft = '-20px';
-        contenedorTablaReporte.style.paddingLeft = '0';
-        contenedorTablaReporte.style.paddingRight = '0';
-      }
     }
   }
 
@@ -4909,6 +4894,7 @@ const usaFiltroMensual =
         contenedorTablaFinalMGP.style.maxHeight = 'none';
         contenedorTablaFinalMGP.style.overflowX = 'auto';
         contenedorTablaFinalMGP.style.overflowY = 'visible';
+        contenedorTablaFinalMGP.scrollLeft = 0;
       }
 
       if (tabla) {
