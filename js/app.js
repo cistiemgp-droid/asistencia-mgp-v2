@@ -4823,8 +4823,27 @@ const usaFiltroMensual =
       }
 
       if (tabla) {
+        // Asegurar que el cuerpo de la tabla sea visible.
+        // Algunas reglas de estilo del reporte pueden dejar el tbody
+        // con display:none después de cambiar entre tipos de reporte.
+        tabla.style.display = 'table-row-group';
+        tabla.hidden = false;
+        tabla.innerHTML = '';
+
+        if (!personal.length) {
+          const filaVacia = document.createElement('tr');
+          filaVacia.style.display = 'table-row';
+          const celdaVacia = document.createElement('td');
+          celdaVacia.colSpan = 11;
+          celdaVacia.textContent = 'No hay registros de personal para el mes seleccionado.';
+          celdaVacia.style.display = 'table-cell';
+          filaVacia.appendChild(celdaVacia);
+          tabla.appendChild(filaVacia);
+        }
+
         personal.forEach(function(persona) {
           const fila = document.createElement('tr');
+          fila.style.display = 'table-row';
           const valores = [
             persona.dni || '',
             persona.nombre || '',
@@ -4841,6 +4860,7 @@ const usaFiltroMensual =
 
           valores.forEach(function(valor) {
             const celda = document.createElement('td');
+            celda.style.display = 'table-cell';
             celda.textContent = String(valor);
             fila.appendChild(celda);
           });
@@ -4849,7 +4869,32 @@ const usaFiltroMensual =
         });
       }
 
-      if (resultados) resultados.style.display = 'block';
+      if (resultados) {
+        resultados.style.display = 'block';
+        resultados.style.height = 'auto';
+        resultados.style.maxHeight = 'none';
+        resultados.style.overflow = 'visible';
+      }
+
+      const contenedorTablaFinalMGP = tabla
+        ? tabla.closest('table')
+          ? tabla.closest('table').parentElement
+          : null
+        : null;
+
+      if (contenedorTablaFinalMGP) {
+        contenedorTablaFinalMGP.style.height = 'auto';
+        contenedorTablaFinalMGP.style.maxHeight = 'none';
+        contenedorTablaFinalMGP.style.overflowX = 'auto';
+        contenedorTablaFinalMGP.style.overflowY = 'visible';
+      }
+
+      if (tabla) {
+        tabla.style.display = 'table-row-group';
+        tabla.style.height = 'auto';
+        tabla.style.maxHeight = 'none';
+        tabla.style.overflow = 'visible';
+      }
 
       ultimoReporteMGP = {
         tipoReporte: 'personal',
