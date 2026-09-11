@@ -1534,6 +1534,7 @@ document
              rolActual === 'DIRECTOR') &&
             destino !== 'registro' &&
             destino !== 'reportes' &&
+            destino !== 'panel' &&
             !(
               destino === 'admin' &&
               state.permisos &&
@@ -1625,6 +1626,9 @@ document.addEventListener(
     const reportes =
       document.getElementById('reportes');
 
+    const admin =
+      document.getElementById('admin');
+
     const enRegistro =
       registro &&
       registro.classList.contains('active');
@@ -1633,7 +1637,11 @@ document.addEventListener(
       reportes &&
       reportes.classList.contains('active');
 
-    if (!enRegistro && !enReportes) {
+    const enAdmin =
+      admin &&
+      admin.classList.contains('active');
+
+    if (!enRegistro && !enReportes && !enAdmin) {
       return;
     }
 
