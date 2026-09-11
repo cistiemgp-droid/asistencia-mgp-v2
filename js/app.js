@@ -1528,9 +1528,17 @@ document
             rolActual === 'AUXILIAR' ||
             rolActual === 'DIRECTOR'
           ) {
+            // AUXILIAR y DIRECTOR también pueden entrar a
+            // ADMINISTRACIÓN cuando el backend les concede
+            // administrarJustificaciones.
             if (
               destino !== 'registro' &&
-              destino !== 'reportes'
+              destino !== 'reportes' &&
+              !(
+                destino === 'admin' &&
+                state.permisos &&
+                state.permisos.administrarJustificaciones === true
+              )
             ) {
               return;
             }
@@ -2090,7 +2098,11 @@ function aplicarPermisosPanel() {
     ) {
       permitidoPorRol =
         control.vista === 'registro' ||
-        control.vista === 'reportes';
+        control.vista === 'reportes' ||
+        (
+          control.vista === 'admin' &&
+          permisos.administrarJustificaciones === true
+        );
     }
 
     const permitido =
@@ -8037,8 +8049,11 @@ function inicializarModuloJustificacionesMGP() {
 
   if (!puedeAdministrarJustificacionesMGP()) return;
 
-  const card = admin.querySelector('.card');
-  if (!card) return;
+  // Preferimos la tarjeta administrativa existente.
+  // Si el HTML cambia y no existe .card, usamos directamente
+  // el contenedor #admin para que Justificaciones no desaparezca.
+  const destinoJustificaciones =
+    admin.querySelector('.card') || admin;
 
   const bloque = document.createElement('div');
   bloque.id = 'justificacionesMGP';
@@ -8048,7 +8063,7 @@ function inicializarModuloJustificacionesMGP() {
 
   bloque.innerHTML = "\n    <h3 style=\"margin:0 0 10px;\">📄 Justificaciones</h3>\n    <p style=\"margin:0 0 14px; font-size:.92rem;\">\n      Registro, edición y resolución de justificaciones de asistencia.\n    </p>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoPersonaMGP\">\n        <option value=\"estudiante\">Estudiante</option>\n        <option value=\"personal\">Personal</option>\n      </select>\n      <select id=\"justEstadoFiltroMGP\">\n        <option value=\"\">Todos los estados</option>\n        <option value=\"PENDIENTE\">Pendientes</option>\n        <option value=\"APROBADA\">Aprobadas</option>\n        <option value=\"RECHAZADA\">Rechazadas</option>\n      </select>\n      <input id=\"justMesFiltroMGP\" type=\"month\" title=\"Mes de la inasistencia\">\n      <button id=\"justListarBtnMGP\" type=\"button\">🔄 Actualizar</button>\n    </div>\n\n    <div style=\"display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoMGP\">\n        <option value=\"FALTA\">FALTA</option>\n        <option value=\"TARDANZA\">TARDANZA</option>\n      </select>\n      <input id=\"justDniMGP\" type=\"text\" inputmode=\"numeric\" maxlength=\"12\" placeholder=\"DNI\">\n      <input id=\"justIdPersonaMGP\" type=\"text\" placeholder=\"ID persona (opcional)\">\n      <input id=\"justFechaMGP\" type=\"date\">\n      <input id=\"justIdRegistroMGP\" type=\"text\" placeholder=\"ID_REGISTRO (solo tardanza)\">\n      <input id=\"justMotivoMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Motivo de la justificación\">\n      <input id=\"justObservacionMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Observación (opcional)\">\n    </div>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <button id=\"justGuardarBtnMGP\" type=\"button\">💾 Registrar justificación</button>\n      <button id=\"justCancelarBtnMGP\" type=\"button\" style=\"display:none;\">✖ Cancelar edición</button>\n    </div>\n\n    <div id=\"justMsgMGP\" style=\"margin-bottom:10px; min-height:20px;\"></div>\n    <div style=\"overflow:auto; max-width:100%;\">\n      <table id=\"justTablaMGP\" style=\"width:100%; min-width:1100px; border-collapse:collapse;\">\n        <thead>\n          <tr>\n            <th>ID</th><th>DNI</th><th>Persona</th><th>Tipo</th><th>Fecha</th>\n            <th>Motivo</th><th>Estado</th><th>Responsable</th><th>Observación</th><th>Acciones</th>\n          </tr>\n        </thead>\n        <tbody id=\"justTablaBodyMGP\"></tbody>\n      </table>\n    </div>\n  ";
 
-  card.appendChild(bloque);
+  destinoJustificaciones.appendChild(bloque);
   justificacionesMGPInicializado = true;
 
   document.getElementById('justListarBtnMGP')
