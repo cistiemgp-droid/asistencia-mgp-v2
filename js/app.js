@@ -1519,6 +1519,21 @@ document
 
           const permiso = mapaPermisos[destino];
 
+          const permisoDestinoValido =
+            destino === 'admin'
+              ? (
+                  state.permisos &&
+                  (
+                    state.permisos.administrarPersonas === true ||
+                    state.permisos.administrarJustificaciones === true
+                  )
+                )
+              : (
+                  permiso &&
+                  state.permisos &&
+                  state.permisos[permiso] === true
+                );
+
           const rolActual =
             String(
               (state.usuario && state.usuario.rol) || ''
@@ -1544,10 +1559,7 @@ document
             }
           }
 
-          if (
-            permiso &&
-            (!state.permisos || state.permisos[permiso] !== true)
-          ) {
+          if (!permisoDestinoValido) {
             return;
           }
 
@@ -2105,9 +2117,17 @@ function aplicarPermisosPanel() {
         );
     }
 
+    const permitidoPorPermiso =
+      control.vista === 'admin'
+        ? (
+            permisos.administrarPersonas === true ||
+            permisos.administrarJustificaciones === true
+          )
+        : permisos[control.permiso] === true;
+
     const permitido =
       permitidoPorRol &&
-      permisos[control.permiso] === true;
+      permitidoPorPermiso;
 
     botones.forEach(function(boton) {
 
