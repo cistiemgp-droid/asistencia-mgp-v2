@@ -4619,6 +4619,13 @@ const usaFiltroMensual =
   consultarReporteBtn.disabled =
     true;
 
+  // DEV17 - AUDITORIA CLIENTE REPORTES:
+  // mide desde el inicio de la solicitud hasta recibir la respuesta JSONP.
+  // No modifica la lógica ni los datos del reporte.
+  const marcaClienteReporteMGP =
+    (window.performance && typeof window.performance.now === 'function')
+      ? window.performance.now()
+      : Date.now();
 
   try {
 
@@ -4763,6 +4770,17 @@ const usaFiltroMensual =
                 true;
 
               limpiar();
+
+
+              const marcaClienteReporteFinMGP =
+                (window.performance && typeof window.performance.now === 'function')
+                  ? window.performance.now()
+                  : Date.now();
+
+              console.log(
+                'DEV17 CLIENTE REPORTES - respuesta recibida en ms:',
+                Math.round(marcaClienteReporteFinMGP - marcaClienteReporteMGP)
+              );
 
               resolve(data);
 
@@ -5041,7 +5059,28 @@ const usaFiltroMensual =
     };
 
     actualizarBotonesDescargaReporte();
+
+    const marcaClienteRenderAntesMGP =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
     renderizarMatrizMensualMGP();
+
+    const marcaClienteRenderDespuesMGP =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
+    console.log(
+      'DEV17 CLIENTE REPORTES - render matriz ms:',
+      Math.round(marcaClienteRenderDespuesMGP - marcaClienteRenderAntesMGP)
+    );
+
+    console.log(
+      'DEV17 CLIENTE REPORTES - total hasta render ms:',
+      Math.round(marcaClienteRenderDespuesMGP - marcaClienteReporteMGP)
+    );
 
         // -------------------------------------------------
     // ALERTAS V2 - VISUALIZACIÓN
