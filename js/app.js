@@ -4815,6 +4815,41 @@ const usaFiltroMensual =
       resultado
     );
 
+    // DEV16 - AUDITORIA CONTROLADA:
+    // Expone por separado los tiempos internos del backend para no depender
+    // de expandir manualmente el objeto en la consola. No altera el reporte.
+    if (
+      resultado &&
+      resultado._diagnosticoServidor
+    ) {
+
+      console.groupCollapsed(
+        'DIAGNOSTICO REPORTES DEV16'
+      );
+
+      console.table(
+        resultado._diagnosticoServidor
+      );
+
+      console.log(
+        'Diagnostico servidor REPORTES:',
+        JSON.stringify(
+          resultado._diagnosticoServidor,
+          null,
+          2
+        )
+      );
+
+      console.groupEnd();
+
+    } else {
+
+      console.warn(
+        'DEV16: la respuesta no contiene _diagnosticoServidor. Revisar version publicada del backend.'
+      );
+
+    }
+
 
     // -------------------------------------------------
     // ERROR DEL SERVIDOR
