@@ -4627,6 +4627,11 @@ const usaFiltroMensual =
       ? window.performance.now()
       : Date.now();
 
+  // DEV19 - AUDITORIA DE TRANSPORTE REPORTES:
+  // usa reloj absoluto del navegador para compararlo con las marcas epoch
+  // enviadas por el backend. No modifica la lógica ni los datos.
+  const marcaClienteReporteEpochMGP = Date.now();
+
   try {
 
     const nombreCallback =
@@ -4777,10 +4782,44 @@ const usaFiltroMensual =
                   ? window.performance.now()
                   : Date.now();
 
+              const tiempoClienteHastaRespuestaMGP =
+                Math.round(marcaClienteReporteFinMGP - marcaClienteReporteMGP);
+
               console.log(
                 'DEV17 CLIENTE REPORTES - respuesta recibida en ms:',
-                Math.round(marcaClienteReporteFinMGP - marcaClienteReporteMGP)
+                tiempoClienteHastaRespuestaMGP
               );
+
+              // DEV19 - separa el tiempo del servidor del tiempo posterior
+              // a la finalización de Apps Script.
+              const diagnosticoServidorMGP =
+                data && data._diagnosticoServidor
+                  ? data._diagnosticoServidor
+                  : null;
+
+              if (diagnosticoServidorMGP &&
+                  Number.isFinite(Number(diagnosticoServidorMGP.accionFin))) {
+
+                const tiempoDesdeFinServidorMGP =
+                  Math.max(0, Date.now() - Number(diagnosticoServidorMGP.accionFin));
+
+                console.log(
+                  'DEV19 TRANSPORTE REPORTES - desde accionFin servidor hasta callback ms:',
+                  tiempoDesdeFinServidorMGP
+                );
+
+                console.log(
+                  'DEV19 TRANSPORTE REPORTES - cliente total hasta callback ms:',
+                  tiempoClienteHastaRespuestaMGP
+                );
+
+              } else {
+
+                console.warn(
+                  'DEV19 TRANSPORTE REPORTES: no se pudo calcular el tramo posterior a accionFin.'
+                );
+
+              }
 
               resolve(data);
 
@@ -4832,6 +4871,32 @@ const usaFiltroMensual =
       'Respuesta API REPORTES:',
       resultado
     );
+
+    // DEV19 - resumen de auditoría de transporte.
+    if (resultado && resultado._diagnosticoServidor) {
+
+      const d = resultado._diagnosticoServidor;
+      const totalBackend = Number(d.reporteTotalBackendMs);
+      const accionFin = Number(d.accionFin);
+      const clienteHastaRespuesta =
+        (window.performance && typeof window.performance.now === 'function')
+          ? Math.round(window.performance.now() - marcaClienteReporteMGP)
+          : Math.max(0, Date.now() - marcaClienteReporteEpochMGP);
+
+      console.table({
+        'DEV19 cliente hasta respuesta (ms)': clienteHastaRespuesta,
+        'DEV19 backend total reportado (ms)': totalBackend,
+        'DEV19 desde accionFin servidor hasta callback (ms)':
+          Number.isFinite(accionFin)
+            ? Math.max(0, Date.now() - accionFin)
+            : null,
+        'DEV19 diferencia cliente - backend (ms)':
+          Number.isFinite(totalBackend)
+            ? Math.round(clienteHastaRespuesta - totalBackend)
+            : null
+      });
+
+    }
 
     // DEV16 - AUDITORIA CONTROLADA:
     // Expone por separado los tiempos internos del backend para no depender
