@@ -4652,7 +4652,13 @@ const usaFiltroMensual =
           state.token,
 
         callback:
-          nombreCallback
+          nombreCallback,
+
+        // DIAGNOSTICO CONTROLADO REPORTES:
+        // solicita al backend las mediciones internas sin cambiar
+        // la lógica ni los datos del reporte.
+        _diag:
+          '1'
 
       });
 
@@ -4681,8 +4687,35 @@ const usaFiltroMensual =
           let terminado =
             false;
 
+          // DIAGNOSTICO CONTROLADO REPORTES:
+          // evita que una solicitud JSONP quede esperando indefinidamente.
+          // El tiempo de 30 s es solamente un límite del cliente;
+          // no altera la ejecución ni el contenido del reporte.
+          const temporizadorReporte =
+            setTimeout(
+              function() {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+
+                reject(
+                  new Error(
+                    'Tiempo de espera agotado al generar el reporte.'
+                  )
+                );
+
+              },
+              30000
+            );
+
 
           function limpiar() {
+
+            clearTimeout(temporizadorReporte);
 
             if (
               script &&
