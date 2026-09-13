@@ -4689,8 +4689,10 @@ const usaFiltroMensual =
 
           // DIAGNOSTICO CONTROLADO REPORTES:
           // evita que una solicitud JSONP quede esperando indefinidamente.
-          // El tiempo de 30 s es solamente un límite del cliente;
+          // El tiempo de 120 s es solamente un límite del cliente;
           // no altera la ejecución ni el contenido del reporte.
+          // Se amplía únicamente para permitir medir el reporte mensual
+          // cuando el backend tarda más de 30 s.
           const temporizadorReporte =
             setTimeout(
               function() {
@@ -4709,7 +4711,7 @@ const usaFiltroMensual =
                 );
 
               },
-              30000
+              120000
             );
 
 
