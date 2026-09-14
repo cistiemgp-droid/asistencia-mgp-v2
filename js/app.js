@@ -1,3 +1,4 @@
+let loginScript;
 // =====================================================
 // ASISTENCIA MGP V2
 // FRONTEND - GITHUB
@@ -64,11 +65,6 @@ const state = {
 
 let ultimoReporteMGP = null;
 let matrizMensualVisibleMGP = false;
-
-// DEV27: estado controlado de la petición LOGIN.
-// Evita doble envío y permite limpiar correctamente el JSONP.
-let loginScript = null;
-let loginEnProceso = false;
 
 
 const cameraState = {
@@ -1870,18 +1866,6 @@ if (entrarBtn) {
 
       }
 
-      // DEV31: impedir dobles peticiones LOGIN por doble clic y recuperar solicitudes tardías de forma segura.
-      // Se genera un loginRequestId de trazabilidad para la solicitud.
-      if (loginEnProceso) {
-        return;
-      }
-
-      loginEnProceso = true;
-
-      if (entrarBtn) {
-        entrarBtn.disabled = true;
-      }
-
       if (mensaje) {
 
         mensaje.textContent =
@@ -1891,270 +1875,84 @@ if (entrarBtn) {
 
       try {
 
-        const loginRequestId =
-          'LR-' +
-          Date.now().toString(36) +
-          '-' +
-          Math.random().toString(36).slice(2, 12);
+        const nombreCallback =
+          'respuestaLoginMGP_' + Date.now();
 
-        let intentoActual = 0;
-        const MAX_INTENTOS = 2;
-        const TIMEOUT_POR_INTENTO_MS = 12000;
-        const TIMEOUT_ESTADO_MS = 5000;
+        let terminado = false;
+
+        const limpiar =
+          function() {
+
+            if (
+              loginScript &&
+              loginScript.parentNode
+            ) {
+              loginScript.parentNode.removeChild(loginScript);
+            }
+
+            loginScript = null;
+
+            try {
+              delete window[nombreCallback];
+            }
+            catch (error) {
+              console.warn(
+                'No fue posible eliminar callback LOGIN:',
+                error
+              );
+            }
+
+          };
 
         const resultado =
           await new Promise(function(resolve, reject) {
 
-            let terminado = false;
-            let temporizadorTimeout = null;
-            let temporizadorReintento = null;
-            let scriptActual = null;
+            loginScript =
+              document.createElement('script');
 
-            const conservarCallbackSeguro =
-              function(nombreCallback) {
-
-                if (!nombreCallback) {
-                  return;
-                }
-
-                try {
-                  window[nombreCallback] = function() {};
-
-                  setTimeout(function() {
-                    try {
-                      delete window[nombreCallback];
-                    }
-                    catch (error) {}
-                  }, 60000);
-                }
-                catch (error) {}
-
-              };
-
-            const limpiarScriptActual =
-              function() {
-
-                if (
-                  scriptActual &&
-                  scriptActual.parentNode
-                ) {
-                  scriptActual.parentNode.removeChild(
-                    scriptActual
-                  );
-                }
-
-                scriptActual = null;
-                loginScript = null;
-
-              };
-
-            const finalizarError =
-              function(mensajeError) {
+            window[nombreCallback] =
+              function(data) {
 
                 if (terminado) {
                   return;
                 }
 
                 terminado = true;
-
-                if (temporizadorTimeout) {
-                  clearTimeout(temporizadorTimeout);
-                  temporizadorTimeout = null;
-                }
-
-                if (temporizadorReintento) {
-                  clearTimeout(temporizadorReintento);
-                  temporizadorReintento = null;
-                }
-
-                limpiarScriptActual();
-
-                reject(new Error(mensajeError));
+                limpiar();
+                resolve(data);
 
               };
 
-            const lanzarPeticion =
+            loginScript.src =
+              CONFIG.API_URL +
+              '?action=apiLogin' +
+              '&user=' + encodeURIComponent(usuario) +
+              '&pass=' + encodeURIComponent(password) +
+              '&callback=' + encodeURIComponent(nombreCallback);
+
+            loginScript.async = true;
+
+            loginScript.onerror =
               function() {
 
                 if (terminado) {
                   return;
                 }
 
-                intentoActual += 1;
+                terminado = true;
+                limpiar();
 
-                if (temporizadorTimeout) {
-                  clearTimeout(temporizadorTimeout);
-                  temporizadorTimeout = null;
-                }
-
-                limpiarScriptActual();
-
-                const nombreCallback =
-                  'respuestaLoginMGP_' +
-                  Date.now() + '_' +
-                  intentoActual;
-
-                const script =
-                  document.createElement('script');
-
-                scriptActual = script;
-                loginScript = script;
-
-                window[nombreCallback] =
-                  function(data) {
-
-                    if (terminado) {
-                      return;
-                    }
-
-                    terminado = true;
-
-                    if (temporizadorTimeout) {
-                      clearTimeout(temporizadorTimeout);
-                      temporizadorTimeout = null;
-                    }
-
-                    limpiarScriptActual();
-
-                    try {
-                      delete window[nombreCallback];
-                    }
-                    catch (error) {}
-
-                    resolve(data);
-
-                  };
-
-                script.src =
-                  CONFIG.API_URL +
-                  '?action=apiLogin' +
-                  '&user=' + encodeURIComponent(usuario) +
-                  '&pass=' + encodeURIComponent(password) +
-                  '&loginRequestId=' + encodeURIComponent(loginRequestId) +
-                  '&callback=' + encodeURIComponent(nombreCallback);
-
-                script.async = true;
-
-                script.onerror =
-                  function() {
-
-                    if (terminado) {
-                      return;
-                    }
-
-                    limpiarScriptActual();
-
-                    conservarCallbackSeguro(nombreCallback);
-
-                    if (intentoActual < MAX_INTENTOS) {
-
-                      console.warn(
-                        'DEV30 LOGIN: fallo de red en intento ' +
-                        intentoActual +
-                        '; reintentando la misma solicitud.'
-                      );
-
-                      temporizadorReintento =
-                        setTimeout(function() {
-                          temporizadorReintento = null;
-                          lanzarPeticion();
-                        }, ESPERA_REINTENTO_MS);
-
-                      return;
-
-                    }
-
-                    finalizarError(
-                      'No se pudo comunicar con el servidor.'
-                    );
-
-                  };
-
-                temporizadorTimeout =
-                  setTimeout(function() {
-
-                    if (terminado) {
-                      return;
-                    }
-
-                    limpiarScriptActual();
-
-                    conservarCallbackSeguro(nombreCallback);
-
-                    console.warn('DEV31 LOGIN: timeout en intento ' + intentoActual + '; consultando estado de la misma solicitud.');
-
-                    const callbackEstado = 'estadoLoginMGP_' + Date.now() + '_' + intentoActual;
-                    let estadoScript = document.createElement('script');
-                    let estadoTimer = null;
-                    let estadoTerminado = false;
-
-                    const cerrarEstado = function() {
-                      if (estadoTimer) { clearTimeout(estadoTimer); estadoTimer = null; }
-                      if (estadoScript && estadoScript.parentNode) estadoScript.parentNode.removeChild(estadoScript);
-                      try { delete window[callbackEstado]; } catch (e) {}
-                      estadoScript = null;
-                    };
-
-                    window[callbackEstado] = function(estadoData) {
-                      if (estadoTerminado || terminado) return;
-                      estadoTerminado = true;
-                      cerrarEstado();
-                      if (estadoData && estadoData.estado === 'COMPLETADO' && estadoData.resultado) {
-                        terminado = true;
-                        resolve(estadoData.resultado);
-                        return;
-                      }
-                      if (intentoActual < MAX_INTENTOS) {
-                        temporizadorReintento = setTimeout(function() {
-                          temporizadorReintento = null;
-                          lanzarPeticion();
-                        }, 500);
-                        return;
-                      }
-                      finalizarError(estadoData && estadoData.estado === 'PROCESANDO' ? 'El servidor sigue procesando el acceso. Intente nuevamente en unos segundos.' : 'Tiempo de espera agotado al iniciar sesión.');
-                    };
-
-                    estadoScript.onerror = function() {
-                      if (estadoTerminado || terminado) return;
-                      estadoTerminado = true;
-                      cerrarEstado();
-                      if (intentoActual < MAX_INTENTOS) {
-                        temporizadorReintento = setTimeout(function() {
-                          temporizadorReintento = null;
-                          lanzarPeticion();
-                        }, 500);
-                      } else {
-                        finalizarError('Tiempo de espera agotado al iniciar sesión.');
-                      }
-                    };
-
-                    estadoTimer = setTimeout(function() {
-                      if (estadoTerminado || terminado) return;
-                      estadoTerminado = true;
-                      cerrarEstado();
-                      if (intentoActual < MAX_INTENTOS) {
-                        temporizadorReintento = setTimeout(function() {
-                          temporizadorReintento = null;
-                          lanzarPeticion();
-                        }, 500);
-                      } else {
-                        finalizarError('Tiempo de espera agotado al iniciar sesión.');
-                      }
-                    }, TIMEOUT_ESTADO_MS);
-
-                    estadoScript.src = CONFIG.API_URL + '?action=apiLoginEstado' +
-                      '&loginRequestId=' + encodeURIComponent(loginRequestId) +
-                      '&callback=' + encodeURIComponent(callbackEstado);
-                    estadoScript.async = true;
-                    document.head.appendChild(estadoScript);
-
-                  }, TIMEOUT_POR_INTENTO_MS);
-
-                document.head.appendChild(script);
+                reject(
+                  new Error(
+                    'No se pudo comunicar con el servidor.'
+                  )
+                );
 
               };
 
-            lanzarPeticion();
+            document.head.appendChild(
+              loginScript
+            );
 
           });
 
@@ -2251,15 +2049,6 @@ if (entrarBtn) {
             '❌ No se pudo comunicar con el servidor: ' +
             error.message;
 
-        }
-
-      }
-      finally {
-
-        loginEnProceso = false;
-
-        if (entrarBtn) {
-          entrarBtn.disabled = false;
         }
 
       }
@@ -4831,18 +4620,6 @@ const usaFiltroMensual =
   consultarReporteBtn.disabled =
     true;
 
-  // DEV17 - AUDITORIA CLIENTE REPORTES:
-  // mide desde el inicio de la solicitud hasta recibir la respuesta JSONP.
-  // No modifica la lógica ni los datos del reporte.
-  const marcaClienteReporteMGP =
-    (window.performance && typeof window.performance.now === 'function')
-      ? window.performance.now()
-      : Date.now();
-
-  // DEV19 - AUDITORIA DE TRANSPORTE REPORTES:
-  // usa reloj absoluto del navegador para compararlo con las marcas epoch
-  // enviadas por el backend. No modifica la lógica ni los datos.
-  const marcaClienteReporteEpochMGP = Date.now();
 
   try {
 
@@ -4876,13 +4653,7 @@ const usaFiltroMensual =
           state.token,
 
         callback:
-          nombreCallback,
-
-        // DIAGNOSTICO CONTROLADO REPORTES:
-        // solicita al backend las mediciones internas sin cambiar
-        // la lógica ni los datos del reporte.
-        _diag:
-          '1'
+          nombreCallback
 
       });
 
@@ -4911,37 +4682,8 @@ const usaFiltroMensual =
           let terminado =
             false;
 
-          // DIAGNOSTICO CONTROLADO REPORTES:
-          // evita que una solicitud JSONP quede esperando indefinidamente.
-          // El tiempo de 120 s es solamente un límite del cliente;
-          // no altera la ejecución ni el contenido del reporte.
-          // Se amplía únicamente para permitir medir el reporte mensual
-          // cuando el backend tarda más de 30 s.
-          const temporizadorReporte =
-            setTimeout(
-              function() {
-
-                if (terminado) {
-                  return;
-                }
-
-                terminado = true;
-                limpiar();
-
-                reject(
-                  new Error(
-                    'Tiempo de espera agotado al generar el reporte.'
-                  )
-                );
-
-              },
-              120000
-            );
-
 
           function limpiar() {
-
-            clearTimeout(temporizadorReporte);
 
             if (
               script &&
@@ -4987,51 +4729,6 @@ const usaFiltroMensual =
                 true;
 
               limpiar();
-
-
-              const marcaClienteReporteFinMGP =
-                (window.performance && typeof window.performance.now === 'function')
-                  ? window.performance.now()
-                  : Date.now();
-
-              const tiempoClienteHastaRespuestaMGP =
-                Math.round(marcaClienteReporteFinMGP - marcaClienteReporteMGP);
-
-              console.log(
-                'DEV17 CLIENTE REPORTES - respuesta recibida en ms:',
-                tiempoClienteHastaRespuestaMGP
-              );
-
-              // DEV19 - separa el tiempo del servidor del tiempo posterior
-              // a la finalización de Apps Script.
-              const diagnosticoServidorMGP =
-                data && data._diagnosticoServidor
-                  ? data._diagnosticoServidor
-                  : null;
-
-              if (diagnosticoServidorMGP &&
-                  Number.isFinite(Number(diagnosticoServidorMGP.accionFin))) {
-
-                const tiempoDesdeFinServidorMGP =
-                  Math.max(0, Date.now() - Number(diagnosticoServidorMGP.accionFin));
-
-                console.log(
-                  'DEV19 TRANSPORTE REPORTES - desde accionFin servidor hasta callback ms:',
-                  tiempoDesdeFinServidorMGP
-                );
-
-                console.log(
-                  'DEV19 TRANSPORTE REPORTES - cliente total hasta callback ms:',
-                  tiempoClienteHastaRespuestaMGP
-                );
-
-              } else {
-
-                console.warn(
-                  'DEV19 TRANSPORTE REPORTES: no se pudo calcular el tramo posterior a accionFin.'
-                );
-
-              }
 
               resolve(data);
 
@@ -5083,67 +4780,6 @@ const usaFiltroMensual =
       'Respuesta API REPORTES:',
       resultado
     );
-
-    // DEV19 - resumen de auditoría de transporte.
-    if (resultado && resultado._diagnosticoServidor) {
-
-      const d = resultado._diagnosticoServidor;
-      const totalBackend = Number(d.reporteTotalBackendMs);
-      const accionFin = Number(d.accionFin);
-      const clienteHastaRespuesta =
-        (window.performance && typeof window.performance.now === 'function')
-          ? Math.round(window.performance.now() - marcaClienteReporteMGP)
-          : Math.max(0, Date.now() - marcaClienteReporteEpochMGP);
-
-      console.table({
-        'DEV19 cliente hasta respuesta (ms)': clienteHastaRespuesta,
-        'DEV19 backend total reportado (ms)': totalBackend,
-        'DEV19 desde accionFin servidor hasta callback (ms)':
-          Number.isFinite(accionFin)
-            ? Math.max(0, Date.now() - accionFin)
-            : null,
-        'DEV19 diferencia cliente - backend (ms)':
-          Number.isFinite(totalBackend)
-            ? Math.round(clienteHastaRespuesta - totalBackend)
-            : null
-      });
-
-    }
-
-    // DEV16 - AUDITORIA CONTROLADA:
-    // Expone por separado los tiempos internos del backend para no depender
-    // de expandir manualmente el objeto en la consola. No altera el reporte.
-    if (
-      resultado &&
-      resultado._diagnosticoServidor
-    ) {
-
-      console.groupCollapsed(
-        'DIAGNOSTICO REPORTES DEV16'
-      );
-
-      console.table(
-        resultado._diagnosticoServidor
-      );
-
-      console.log(
-        'Diagnostico servidor REPORTES:',
-        JSON.stringify(
-          resultado._diagnosticoServidor,
-          null,
-          2
-        )
-      );
-
-      console.groupEnd();
-
-    } else {
-
-      console.warn(
-        'DEV16: la respuesta no contiene _diagnosticoServidor. Revisar version publicada del backend.'
-      );
-
-    }
 
 
     // -------------------------------------------------
@@ -5336,28 +4972,7 @@ const usaFiltroMensual =
     };
 
     actualizarBotonesDescargaReporte();
-
-    const marcaClienteRenderAntesMGP =
-      (window.performance && typeof window.performance.now === 'function')
-        ? window.performance.now()
-        : Date.now();
-
     renderizarMatrizMensualMGP();
-
-    const marcaClienteRenderDespuesMGP =
-      (window.performance && typeof window.performance.now === 'function')
-        ? window.performance.now()
-        : Date.now();
-
-    console.log(
-      'DEV17 CLIENTE REPORTES - render matriz ms:',
-      Math.round(marcaClienteRenderDespuesMGP - marcaClienteRenderAntesMGP)
-    );
-
-    console.log(
-      'DEV17 CLIENTE REPORTES - total hasta render ms:',
-      Math.round(marcaClienteRenderDespuesMGP - marcaClienteReporteMGP)
-    );
 
         // -------------------------------------------------
     // ALERTAS V2 - VISUALIZACIÓN
