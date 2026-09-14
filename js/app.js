@@ -1904,120 +1904,248 @@ if (entrarBtn) {
         const resultado =
           await new Promise(function(resolve, reject) {
 
-            /*
-             * DEV38 LOGIN - CANAL DIRECTO
-             *
-             * La cadena de polling apiLoginEstado queda fuera del flujo
-             * principal. La solicitud usa apiLoginDirecto, que en backend
-             * no utiliza LockService ni CacheService.
-             * Si el transporte falla, se realiza UN solo respaldo con
-             * apiLogin, que conserva la idempotencia existente.
-             */
             let terminado = false;
-            let temporizador = null;
-            const scripts = [];
-            const callbacks = [];
+            let temporizadorTimeout = null;
+            let temporizadorEstado = null;
+            let scriptActual = null;
+            let callbackNombreActual = null;
+            const TIMEOUT_INICIAL_MS = 8000;
+            const INTERVALO_ESTADO_MS = 1000;
+            const MAX_CONSULTAS_ESTADO = 12;
+            let consultasEstado = 0;
 
-            const limpiar = function() {
-              if (temporizador) {
-                clearTimeout(temporizador);
-                temporizador = null;
-              }
+            const conservarCallbackSeguro =
+              function(nombreCallback) {
 
-              scripts.forEach(function(script) {
+                if (!nombreCallback) return;
+
                 try {
-                  if (script && script.parentNode) {
-                    script.parentNode.removeChild(script);
-                  }
-                } catch (error) {}
-              });
-
-              callbacks.forEach(function(nombre) {
-                try { delete window[nombre]; }
+                  window[nombreCallback] = function() {};
+                  setTimeout(function() {
+                    try { delete window[nombreCallback]; }
+                    catch (error) {}
+                  }, 60000);
+                }
                 catch (error) {}
-              });
-
-              scripts.length = 0;
-              callbacks.length = 0;
-              loginScript = null;
-            };
-
-            const finalizar = function(data) {
-              if (terminado) return;
-              terminado = true;
-              limpiar();
-              resolve(data);
-            };
-
-            const finalizarError = function() {
-              if (terminado) return;
-              terminado = true;
-              limpiar();
-              reject(new Error(
-                'No se pudo comunicar con el servidor de acceso.'
-              ));
-            };
-
-            const lanzar = function(action, esRespaldo) {
-              if (terminado) return;
-
-              const callback =
-                'respuestaLoginMGP38_' +
-                Date.now() + '_' +
-                Math.random().toString(36).slice(2, 8);
-
-              const script = document.createElement('script');
-              scripts.push(script);
-              callbacks.push(callback);
-              loginScript = script;
-
-              window[callback] = function(data) {
-                if (terminado) return;
-                finalizar(data);
               };
 
-              script.src =
-                CONFIG.API_URL +
-                '?action=' + encodeURIComponent(action) +
-                '&user=' + encodeURIComponent(usuario) +
-                '&pass=' + encodeURIComponent(password) +
-                '&callback=' + encodeURIComponent(callback);
+            const limpiarScriptActual =
+              function() {
 
-              script.async = true;
-
-              script.onerror = function() {
-                if (terminado) return;
-
-                if (!esRespaldo) {
-                  console.warn(
-                    'DEV38 LOGIN: fallo en apiLoginDirecto; usando respaldo apiLogin.'
-                  );
-                  lanzar('apiLogin', true);
-                  return;
+                if (scriptActual && scriptActual.parentNode) {
+                  scriptActual.parentNode.removeChild(scriptActual);
                 }
 
-                finalizarError();
+                scriptActual = null;
+                loginScript = null;
               };
 
-              document.head.appendChild(script);
+            const limpiarTemporizadores =
+              function() {
 
-              temporizador = setTimeout(function() {
-                temporizador = null;
-                if (terminado) return;
-
-                if (!esRespaldo) {
-                  console.warn(
-                    'DEV38 LOGIN: timeout en apiLoginDirecto; usando respaldo apiLogin.'
-                  );
-                  lanzar('apiLogin', true);
-                  return;
+                if (temporizadorTimeout) {
+                  clearTimeout(temporizadorTimeout);
+                  temporizadorTimeout = null;
                 }
 
-                finalizarError();
-              }, 15000);
-            };
+                if (temporizadorEstado) {
+                  clearTimeout(temporizadorEstado);
+                  temporizadorEstado = null;
+                }
+              };
 
-            lanzar('apiLoginDirecto', false);
+            const finalizar =
+              function(data) {
+
+                if (terminado) return;
+
+                terminado = true;
+                limpiarTemporizadores();
+                limpiarScriptActual();
+
+                if (callbackNombreActual) {
+                  try { delete window[callbackNombreActual]; }
+                  catch (error) {}
+                  callbackNombreActual = null;
+                }
+
+                resolve(data);
+              };
+
+            const finalizarError =
+              function(mensajeError) {
+
+                if (terminado) return;
+
+                terminado = true;
+                limpiarTemporizadores();
+                limpiarScriptActual();
+                reject(new Error(mensajeError));
+              };
+
+            const consultarEstado =
+              function() {
+
+                if (terminado) return;
+
+                consultasEstado += 1;
+
+                const nombreCallback =
+                  'estadoLoginMGP_' +
+                  Date.now() + '_' +
+                  consultasEstado;
+
+                const script =
+                  document.createElement('script');
+
+                scriptActual = script;
+                loginScript = script;
+                callbackNombreActual = nombreCallback;
+
+                window[nombreCallback] =
+                  function(data) {
+
+                    if (terminado) return;
+
+                    limpiarScriptActual();
+
+                    try { delete window[nombreCallback]; }
+                    catch (error) {}
+
+                    callbackNombreActual = null;
+
+                    if (data && data.codigo !== 'LOGIN_NO_LISTO' && data.codigo !== 'LOGIN_EN_PROCESO') {
+                      finalizar(data);
+                      return;
+                    }
+
+                    if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
+                      finalizarError(
+                        'No se recibió respuesta del servidor al iniciar sesión.'
+                      );
+                      return;
+                    }
+
+                    temporizadorEstado =
+                      setTimeout(function() {
+                        temporizadorEstado = null;
+                        consultarEstado();
+                      }, INTERVALO_ESTADO_MS);
+                  };
+
+                script.onerror =
+                  function() {
+
+                    if (terminado) return;
+
+                    limpiarScriptActual();
+                    conservarCallbackSeguro(nombreCallback);
+                    callbackNombreActual = null;
+
+                    if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
+                      finalizarError(
+                        'No se pudo consultar el estado del acceso.'
+                      );
+                      return;
+                    }
+
+                    temporizadorEstado =
+                      setTimeout(function() {
+                        temporizadorEstado = null;
+                        consultarEstado();
+                      }, INTERVALO_ESTADO_MS);
+                  };
+
+                script.src =
+                  CONFIG.API_URL +
+                  '?action=apiLoginEstado' +
+                  '&loginRequestId=' +
+                  encodeURIComponent(loginRequestId) +
+                  '&callback=' +
+                  encodeURIComponent(nombreCallback);
+
+                script.async = true;
+                document.head.appendChild(script);
+              };
+
+            const lanzarPeticion =
+              function() {
+
+                if (terminado) return;
+
+                const nombreCallback =
+                  'respuestaLoginMGP_' +
+                  Date.now();
+
+                const script =
+                  document.createElement('script');
+
+                scriptActual = script;
+                loginScript = script;
+                callbackNombreActual = nombreCallback;
+
+                window[nombreCallback] =
+                  function(data) {
+
+                    if (terminado) return;
+
+                    limpiarTemporizadores();
+                    limpiarScriptActual();
+
+                    try { delete window[nombreCallback]; }
+                    catch (error) {}
+
+                    callbackNombreActual = null;
+                    finalizar(data);
+                  };
+
+                script.onerror =
+                  function() {
+
+                    if (terminado) return;
+
+                    limpiarScriptActual();
+                    conservarCallbackSeguro(nombreCallback);
+                    callbackNombreActual = null;
+
+                    console.warn(
+                      'DEV32 LOGIN: fallo de transporte; consultando estado de la misma solicitud.'
+                    );
+
+                    consultarEstado();
+                  };
+
+                script.src =
+                  CONFIG.API_URL +
+                  '?action=apiLogin' +
+                  '&user=' + encodeURIComponent(usuario) +
+                  '&pass=' + encodeURIComponent(password) +
+                  '&loginRequestId=' + encodeURIComponent(loginRequestId) +
+                  '&callback=' + encodeURIComponent(nombreCallback);
+
+                script.async = true;
+
+                temporizadorTimeout =
+                  setTimeout(function() {
+
+                    if (terminado) return;
+
+                    limpiarScriptActual();
+                    conservarCallbackSeguro(nombreCallback);
+                    callbackNombreActual = null;
+
+                    console.warn(
+                      'DEV32 LOGIN: timeout inicial; consultando estado de la misma solicitud.'
+                    );
+
+                    consultarEstado();
+
+                  }, TIMEOUT_INICIAL_MS);
+
+                document.head.appendChild(script);
+              };
+
+            lanzarPeticion();
 
           });
 
@@ -4748,109 +4876,103 @@ const usaFiltroMensual =
       await new Promise(
         function(resolve, reject) {
 
-          /*
-           * DEV37 REPORTES - TRANSPORTE ROBUSTO
-           *
-           * El reporte es SOLO lectura. Si el canal JSONP queda colgado,
-           * no debemos esperar indefinidamente ni destruir la primera
-           * solicitud. A los 7 s se lanza una segunda lectura idéntica.
-           * La primera respuesta válida gana y las demás se ignoran.
-           *
-           * La lógica, parámetros, cálculo y render del reporte NO cambian.
-           */
-          let terminado = false;
-          const scripts = [];
-          const callbacks = [];
-          let temporizadorRespaldo = null;
+          const script =
+            document.createElement(
+              'script'
+            );
 
-          const limpiar = function() {
-            if (temporizadorRespaldo) {
-              clearTimeout(temporizadorRespaldo);
-              temporizadorRespaldo = null;
+          let terminado =
+            false;
+
+
+          function limpiar() {
+
+            if (
+              script &&
+              script.parentNode
+            ) {
+
+              script.parentNode
+                .removeChild(script);
+
             }
 
-            scripts.forEach(function(script) {
-              try {
-                if (script && script.parentNode) {
-                  script.parentNode.removeChild(script);
-                }
-              } catch (error) {}
-            });
 
-            callbacks.forEach(function(nombre) {
-              try { delete window[nombre]; }
-              catch (error) {}
-            });
+            try {
 
-            scripts.length = 0;
-            callbacks.length = 0;
-          };
+              delete window[
+                nombreCallback
+              ];
 
-          const finalizar = function(data) {
-            if (terminado) return;
-            terminado = true;
-            limpiar();
-            resolve(data);
-          };
+            }
+            catch (error) {
 
-          const lanzar = function(esRespaldo) {
-            if (terminado) return;
-
-            const callback =
-              'respuestaReporteMGP37_' +
-              Date.now() + '_' +
-              Math.random().toString(36).slice(2, 7);
-
-            const script = document.createElement('script');
-            scripts.push(script);
-            callbacks.push(callback);
-
-            window[callback] = function(data) {
-              if (terminado) return;
-              finalizar(data);
-            };
-
-            script.src =
-              CONFIG.API_URL +
-              '?' +
-              parametros.toString().replace(
-                encodeURIComponent(nombreCallback),
-                encodeURIComponent(callback)
+              console.warn(
+                'No fue posible eliminar callback REPORTE:',
+                error
               );
 
-            script.async = true;
+            }
 
-            script.onerror = function() {
-              if (terminado) return;
+          }
 
-              if (esRespaldo) {
-                finalizar({
-                  ok: false,
-                  exito: false,
-                  mensaje: 'No se pudo comunicar con el servidor.'
-                });
+
+          window[nombreCallback] =
+            function(data) {
+
+              if (terminado) {
+
                 return;
+
               }
 
-              console.warn(
-                'DEV37 REPORTES: fallo de transporte; se mantiene la solicitud primaria y se usará respaldo.'
-              );
+
+              terminado =
+                true;
+
+              limpiar();
+
+              resolve(data);
+
             };
 
-            document.head.appendChild(script);
-          };
 
-          lanzar(false);
+          script.src =
+            url;
 
-          temporizadorRespaldo = setTimeout(function() {
-            temporizadorRespaldo = null;
-            if (!terminado) {
-              console.warn(
-                'DEV37 REPORTES: la primera solicitud superó 7 s; enviando lectura de respaldo.'
+
+          script.async =
+            true;
+
+
+          script.onerror =
+            function() {
+
+              if (terminado) {
+
+                return;
+
+              }
+
+
+              terminado =
+                true;
+
+              limpiar();
+
+
+              reject(
+                new Error(
+                  'No se pudo comunicar con el servidor.'
+                )
               );
-              lanzar(true);
-            }
-          }, 7000);
+
+            };
+
+
+          document.head.appendChild(
+            script
+          );
 
         }
       );
