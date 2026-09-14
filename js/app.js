@@ -65,11 +65,6 @@ const state = {
 let ultimoReporteMGP = null;
 let matrizMensualVisibleMGP = false;
 
-// DEV27/32: estado controlado de la petición LOGIN.
-// Evita doble envío y permite limpiar correctamente el JSONP.
-let loginScript = null;
-let loginEnProceso = false;
-
 
 const cameraState = {
 
@@ -1870,18 +1865,6 @@ if (entrarBtn) {
 
       }
 
-      // DEV30: impedir dobles peticiones LOGIN por doble clic.
-      // Se genera un loginRequestId de trazabilidad para la solicitud.
-      if (loginEnProceso) {
-        return;
-      }
-
-      loginEnProceso = true;
-
-      if (entrarBtn) {
-        entrarBtn.disabled = true;
-      }
-
       if (mensaje) {
 
         mensaje.textContent =
@@ -1891,261 +1874,84 @@ if (entrarBtn) {
 
       try {
 
-        const loginRequestId =
-          'LR-' +
-          Date.now().toString(36) +
-          '-' +
-          Math.random().toString(36).slice(2, 12);
+        const nombreCallback =
+          'respuestaLoginMGP_' + Date.now();
 
-        let intentoActual = 0;
-        const MAX_INTENTOS = 1;
-        const TIMEOUT_POR_INTENTO_MS = 30000;
+        let terminado = false;
+
+        const limpiar =
+          function() {
+
+            if (
+              loginScript &&
+              loginScript.parentNode
+            ) {
+              loginScript.parentNode.removeChild(loginScript);
+            }
+
+            loginScript = null;
+
+            try {
+              delete window[nombreCallback];
+            }
+            catch (error) {
+              console.warn(
+                'No fue posible eliminar callback LOGIN:',
+                error
+              );
+            }
+
+          };
 
         const resultado =
           await new Promise(function(resolve, reject) {
 
-            let terminado = false;
-            let temporizadorTimeout = null;
-            let temporizadorEstado = null;
-            let scriptActual = null;
-            let callbackNombreActual = null;
-            const TIMEOUT_INICIAL_MS = 8000;
-            const INTERVALO_ESTADO_MS = 1000;
-            const MAX_CONSULTAS_ESTADO = 12;
-            let consultasEstado = 0;
+            loginScript =
+              document.createElement('script');
 
-            const conservarCallbackSeguro =
-              function(nombreCallback) {
-
-                if (!nombreCallback) return;
-
-                try {
-                  window[nombreCallback] = function() {};
-                  setTimeout(function() {
-                    try { delete window[nombreCallback]; }
-                    catch (error) {}
-                  }, 60000);
-                }
-                catch (error) {}
-              };
-
-            const limpiarScriptActual =
-              function() {
-
-                if (scriptActual && scriptActual.parentNode) {
-                  scriptActual.parentNode.removeChild(scriptActual);
-                }
-
-                scriptActual = null;
-                loginScript = null;
-              };
-
-            const limpiarTemporizadores =
-              function() {
-
-                if (temporizadorTimeout) {
-                  clearTimeout(temporizadorTimeout);
-                  temporizadorTimeout = null;
-                }
-
-                if (temporizadorEstado) {
-                  clearTimeout(temporizadorEstado);
-                  temporizadorEstado = null;
-                }
-              };
-
-            const finalizar =
+            window[nombreCallback] =
               function(data) {
 
-                if (terminado) return;
-
-                terminado = true;
-                limpiarTemporizadores();
-                limpiarScriptActual();
-
-                if (callbackNombreActual) {
-                  try { delete window[callbackNombreActual]; }
-                  catch (error) {}
-                  callbackNombreActual = null;
+                if (terminado) {
+                  return;
                 }
 
+                terminado = true;
+                limpiar();
                 resolve(data);
+
               };
 
-            const finalizarError =
-              function(mensajeError) {
+            loginScript.src =
+              CONFIG.API_URL +
+              '?action=apiLogin' +
+              '&user=' + encodeURIComponent(usuario) +
+              '&pass=' + encodeURIComponent(password) +
+              '&callback=' + encodeURIComponent(nombreCallback);
 
-                if (terminado) return;
+            loginScript.async = true;
+
+            loginScript.onerror =
+              function() {
+
+                if (terminado) {
+                  return;
+                }
 
                 terminado = true;
-                limpiarTemporizadores();
-                limpiarScriptActual();
-                reject(new Error(mensajeError));
+                limpiar();
+
+                reject(
+                  new Error(
+                    'No se pudo comunicar con el servidor.'
+                  )
+                );
+
               };
 
-            const consultarEstado =
-              function() {
-
-                if (terminado) return;
-
-                consultasEstado += 1;
-
-                const nombreCallback =
-                  'estadoLoginMGP_' +
-                  Date.now() + '_' +
-                  consultasEstado;
-
-                const script =
-                  document.createElement('script');
-
-                scriptActual = script;
-                loginScript = script;
-                callbackNombreActual = nombreCallback;
-
-                window[nombreCallback] =
-                  function(data) {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-
-                    try { delete window[nombreCallback]; }
-                    catch (error) {}
-
-                    callbackNombreActual = null;
-
-                    if (data && data.codigo !== 'LOGIN_NO_LISTO' && data.codigo !== 'LOGIN_EN_PROCESO') {
-                      finalizar(data);
-                      return;
-                    }
-
-                    if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
-                      finalizarError(
-                        'No se recibió respuesta del servidor al iniciar sesión.'
-                      );
-                      return;
-                    }
-
-                    temporizadorEstado =
-                      setTimeout(function() {
-                        temporizadorEstado = null;
-                        consultarEstado();
-                      }, INTERVALO_ESTADO_MS);
-                  };
-
-                script.onerror =
-                  function() {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-                    conservarCallbackSeguro(nombreCallback);
-                    callbackNombreActual = null;
-
-                    if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
-                      finalizarError(
-                        'No se pudo consultar el estado del acceso.'
-                      );
-                      return;
-                    }
-
-                    temporizadorEstado =
-                      setTimeout(function() {
-                        temporizadorEstado = null;
-                        consultarEstado();
-                      }, INTERVALO_ESTADO_MS);
-                  };
-
-                script.src =
-                  CONFIG.API_URL +
-                  '?action=apiLoginEstado' +
-                  '&loginRequestId=' +
-                  encodeURIComponent(loginRequestId) +
-                  '&callback=' +
-                  encodeURIComponent(nombreCallback);
-
-                script.async = true;
-                document.head.appendChild(script);
-              };
-
-            const lanzarPeticion =
-              function() {
-
-                if (terminado) return;
-
-                const nombreCallback =
-                  'respuestaLoginMGP_' +
-                  Date.now();
-
-                const script =
-                  document.createElement('script');
-
-                scriptActual = script;
-                loginScript = script;
-                callbackNombreActual = nombreCallback;
-
-                window[nombreCallback] =
-                  function(data) {
-
-                    if (terminado) return;
-
-                    limpiarTemporizadores();
-                    limpiarScriptActual();
-
-                    try { delete window[nombreCallback]; }
-                    catch (error) {}
-
-                    callbackNombreActual = null;
-                    finalizar(data);
-                  };
-
-                script.onerror =
-                  function() {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-                    conservarCallbackSeguro(nombreCallback);
-                    callbackNombreActual = null;
-
-                    console.warn(
-                      'DEV32 LOGIN: fallo de transporte; consultando estado de la misma solicitud.'
-                    );
-
-                    consultarEstado();
-                  };
-
-                script.src =
-                  CONFIG.API_URL +
-                  '?action=apiLogin' +
-                  '&user=' + encodeURIComponent(usuario) +
-                  '&pass=' + encodeURIComponent(password) +
-                  '&loginRequestId=' + encodeURIComponent(loginRequestId) +
-                  '&callback=' + encodeURIComponent(nombreCallback);
-
-                script.async = true;
-
-                temporizadorTimeout =
-                  setTimeout(function() {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-                    conservarCallbackSeguro(nombreCallback);
-                    callbackNombreActual = null;
-
-                    console.warn(
-                      'DEV32 LOGIN: timeout inicial; consultando estado de la misma solicitud.'
-                    );
-
-                    consultarEstado();
-
-                  }, TIMEOUT_INICIAL_MS);
-
-                document.head.appendChild(script);
-              };
-
-            lanzarPeticion();
+            document.head.appendChild(
+              loginScript
+            );
 
           });
 
@@ -2242,15 +2048,6 @@ if (entrarBtn) {
             '❌ No se pudo comunicar con el servidor: ' +
             error.message;
 
-        }
-
-      }
-      finally {
-
-        loginEnProceso = false;
-
-        if (entrarBtn) {
-          entrarBtn.disabled = false;
         }
 
       }
@@ -4945,35 +4742,21 @@ const usaFiltroMensual =
             true;
 
 
-          const temporizadorReporte =
-            setTimeout(function() {
-
-              if (terminado) {
-                return;
-              }
-
-              terminado = true;
-              limpiar();
-
-              reject(
-                new Error(
-                  'El servidor tardó demasiado en responder al reporte.'
-                )
-              );
-
-            }, 45000);
-
-
           script.onerror =
             function() {
 
               if (terminado) {
+
                 return;
+
               }
 
-              terminado = true;
-              clearTimeout(temporizadorReporte);
+
+              terminado =
+                true;
+
               limpiar();
+
 
               reject(
                 new Error(
@@ -4983,23 +4766,6 @@ const usaFiltroMensual =
 
             };
 
-
-          const resolverReporteOriginal =
-            window[nombreCallback];
-
-          window[nombreCallback] =
-            function(data) {
-
-              if (terminado) {
-                return;
-              }
-
-              terminado = true;
-              clearTimeout(temporizadorReporte);
-              limpiar();
-              resolve(data);
-
-            };
 
           document.head.appendChild(
             script
