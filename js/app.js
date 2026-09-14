@@ -2,7 +2,8344 @@
 // ASISTENCIA MGP V2
 // FRONTEND - GITHUB
 // =====================================================
+// =====================================================
+// ASISTENCIA MGP V2
+// FRONTEND - GITHUB
+// =====================================================
 
+
+// =====================================================
+// CONFIGURACIÓN
+// =====================================================
+
+const CONFIG = {
+
+  API_URL:
+    'https://script.google.com/macros/s/AKfycbxN9HfZTc4fpp3YIqUGh0kz4mc8xoo1doAD8ilbCJOVS_31m1rX0o1xg77p6jjzhFdn/exec'
+
+};
+
+
+// =====================================================
+// ESTADO GENERAL
+// =====================================================
+
+const state = {
+
+  tipo: 'estudiante',
+
+  estado: 'INGRESO',
+
+  qr: null,
+
+  camara: false,
+
+  persona: null,
+
+  usuario: null,
+
+  permisos: null,
+
+  // Sesión institucional V2
+  token: null,
+  expiraSesion: null,
+
+  // Modo de registro controlado por el usuario.
+  // ONLINE registra directamente en el servidor.
+  // OFFLINE guarda localmente y queda pendiente de sincronización.
+  registroModo: 'ONLINE',
+
+  // Cantidad de registros OFFLINE pendientes en este equipo.
+  registrosOfflinePendientes: 0,
+
+  // Cantidad de registros OFFLINE rechazados por el servidor.
+  registrosOfflineError: 0
+
+};
+
+
+// =====================================================
+// ESTADO DE CÁMARA
+// =====================================================
+
+// =====================================================
+// ESTADO DEL ÚLTIMO REPORTE PARA EXPORTACIÓN
+// =====================================================
+
+let ultimoReporteMGP = null;
+let matrizMensualVisibleMGP = false;
+
+
+const cameraState = {
+
+  reader: null,
+
+  cameras: [],
+
+  currentIndex: 0,
+
+  activa: false,
+
+  // En móviles no confiamos en los deviceId
+  // porque el teléfono puede exponerlos con
+  // etiquetas/mapeos incorrectos.
+  esMovil: false,
+
+  facingMode: 'user',
+
+  // V6: cámara móvil nativa
+  mobileCameras: [],
+  mobileStream: null,
+  mobileVideo: null,
+  mobileDetector: null,
+  mobileScanActivo: false,
+  procesandoQR: false,
+
+  // Evita que el mismo QR se procese nuevamente
+  // mientras el estudiante todavía mantiene el carnet
+  // frente a la cámara. Se libera cuando aparece otro QR
+  // o cuando cambia INGRESO/SALIDA.
+  ultimoQRProcesado: '',
+  ultimoEstadoQRProcesado: '',
+  ultimoQRProcesadoHasta: 0
+
+};
+
+
+// =====================================================
+// MODO ONLINE / OFFLINE — ETAPA 02
+// =====================================================
+//
+// ONLINE:
+//   QR/DNI -> servidor -> Google Sheets.
+//
+// OFFLINE:
+//   QR/DNI -> IndexedDB local -> continúa inmediatamente.
+//   NO realiza ninguna llamada al servidor durante el registro.
+//
+// En esta etapa todavía NO sincronizamos la cola con el servidor.
+// Solo dejamos los registros guardados de forma segura en el equipo.
+// =====================================================
+
+const OFFLINE_DB_MGP = 'ASISTENCIA_MGP_V2_OFFLINE';
+const OFFLINE_STORE_MGP = 'pendientes';
+const OFFLINE_DB_VERSION_MGP = 1;
+
+let offlineDBPromiseMGP = null;
+
+function abrirDBOfflineMGP() {
+
+  if (offlineDBPromiseMGP) {
+    return offlineDBPromiseMGP;
+  }
+
+  offlineDBPromiseMGP = new Promise(function(resolve, reject) {
+
+    if (!window.indexedDB) {
+      reject(new Error('Este navegador no soporta almacenamiento offline.'));
+      return;
+    }
+
+    const solicitud = indexedDB.open(
+      OFFLINE_DB_MGP,
+      OFFLINE_DB_VERSION_MGP
+    );
+
+    solicitud.onupgradeneeded = function(evento) {
+
+      const db = evento.target.result;
+
+      if (!db.objectStoreNames.contains(OFFLINE_STORE_MGP)) {
+
+        const store = db.createObjectStore(
+          OFFLINE_STORE_MGP,
+          { keyPath: 'idOffline' }
+        );
+
+        store.createIndex(
+          'fechaHoraCliente',
+          'fechaHoraCliente',
+          { unique: false }
+        );
+
+        store.createIndex(
+          'estadoSincronizacion',
+          'estadoSincronizacion',
+          { unique: false }
+        );
+
+      }
+
+    };
+
+    solicitud.onsuccess = function(evento) {
+      resolve(evento.target.result);
+    };
+
+    solicitud.onerror = function() {
+      reject(
+        solicitud.error ||
+        new Error('No fue posible abrir el almacenamiento offline.')
+      );
+    };
+
+  });
+
+  return offlineDBPromiseMGP;
+
+}
+
+function generarIdOfflineMGP() {
+
+  const ahora = Date.now().toString(36);
+  const aleatorio =
+    Math.random().toString(36).slice(2, 10).toUpperCase();
+
+  return 'OFF-' + ahora.toUpperCase() + '-' + aleatorio;
+
+}
+
+function guardarRegistroOfflineMGP(id) {
+
+  return new Promise(function(resolve, reject) {
+
+    const idLimpio =
+      String(id || '').trim();
+
+    const tipo =
+      String(state.tipo || 'estudiante').trim();
+
+    const estado =
+      String(state.estado || 'INGRESO').trim().toUpperCase();
+
+    if (!idLimpio) {
+      reject(new Error('No se obtuvo el DNI para registrar.'));
+      return;
+    }
+
+    const fechaHoraCliente =
+      new Date().toISOString();
+
+    const registro = {
+      idOffline: generarIdOfflineMGP(),
+      fechaHoraCliente: fechaHoraCliente,
+      id: idLimpio,
+      tipo: tipo,
+      estado: estado,
+      usuario: state.usuario && state.usuario.usuario
+        ? String(state.usuario.usuario)
+        : '',
+      nombreUsuario: state.usuario && state.usuario.nombre
+        ? String(state.usuario.nombre)
+        : '',
+      estadoSincronizacion: 'PENDIENTE',
+      creadoEn: fechaHoraCliente
+    };
+
+    abrirDBOfflineMGP()
+      .then(function(db) {
+
+        return new Promise(function(resolveTx, rejectTx) {
+
+          const tx = db.transaction(
+            OFFLINE_STORE_MGP,
+            'readwrite'
+          );
+
+          const store = tx.objectStore(
+            OFFLINE_STORE_MGP
+          );
+
+          store.add(registro);
+
+          tx.oncomplete = function() {
+            resolveTx(registro);
+          };
+
+          tx.onerror = function() {
+            rejectTx(
+              tx.error ||
+              new Error('No fue posible guardar el registro offline.')
+            );
+          };
+
+          tx.onabort = function() {
+            rejectTx(
+              tx.error ||
+              new Error('El almacenamiento offline canceló la operación.')
+            );
+          };
+
+        });
+
+      })
+      .then(function(registroGuardado) {
+
+        actualizarContadorOfflineMGP();
+        resolve(registroGuardado);
+
+      })
+      .catch(function(error) {
+        reject(error);
+      });
+
+  });
+
+}
+
+function contarEstadosOfflineMGP() {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readonly'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        const solicitud = store.getAll();
+
+        solicitud.onsuccess = function() {
+
+          const registros =
+            Array.isArray(solicitud.result)
+              ? solicitud.result
+              : [];
+
+          let pendientes = 0;
+          let errores = 0;
+
+          registros.forEach(function(registro) {
+
+            const estado = String(
+              registro.estadoSincronizacion || 'PENDIENTE'
+            ).toUpperCase();
+
+            if (estado === 'PENDIENTE') {
+              pendientes++;
+            }
+
+            if (estado === 'ERROR') {
+              errores++;
+            }
+
+          });
+
+          resolve({
+            pendientes: pendientes,
+            errores: errores
+          });
+
+        };
+
+        solicitud.onerror = function() {
+          reject(
+            solicitud.error ||
+            new Error('No fue posible contar los registros offline.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+function contarRegistrosOfflineMGP() {
+
+  return contarEstadosOfflineMGP()
+    .then(function(resumen) {
+      return resumen.pendientes;
+    });
+
+}
+
+function obtenerRegistrosOfflinePendientesMGP() {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readonly'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        const solicitud = store.getAll();
+
+        solicitud.onsuccess = function() {
+
+          const registros =
+            Array.isArray(solicitud.result)
+              ? solicitud.result
+              : [];
+
+          registros.sort(function(a, b) {
+            return String(a.fechaHoraCliente || '')
+              .localeCompare(String(b.fechaHoraCliente || ''));
+          });
+
+          resolve(
+            registros.filter(function(registro) {
+              return String(
+                registro.estadoSincronizacion || 'PENDIENTE'
+              ).toUpperCase() === 'PENDIENTE';
+            })
+          );
+
+        };
+
+        solicitud.onerror = function() {
+          reject(
+            solicitud.error ||
+            new Error('No fue posible leer los registros offline.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+function eliminarRegistroOfflineMGP(idOffline) {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readwrite'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        store.delete(idOffline);
+
+        tx.oncomplete = function() {
+          resolve(true);
+        };
+
+        tx.onerror = function() {
+          reject(
+            tx.error ||
+            new Error('No fue posible eliminar el registro sincronizado.')
+          );
+        };
+
+        tx.onabort = function() {
+          reject(
+            tx.error ||
+            new Error('La eliminación del registro offline fue cancelada.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+function marcarRegistroOfflineErrorMGP(idOffline, mensajeError) {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readwrite'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        const solicitud = store.get(idOffline);
+
+        solicitud.onsuccess = function() {
+
+          const registro = solicitud.result;
+
+          if (!registro) {
+            resolve(false);
+            return;
+          }
+
+          registro.estadoSincronizacion = 'ERROR';
+          registro.errorSincronizacion =
+            String(mensajeError || 'No fue posible sincronizar.');
+          registro.fechaUltimoIntento =
+            new Date().toISOString();
+
+          store.put(registro);
+
+        };
+
+        solicitud.onerror = function() {
+          reject(
+            solicitud.error ||
+            new Error('No fue posible actualizar el registro offline.')
+          );
+        };
+
+        tx.oncomplete = function() {
+          resolve(true);
+        };
+
+        tx.onerror = function() {
+          reject(
+            tx.error ||
+            new Error('No fue posible guardar el estado de sincronización.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+function enviarRegistroOfflineAlServidorMGP(registro) {
+
+  return new Promise(function(resolve) {
+
+    const nombreCallback =
+      'respuestaSyncMGP_' + Date.now() + '_' +
+      Math.random().toString(36).slice(2, 7);
+
+    let script = null;
+    let terminado = false;
+
+    function limpiar() {
+
+      if (script && script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+
+      script = null;
+
+      try {
+        delete window[nombreCallback];
+      }
+      catch (error) {
+        console.warn(
+          'No fue posible eliminar callback de sincronización:',
+          error
+        );
+      }
+
+    }
+
+    function finalizar(resultado) {
+
+      if (terminado) {
+        return;
+      }
+
+      terminado = true;
+      limpiar();
+      resolve(resultado);
+
+    }
+
+    window[nombreCallback] = function(data) {
+
+      if (!data) {
+        finalizar({
+          exito: false,
+          transporteOK: true,
+          mensaje: 'El servidor no devolvió respuesta.'
+        });
+        return;
+      }
+
+      finalizar({
+        exito: data.exito === true,
+        transporteOK: true,
+        data: data,
+        mensaje:
+          data.mensaje ||
+          (data.exito === true
+            ? 'Registro sincronizado.'
+            : 'El servidor rechazó el registro.')
+      });
+
+    };
+
+    script = document.createElement('script');
+
+    const id =
+      String(registro.id || '').trim();
+
+    const tipo =
+      String(registro.tipo || 'estudiante').trim();
+
+    const estado =
+      String(registro.estado || 'INGRESO').trim().toUpperCase();
+
+    const fechaHoraCliente =
+      String(registro.fechaHoraCliente || '').trim();
+
+    const idOffline =
+      String(registro.idOffline || '').trim();
+
+    script.src =
+      CONFIG.API_URL +
+      '?action=apiRegistrar' +
+      '&id=' + encodeURIComponent(id) +
+      '&tipo=' + encodeURIComponent(tipo) +
+      '&estado=' + encodeURIComponent(estado) +
+      '&token=' + encodeURIComponent(state.token || '') +
+      '&fechaHoraCliente=' + encodeURIComponent(fechaHoraCliente) +
+      '&idOffline=' + encodeURIComponent(idOffline) +
+      '&callback=' + encodeURIComponent(nombreCallback);
+
+    script.async = true;
+
+    script.onerror = function() {
+
+      finalizar({
+        exito: false,
+        transporteOK: false,
+        mensaje: 'No se pudo comunicar con el servidor.'
+      });
+
+    };
+
+    document.body.appendChild(script);
+
+  });
+
+}
+
+let sincronizacionOfflineEnCursoMGP = false;
+
+async function sincronizarRegistrosOfflineMGP() {
+
+  if (sincronizacionOfflineEnCursoMGP) {
+    return {
+      exito: false,
+      enCurso: true
+    };
+  }
+
+  if (!state.token) {
+
+    return {
+      exito: false,
+      mensaje: 'Debe iniciar sesión para sincronizar los registros offline.'
+    };
+
+  }
+
+  sincronizacionOfflineEnCursoMGP = true;
+
+  const mensaje =
+    document.getElementById('regMsg');
+
+  try {
+
+    const pendientes =
+      await obtenerRegistrosOfflinePendientesMGP();
+
+    if (!pendientes.length) {
+
+      actualizarContadorOfflineMGP();
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>✅ SIN PENDIENTES</strong><br>' +
+          'No hay registros offline esperando sincronización.';
+      }
+
+      return {
+        exito: true,
+        cantidad: 0
+      };
+
+    }
+
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>🔄 SINCRONIZANDO OFFLINE...</strong><br>' +
+        'Registros pendientes: ' + pendientes.length + '<br>' +
+        'Se enviarán uno por uno para proteger la integridad de la asistencia.';
+    }
+
+    let sincronizados = 0;
+    let errores = 0;
+
+    for (let i = 0; i < pendientes.length; i++) {
+
+      const registro = pendientes[i];
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>🔄 SINCRONIZANDO OFFLINE...</strong><br>' +
+          'Procesando ' + (i + 1) + ' de ' + pendientes.length + '<br>' +
+          'DNI: ' + String(registro.id || '') + '<br>' +
+          'Estado: ' + String(registro.estado || 'INGRESO');
+      }
+
+      const resultado =
+        await enviarRegistroOfflineAlServidorMGP(registro);
+
+      if (resultado.exito) {
+
+        await eliminarRegistroOfflineMGP(
+          registro.idOffline
+        );
+
+        sincronizados++;
+        reproducirPitidoRegistroMGP();
+        continue;
+
+      }
+
+      errores++;
+
+      if (!resultado.transporteOK) {
+
+        // Si se perdió la conexión, NO marcamos ERROR definitivo.
+        // El registro permanece PENDIENTE para un nuevo intento.
+        if (mensaje) {
+          mensaje.innerHTML =
+            '<strong>⚠️ SINCRONIZACIÓN PAUSADA</strong><br>' +
+            'Se sincronizaron: ' + sincronizados + '<br>' +
+            'Pendientes restantes: ' +
+            (pendientes.length - sincronizados) + '<br>' +
+            'Motivo: ' + resultado.mensaje;
+        }
+
+        break;
+
+      }
+
+      // Respuesta válida del servidor pero registro rechazado.
+      // Se conserva como ERROR para no perder el historial local.
+      await marcarRegistroOfflineErrorMGP(
+        registro.idOffline,
+        resultado.mensaje
+      );
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>⚠️ REGISTRO RECHAZADO POR EL SERVIDOR</strong><br>' +
+          'DNI: ' + String(registro.id || '') + '<br>' +
+          'Motivo: ' + resultado.mensaje + '<br>' +
+          'El registro permanece guardado localmente como ERROR.';
+      }
+
+    }
+
+    await actualizarContadorOfflineMGP();
+
+    if (mensaje && errores === 0) {
+      mensaje.innerHTML =
+        '<strong>✅ SINCRONIZACIÓN COMPLETA</strong><br>' +
+        'Registros enviados correctamente: ' + sincronizados + '<br>' +
+        'No quedan registros pendientes.';
+    }
+
+    return {
+      exito: errores === 0,
+      sincronizados: sincronizados,
+      errores: errores
+    };
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error durante sincronización OFFLINE:',
+      error
+    );
+
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>❌ NO SE COMPLETÓ LA SINCRONIZACIÓN</strong><br>' +
+        error.message;
+    }
+
+    return {
+      exito: false,
+      mensaje: error.message
+    };
+
+  }
+  finally {
+    sincronizacionOfflineEnCursoMGP = false;
+    actualizarContadorOfflineMGP();
+  }
+
+}
+
+function obtenerRegistrosOfflineErrorMGP() {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readonly'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        const solicitud = store.getAll();
+
+        solicitud.onsuccess = function() {
+
+          const registros =
+            Array.isArray(solicitud.result)
+              ? solicitud.result
+              : [];
+
+          registros.sort(function(a, b) {
+            return String(a.fechaHoraCliente || '')
+              .localeCompare(String(b.fechaHoraCliente || ''));
+          });
+
+          resolve(
+            registros.filter(function(registro) {
+              return String(
+                registro.estadoSincronizacion || ''
+              ).toUpperCase() === 'ERROR';
+            })
+          );
+
+        };
+
+        solicitud.onerror = function() {
+          reject(
+            solicitud.error ||
+            new Error('No fue posible leer los registros con error.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+function cambiarErroresOfflineAPendienteMGP() {
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readwrite'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        const solicitud = store.getAll();
+
+        solicitud.onsuccess = function() {
+
+          const registros =
+            Array.isArray(solicitud.result)
+              ? solicitud.result
+              : [];
+
+          let cantidad = 0;
+
+          registros.forEach(function(registro) {
+
+            if (
+              String(
+                registro.estadoSincronizacion || ''
+              ).toUpperCase() !== 'ERROR'
+            ) {
+              return;
+            }
+
+            registro.estadoSincronizacion = 'PENDIENTE';
+            registro.errorSincronizacion = '';
+            registro.fechaUltimoIntento = '';
+            store.put(registro);
+            cantidad++;
+
+          });
+
+          tx.__cantidadReintentosMGP = cantidad;
+
+        };
+
+        tx.oncomplete = function() {
+          resolve(Number(tx.__cantidadReintentosMGP || 0));
+        };
+
+        tx.onerror = function() {
+          reject(
+            tx.error ||
+            new Error('No fue posible preparar los registros para reintento.')
+          );
+        };
+
+        tx.onabort = function() {
+          reject(
+            tx.error ||
+            new Error('El reintento de registros offline fue cancelado.')
+          );
+        };
+
+      });
+
+    });
+
+}
+
+async function reintentarErroresOfflineMGP() {
+
+  if (sincronizacionOfflineEnCursoMGP) {
+    return;
+  }
+
+  if (state.registroModo === 'OFFLINE') {
+    const mensaje = document.getElementById('regMsg');
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>🟠 MODO OFFLINE</strong><br>' +
+        'Cambia a ONLINE para reintentar los registros con error.';
+    }
+    return;
+  }
+
+  const errores =
+    await obtenerRegistrosOfflineErrorMGP();
+
+  if (!errores.length) {
+    await actualizarContadorOfflineMGP();
+    return;
+  }
+
+  const confirmado = window.confirm(
+    'Hay ' + errores.length +
+    ' registro(s) con error.\n\n' +
+    '¿Quieres pasarlos a PENDIENTE y volver a intentar sincronizarlos?'
+  );
+
+  if (!confirmado) {
+    return;
+  }
+
+  const cantidad =
+    await cambiarErroresOfflineAPendienteMGP();
+
+  const mensaje = document.getElementById('regMsg');
+
+  if (mensaje) {
+    mensaje.innerHTML =
+      '<strong>🔄 REINTENTANDO ERRORES</strong><br>' +
+      'Registros preparados: ' + cantidad;
+  }
+
+  actualizarContadorOfflineMGP();
+  await sincronizarRegistrosOfflineMGP();
+
+}
+
+async function eliminarErroresOfflineMGP() {
+
+  if (sincronizacionOfflineEnCursoMGP) {
+    const mensaje = document.getElementById('regMsg');
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>⏳ SINCRONIZACIÓN EN CURSO</strong><br>' +
+        'Espera a que termine antes de eliminar registros con error.';
+    }
+    return;
+  }
+
+  const errores =
+    await obtenerRegistrosOfflineErrorMGP();
+
+  if (!errores.length) {
+    await actualizarContadorOfflineMGP();
+    return;
+  }
+
+  let detalle = '';
+
+  errores.slice(0, 5).forEach(function(registro, indice) {
+    detalle +=
+      '\n' + (indice + 1) + '. DNI ' +
+      String(registro.id || '') +
+      ' — ' +
+      String(registro.estado || 'INGRESO') +
+      ' — ' +
+      String(registro.errorSincronizacion || 'Error desconocido');
+  });
+
+  if (errores.length > 5) {
+    detalle += '\n... y ' + (errores.length - 5) + ' más.';
+  }
+
+  const confirmado = window.confirm(
+    'Se eliminarán DEFINITIVAMENTE ' + errores.length +
+    ' registro(s) con error de este equipo.' +
+    '\n\nRegistros:' + detalle +
+    '\n\nEsta acción solo eliminará los errores del almacenamiento local. No se borrará nada del registro de asistencia.' +
+    '\n\n¿Continuar?'
+  );
+
+  if (!confirmado) {
+    return;
+  }
+
+  return abrirDBOfflineMGP()
+    .then(function(db) {
+
+      return new Promise(function(resolve, reject) {
+
+        const tx = db.transaction(
+          OFFLINE_STORE_MGP,
+          'readwrite'
+        );
+
+        const store = tx.objectStore(
+          OFFLINE_STORE_MGP
+        );
+
+        errores.forEach(function(registro) {
+          store.delete(registro.idOffline);
+        });
+
+        tx.oncomplete = function() {
+          resolve(true);
+        };
+
+        tx.onerror = function() {
+          reject(
+            tx.error ||
+            new Error('No fue posible eliminar los registros con error.')
+          );
+        };
+
+        tx.onabort = function() {
+          reject(
+            tx.error ||
+            new Error('La eliminación de registros con error fue cancelada.')
+          );
+        };
+
+      });
+
+    })
+    .then(function() {
+
+      const mensaje = document.getElementById('regMsg');
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>🗑️ ERRORES ELIMINADOS</strong><br>' +
+          'Registros eliminados del almacenamiento local: ' +
+          errores.length;
+      }
+
+      return actualizarContadorOfflineMGP();
+
+    })
+    .catch(function(error) {
+
+      const mensaje = document.getElementById('regMsg');
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>❌ NO SE PUDIERON ELIMINAR LOS ERRORES</strong><br>' +
+          String(error.message || error);
+      }
+
+      console.error(
+        'Error eliminando registros offline con error:',
+        error
+      );
+
+    });
+
+}
+
+function actualizarContadorOfflineMGP() {
+
+  contarEstadosOfflineMGP()
+    .then(function(resumen) {
+
+      state.registrosOfflinePendientes = resumen.pendientes;
+      state.registrosOfflineError = resumen.errores;
+
+      const contador =
+        document.getElementById('modoRegistroPendientesMGP');
+
+      if (contador) {
+
+        let texto =
+          resumen.pendientes > 0
+            ? 'Pendientes: ' + resumen.pendientes
+            : 'Sin pendientes';
+
+        if (resumen.errores > 0) {
+          texto +=
+            ' · ⚠️ Errores: ' + resumen.errores;
+        }
+
+        contador.textContent = texto;
+      }
+
+      actualizarControlesErroresOfflineMGP();
+
+    })
+    .catch(function(error) {
+
+      console.warn(
+        'No fue posible actualizar contador OFFLINE:',
+        error
+      );
+
+    });
+
+}
+
+function actualizarControlesErroresOfflineMGP() {
+
+  const reintentarBtn =
+    document.getElementById('reintentarErroresOfflineBtnMGP');
+
+  const eliminarBtn =
+    document.getElementById('eliminarErroresOfflineBtnMGP');
+
+  const cantidadErrores =
+    Number(state.registrosOfflineError || 0);
+
+  if (reintentarBtn) {
+    reintentarBtn.style.display =
+      cantidadErrores > 0 ? 'inline-block' : 'none';
+
+    reintentarBtn.disabled =
+      state.registroModo === 'OFFLINE';
+
+    reintentarBtn.style.opacity =
+      state.registroModo === 'OFFLINE' ? '0.55' : '1';
+
+    reintentarBtn.style.cursor =
+      state.registroModo === 'OFFLINE'
+        ? 'not-allowed'
+        : 'pointer';
+  }
+
+  if (eliminarBtn) {
+    eliminarBtn.style.display =
+      cantidadErrores > 0 ? 'inline-block' : 'none';
+  }
+
+}
+
+function actualizarModoRegistroMGP() {
+
+  const boton =
+    document.getElementById('modoRegistroBtnMGP');
+
+  if (!boton) {
+    return;
+  }
+
+  const offline =
+    state.registroModo === 'OFFLINE';
+
+  boton.textContent =
+    offline ? '🟠 OFFLINE' : '🟢 ONLINE';
+
+  boton.title =
+    offline
+      ? 'Modo OFFLINE: los registros se guardan en este equipo'
+      : 'Modo ONLINE: los registros se envían al servidor';
+
+  boton.setAttribute(
+    'aria-label',
+    offline
+      ? 'Modo OFFLINE seleccionado'
+      : 'Modo ONLINE seleccionado'
+  );
+
+  boton.style.background =
+    offline ? '#f59e0b' : '#16a34a';
+
+  const contador =
+    document.getElementById('modoRegistroPendientesMGP');
+
+  if (contador) {
+    let texto =
+      state.registrosOfflinePendientes > 0
+        ? 'Pendientes: ' + state.registrosOfflinePendientes
+        : 'Sin pendientes';
+
+    if (state.registrosOfflineError > 0) {
+      texto +=
+        ' · ⚠️ Errores: ' + state.registrosOfflineError;
+    }
+
+    contador.textContent = texto;
+  }
+
+  actualizarControlesErroresOfflineMGP();
+
+  const sincronizarBtn =
+    document.getElementById('sincronizarOfflineBtnMGP');
+
+  if (sincronizarBtn) {
+    sincronizarBtn.disabled = offline;
+    sincronizarBtn.style.opacity = offline ? '0.55' : '1';
+    sincronizarBtn.style.cursor = offline ? 'not-allowed' : 'pointer';
+  }
+
+}
+
+function alternarModoRegistroMGP() {
+
+  state.registroModo =
+    state.registroModo === 'ONLINE'
+      ? 'OFFLINE'
+      : 'ONLINE';
+
+  actualizarModoRegistroMGP();
+
+  if (state.registroModo === 'ONLINE') {
+    sincronizarRegistrosOfflineMGP();
+  }
+
+  const mensaje =
+    document.getElementById('regMsg');
+
+  if (mensaje) {
+
+    if (state.registroModo === 'OFFLINE') {
+      mensaje.innerHTML =
+        '<strong>🟠 MODO OFFLINE ACTIVO</strong><br>' +
+        'Los próximos registros se guardarán en este equipo.<br>' +
+        'No se enviarán al servidor durante el escaneo.';
+    }
+    else {
+      mensaje.innerHTML =
+        '<strong>🟢 MODO ONLINE ACTIVO</strong><br>' +
+        'Los próximos registros se enviarán al servidor.';
+    }
+
+  }
+
+}
+
+function crearControlModoRegistroMGP() {
+
+  const registro =
+    document.getElementById('registro');
+
+  if (!registro) {
+    return;
+  }
+
+  if (document.getElementById('modoRegistroBtnMGP')) {
+    actualizarModoRegistroMGP();
+    actualizarContadorOfflineMGP();
+    return;
+  }
+
+  // =====================================================
+  // CONTROLES DE REGISTRO
+  // Separamos visualmente:
+  // 1) Modo de registro
+  // 2) Gestión de datos locales
+  // =====================================================
+
+  const contenedor =
+    document.createElement('div');
+
+  contenedor.id = 'modoRegistroControlMGP';
+  contenedor.style.cssText =
+    'display:flex;align-items:center;justify-content:space-between;' +
+    'gap:10px;width:100%;margin:0 0 12px 0;flex-wrap:wrap;' +
+    'box-sizing:border-box;';
+
+  // -----------------------------------------------------
+  // GRUPO 1 — MODO DE REGISTRO
+  // -----------------------------------------------------
+
+  const grupoModo =
+    document.createElement('div');
+
+  grupoModo.style.cssText =
+    'display:flex;align-items:center;gap:7px;flex-wrap:wrap;';
+
+  const etiqueta =
+    document.createElement('span');
+
+  etiqueta.textContent = 'Modo de registro:';
+  etiqueta.style.cssText =
+    'font-size:14px;font-weight:700;color:#475569;';
+
+  const boton =
+    document.createElement('button');
+
+  boton.type = 'button';
+  boton.id = 'modoRegistroBtnMGP';
+  boton.textContent = '🟢 ONLINE';
+  boton.style.cssText =
+    'border:0;border-radius:999px;padding:9px 15px;' +
+    'font-size:14px;font-weight:800;color:#fff;cursor:pointer;' +
+    'box-shadow:0 2px 6px rgba(0,0,0,.16);';
+
+  boton.addEventListener(
+    'click',
+    alternarModoRegistroMGP
+  );
+
+  grupoModo.appendChild(etiqueta);
+  grupoModo.appendChild(boton);
+
+  // -----------------------------------------------------
+  // GRUPO 2 — GESTIÓN DE DATOS LOCALES
+  // -----------------------------------------------------
+
+  const grupoLocal =
+    document.createElement('div');
+
+  grupoLocal.style.cssText =
+    'display:flex;align-items:center;justify-content:flex-end;' +
+    'gap:7px;flex-wrap:wrap;';
+
+  const etiquetaLocal =
+    document.createElement('span');
+
+  etiquetaLocal.textContent = 'Datos locales:';
+  etiquetaLocal.style.cssText =
+    'font-size:12px;font-weight:700;color:#64748b;';
+
+  const sincronizarBtn =
+    document.createElement('button');
+
+  sincronizarBtn.type = 'button';
+  sincronizarBtn.id = 'sincronizarOfflineBtnMGP';
+  sincronizarBtn.textContent = '🔄 SINCRONIZAR';
+  sincronizarBtn.title =
+    'Enviar al servidor los registros pendientes guardados en este equipo.';
+  sincronizarBtn.style.cssText =
+    'border:0;border-radius:999px;padding:7px 10px;' +
+    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#2563eb;box-shadow:0 1px 4px rgba(0,0,0,.12);';
+
+  sincronizarBtn.addEventListener(
+    'click',
+    function() {
+      sincronizarRegistrosOfflineMGP();
+    }
+  );
+
+  const reintentarBtn =
+    document.createElement('button');
+
+  reintentarBtn.type = 'button';
+  reintentarBtn.id = 'reintentarErroresOfflineBtnMGP';
+  reintentarBtn.textContent = '↻ REINTENTAR';
+  reintentarBtn.title =
+    'Volver a intentar la sincronización de los registros que tuvieron error.';
+  reintentarBtn.style.cssText =
+    'display:none;border:0;border-radius:999px;padding:7px 10px;' +
+    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#7c3aed;box-shadow:0 1px 4px rgba(0,0,0,.12);';
+
+  reintentarBtn.addEventListener(
+    'click',
+    function() {
+      reintentarErroresOfflineMGP();
+    }
+  );
+
+  const eliminarBtn =
+    document.createElement('button');
+
+  eliminarBtn.type = 'button';
+  eliminarBtn.id = 'eliminarErroresOfflineBtnMGP';
+  eliminarBtn.textContent = '🗑 ELIMINAR';
+  eliminarBtn.title =
+    'Eliminar solamente los errores guardados en este equipo.';
+  eliminarBtn.style.cssText =
+    'display:none;border:0;border-radius:999px;padding:7px 10px;' +
+    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#dc2626;box-shadow:0 1px 4px rgba(0,0,0,.12);';
+
+  eliminarBtn.addEventListener(
+    'click',
+    function() {
+      eliminarErroresOfflineMGP();
+    }
+  );
+
+  const contador =
+    document.createElement('span');
+
+  contador.id = 'modoRegistroPendientesMGP';
+  contador.textContent = 'Sin pendientes';
+  contador.style.cssText =
+    'font-size:11px;font-weight:700;color:#64748b;' +
+    'white-space:nowrap;';
+
+  grupoLocal.appendChild(etiquetaLocal);
+  grupoLocal.appendChild(sincronizarBtn);
+  grupoLocal.appendChild(reintentarBtn);
+  grupoLocal.appendChild(eliminarBtn);
+  grupoLocal.appendChild(contador);
+
+  contenedor.appendChild(grupoModo);
+  contenedor.appendChild(grupoLocal);
+
+  registro.insertBefore(
+    contenedor,
+    registro.firstChild
+  );
+
+  actualizarModoRegistroMGP();
+  actualizarContadorOfflineMGP();
+
+}
+function iniciarControlModoRegistroMGP() {
+
+  if (document.readyState === 'loading') {
+
+    document.addEventListener(
+      'DOMContentLoaded',
+      crearControlModoRegistroMGP,
+      { once: true }
+    );
+
+    return;
+  }
+
+  crearControlModoRegistroMGP();
+
+}
+
+iniciarControlModoRegistroMGP();
+
+// =====================================================
+// NAVEGACIÓN
+// =====================================================
+
+const vistas = [
+
+  'portal',
+  'consulta',
+  'login',
+  'panel',
+  'registro',
+  'reportes',
+  'carnets',
+  'admin'
+
+];
+
+
+function mostrarVista(nombre) {
+
+  vistas.forEach(function(vista) {
+
+    const elemento =
+      document.getElementById(vista);
+
+    if (elemento) {
+
+      elemento.classList.toggle(
+        'active',
+        vista === nombre
+      );
+
+    }
+
+  });
+
+
+  if (nombre !== 'registro') {
+
+    detenerCamara();
+
+  }
+
+
+  window.scrollTo(0, 0);
+
+}
+
+
+// =====================================================
+// NAVEGACIÓN
+// COMPATIBLE CON data-v Y data-view
+// =====================================================
+
+document
+  .querySelectorAll('[data-v], [data-view]')
+  .forEach(function(boton) {
+
+    boton.addEventListener(
+      'click',
+      function() {
+
+        const destino =
+          boton.dataset.v ||
+          boton.dataset.view;
+
+        if (destino) {
+
+          const mapaPermisos = {
+            registro: 'registrarAsistencia',
+            reportes: 'verReportes',
+            carnets: 'administrarQR',
+            admin: 'administrarPersonas'
+          };
+
+          const permiso = mapaPermisos[destino];
+
+          const permisoAlternativo =
+            destino === 'admin'
+              ? 'administrarJustificaciones'
+              : null;
+
+          const rolActual =
+            String(
+              (state.usuario && state.usuario.rol) || ''
+            ).trim().toUpperCase();
+
+          if (
+            (rolActual === 'AUXILIAR' ||
+             rolActual === 'DIRECTOR') &&
+            destino !== 'registro' &&
+            destino !== 'reportes' &&
+            destino !== 'panel' &&
+            !(
+              destino === 'admin' &&
+              state.permisos &&
+              state.permisos.administrarJustificaciones === true
+            )
+          ) {
+            return;
+          }
+
+          if (
+            permiso &&
+            (!state.permisos || state.permisos[permiso] !== true) &&
+            !(
+              permisoAlternativo &&
+              state.permisos &&
+              state.permisos[permisoAlternativo] === true
+            )
+          ) {
+            return;
+          }
+
+          mostrarVista(destino);
+
+        }
+
+      }
+    );
+
+  });
+
+// =====================================================
+// BOTÓN INICIO
+// =====================================================
+
+const homeBtn =
+  document.getElementById('homeBtn') ||
+  document.getElementById('home');
+
+if (homeBtn) {
+
+  homeBtn.addEventListener(
+    'click',
+    function() {
+
+      const portal =
+        document.getElementById('portal');
+
+      if (
+        portal &&
+        portal.classList.contains('active')
+      ) {
+        return;
+      }
+
+      if (
+        state.usuario &&
+        state.token
+      ) {
+        mostrarVista('panel');
+      }
+      else {
+        mostrarVista('portal');
+      }
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// RETORNO AL PANEL INSTITUCIONAL
+// =====================================================
+// CORRECCIÓN EXCLUSIVA DE LOS BOTONES DE RETORNO.
+// Se atienden los botones reales dentro de REGISTRO y
+// REPORTES aunque el HTML use texto, id, clase, href,
+// data-v/data-view u onclick.
+// No modifica cámara, QR, permisos ni registro.
+// =====================================================
+
+document.addEventListener(
+  'click',
+  function(evento) {
+
+    // Solo actuar cuando estamos en REGISTRO o REPORTES.
+    const registro =
+      document.getElementById('registro');
+
+    const reportes =
+      document.getElementById('reportes');
+
+    const admin =
+      document.getElementById('admin');
+
+    const enRegistro =
+      registro &&
+      registro.classList.contains('active');
+
+    const enReportes =
+      reportes &&
+      reportes.classList.contains('active');
+
+    const enAdmin =
+      admin &&
+      admin.classList.contains('active');
+
+    if (!enRegistro && !enReportes && !enAdmin) {
+      return;
+    }
+
+    // Buscar el control clickeado y sus ancestros.
+    let elemento =
+      evento.target;
+
+    let boton = null;
+
+    while (
+      elemento &&
+      elemento !== document.body
+    ) {
+
+      const tag =
+        String(elemento.tagName || '')
+          .toLowerCase();
+
+      const id =
+        String(elemento.id || '')
+          .toLowerCase();
+
+      const clase =
+        String(elemento.className || '')
+          .toLowerCase();
+
+      const texto =
+        String(
+          elemento.textContent ||
+          elemento.getAttribute('aria-label') ||
+          elemento.title ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+
+      const dataView =
+        String(
+          elemento.getAttribute('data-view') ||
+          elemento.getAttribute('data-v') ||
+          ''
+        )
+          .trim()
+          .toLowerCase();
+
+      const href =
+        String(
+          elemento.getAttribute('href') || ''
+        )
+          .trim()
+          .toLowerCase();
+
+      const onclick =
+        String(
+          elemento.getAttribute('onclick') || ''
+        )
+          .toLowerCase();
+
+      const esControl =
+        tag === 'button' ||
+        tag === 'a' ||
+        elemento.getAttribute('role') === 'button' ||
+        id.includes('panel') ||
+        id.includes('volver') ||
+        id.includes('regresar') ||
+        id.includes('retornar') ||
+        clase.includes('panel') ||
+        clase.includes('volver') ||
+        clase.includes('regresar') ||
+        clase.includes('retornar');
+
+      if (esControl) {
+
+        const apuntaPanel =
+          dataView === 'panel' ||
+          href.includes('#panel') ||
+          onclick.includes("mostrarvista('panel')") ||
+          onclick.includes('mostrarvista("panel")') ||
+          onclick.includes('panel');
+
+        const textoRetorno =
+          texto.includes('panel institucional') ||
+          texto.includes('volver al panel') ||
+          texto.includes('regresar al panel') ||
+          texto.includes('retornar al panel') ||
+          texto.includes('volver a panel') ||
+          texto.includes('regresar a panel') ||
+          texto.includes('retornar a panel') ||
+          texto === 'panel' ||
+          texto === 'inicio';
+
+        if (apuntaPanel || textoRetorno) {
+          boton = elemento;
+          break;
+        }
+
+      }
+
+      elemento =
+        elemento.parentElement;
+
+    }
+
+    if (!boton) {
+      return;
+    }
+
+    // Evitar que href, onclick u otros listeners
+    // cambien la vista antes de nuestra navegación.
+    evento.preventDefault();
+    evento.stopPropagation();
+    evento.stopImmediatePropagation();
+
+    if (
+      state.usuario &&
+      state.token
+    ) {
+      mostrarVista('panel');
+    }
+    else {
+      mostrarVista('portal');
+    }
+
+  },
+  true
+);
+
+
+// =====================================================
+// BOTÓN SALIR
+// =====================================================
+
+const salirBtn =
+  document.getElementById('salirBtn') ||
+  document.getElementById('salir');
+
+if (salirBtn) {
+
+  salirBtn.addEventListener(
+    'click',
+    function() {
+
+      detenerCamara();
+
+      state.usuario = null;
+      state.permisos = null;
+      state.token = null;
+      state.expiraSesion = null;
+      state.persona = null;
+      state.qr = null;
+
+      // ETAPA 07:
+      // Al cerrar sesión, limpiar los campos del formulario LOGIN.
+      // No modifica la sesión, permisos, cámara, QR ni registros offline.
+      const usuarioLoginElemento =
+        document.getElementById('usuario');
+
+      const passwordLoginElemento =
+        document.getElementById('password');
+
+      if (usuarioLoginElemento) {
+        usuarioLoginElemento.value = '';
+      }
+
+      if (passwordLoginElemento) {
+        passwordLoginElemento.value = '';
+      }
+
+      mostrarVista('portal');
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// LOGIN V2
+// =====================================================
+
+const entrarBtn =
+  document.getElementById('entrar') ||
+  document.getElementById('entrarBtn');
+
+if (entrarBtn) {
+
+  entrarBtn.addEventListener(
+    'click',
+    async function() {
+
+      const usuarioElemento =
+        document.getElementById('usuario');
+
+      const passwordElemento =
+        document.getElementById('password');
+
+      const mensaje =
+        document.getElementById('loginMsg');
+
+      const usuario =
+        usuarioElemento
+          ? usuarioElemento.value.trim()
+          : '';
+
+      const password =
+        passwordElemento
+          ? passwordElemento.value.trim()
+          : '';
+
+      if (!usuario || !password) {
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            'Ingrese usuario y contraseña.';
+
+        }
+
+        return;
+
+      }
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '🔄 Verificando acceso...';
+
+      }
+
+      try {
+
+        const nombreCallback =
+          'respuestaLoginMGP_' + Date.now();
+
+        let terminado = false;
+
+        const limpiar =
+          function() {
+
+            if (
+              loginScript &&
+              loginScript.parentNode
+            ) {
+              loginScript.parentNode.removeChild(loginScript);
+            }
+
+            loginScript = null;
+
+            try {
+              delete window[nombreCallback];
+            }
+            catch (error) {
+              console.warn(
+                'No fue posible eliminar callback LOGIN:',
+                error
+              );
+            }
+
+          };
+
+        const resultado =
+          await new Promise(function(resolve, reject) {
+
+            loginScript =
+              document.createElement('script');
+
+            window[nombreCallback] =
+              function(data) {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+                resolve(data);
+
+              };
+
+            loginScript.src =
+              CONFIG.API_URL +
+              '?action=apiLogin' +
+              '&user=' + encodeURIComponent(usuario) +
+              '&pass=' + encodeURIComponent(password) +
+              '&callback=' + encodeURIComponent(nombreCallback);
+
+            loginScript.async = true;
+
+            loginScript.onerror =
+              function() {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+
+                reject(
+                  new Error(
+                    'No se pudo comunicar con el servidor.'
+                  )
+                );
+
+              };
+
+            document.head.appendChild(
+              loginScript
+            );
+
+          });
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
+        );
+
+        if (!resultado.ok) {
+
+          if (mensaje) {
+
+            mensaje.textContent =
+              '❌ ' +
+              (
+                resultado.mensaje ||
+                'Usuario o contraseña incorrectos.'
+              );
+
+          }
+
+          return;
+
+        }
+
+        state.usuario =
+          resultado.usuario || null;
+
+        state.permisos =
+          (
+            resultado.usuario &&
+            resultado.usuario.permisos
+          ) || null;
+
+        state.token =
+          (
+            resultado.usuario &&
+            resultado.usuario.token
+          ) || null;
+
+        state.expiraSesion =
+          (
+            resultado.usuario &&
+            resultado.usuario.expiraSesion
+          ) || null;
+
+        if (!state.token) {
+          if (mensaje) {
+            mensaje.textContent =
+              '❌ El servidor no devolvió una sesión institucional válida.';
+          }
+
+          console.error(
+            'LOGIN V2 sin token de sesión.'
+          );
+
+          return;
+        }
+
+        aplicarPermisosPanel();
+
+        inicializarModuloJustificacionesMGP();
+
+        console.log(
+          'Usuario autenticado V2:',
+          state.usuario
+        );
+
+        console.log(
+          'Permisos V2:',
+          state.permisos
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '✅ Acceso autorizado.';
+
+        }
+
+        mostrarVista('panel');
+
+      }
+      catch (error) {
+
+        console.error(
+          'Error en LOGIN V2:',
+          error
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '❌ No se pudo comunicar con el servidor: ' +
+            error.message;
+
+        }
+
+      }
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// PERMISOS V2 - PANEL INSTITUCIONAL
+// =====================================================
+
+function aplicarPermisosPanel() {
+
+  // El backend determina los permisos.
+  // El frontend solo refleja esos permisos en el panel.
+  const permisos = state.permisos || {};
+
+  const rol =
+    String(
+      (state.usuario && state.usuario.rol) || ''
+    ).trim().toUpperCase();
+
+  const controles = [
+    {
+      vista: 'registro',
+      permiso: 'registrarAsistencia'
+    },
+    {
+      vista: 'reportes',
+      permiso: 'verReportes'
+    },
+    {
+      vista: 'carnets',
+      permiso: 'administrarQR'
+    },
+    {
+      vista: 'admin',
+      permiso: 'administrarPersonas',
+      permisoAlternativo: 'administrarJustificaciones'
+    }
+  ];
+
+  controles.forEach(function(control) {
+
+    const botones = document.querySelectorAll(
+      '[data-view="' + control.vista + '"], ' +
+      '[data-v="' + control.vista + '"]'
+    );
+
+    // El acceso a cada vista depende del permiso entregado por el backend.
+    // Administración puede abrirse también para gestionar Justificaciones,
+    // sin conceder por ello permisos sobre personas, usuarios, QR o configuración.
+    let permitido =
+      permisos[control.permiso] === true;
+
+    if (
+      control.permisoAlternativo &&
+      permisos[control.permisoAlternativo] === true
+    ) {
+      permitido = true;
+    }
+
+    if (
+      (rol === 'AUXILIAR' || rol === 'DIRECTOR') &&
+      control.vista !== 'registro' &&
+      control.vista !== 'reportes' &&
+      control.vista !== 'admin'
+    ) {
+      permitido = false;
+    }
+
+    botones.forEach(function(boton) {
+
+      boton.style.display =
+        permitido ? '' : 'none';
+
+      boton.disabled =
+        !permitido;
+
+    });
+
+  });
+
+}
+
+
+
+// =====================================================
+// TIPO DE PERSONA
+// =====================================================
+
+document
+  .querySelectorAll('[data-t], [data-tipo]')
+  .forEach(function(boton) {
+
+    boton.addEventListener(
+      'click',
+      function() {
+
+        document
+          .querySelectorAll('[data-t], [data-tipo]')
+          .forEach(function(b) {
+
+            b.classList.remove('active');
+
+          });
+
+
+        boton.classList.add('active');
+
+        state.tipo =
+          boton.dataset.t ||
+          boton.dataset.tipo ||
+          'estudiante';
+
+      }
+    );
+
+  });
+
+
+// =====================================================
+// INGRESO / SALIDA
+// =====================================================
+
+document
+  .querySelectorAll('[data-e], [data-estado]')
+  .forEach(function(boton) {
+
+    boton.addEventListener(
+      'click',
+      function() {
+
+        document
+          .querySelectorAll('[data-e], [data-estado]')
+          .forEach(function(b) {
+
+            b.classList.remove('active');
+
+          });
+
+
+        boton.classList.add('active');
+
+        state.estado =
+          boton.dataset.e ||
+          boton.dataset.estado ||
+          'INGRESO';
+
+        // Al cambiar INGRESO/SALIDA se permite nuevamente
+        // el mismo QR, porque es una operación diferente.
+        cameraState.ultimoQRProcesado = '';
+        cameraState.ultimoEstadoQRProcesado = '';
+        cameraState.ultimoQRProcesadoHasta = 0;
+
+      }
+    );
+
+  });
+
+
+// =====================================================
+// MENSAJE DE CÁMARA
+// =====================================================
+
+function mensajeCamara(texto) {
+
+  const elemento =
+    document.getElementById(
+      'camMsg'
+    );
+
+
+  if (elemento) {
+
+    elemento.textContent =
+      texto;
+
+  }
+
+}
+
+
+// =====================================================
+// DETECTAR DISPOSITIVO MÓVIL
+// =====================================================
+
+function esDispositivoMovil() {
+
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
+    .test(navigator.userAgent);
+
+}
+
+
+// =====================================================
+// CARGAR CÁMARAS
+// =====================================================
+
+async function cargarCamaras() {
+
+  try {
+
+    mensajeCamara(
+      '🔍 Buscando cámaras disponibles...'
+    );
+
+
+    if (
+      typeof Html5Qrcode ===
+      'undefined'
+    ) {
+
+      throw new Error(
+        'No se cargó la biblioteca del lector QR.'
+      );
+
+    }
+
+
+    // =================================================
+    // DETECTAR SI ESTAMOS EN MÓVIL / TABLETA
+    // =================================================
+
+    cameraState.esMovil =
+      esDispositivoMovil();
+
+
+    // =================================================
+    // OBTENER CÁMARAS REALES
+    //
+    // En móvil las consultamos para comprobar que
+    // existe acceso a cámara, pero NO usamos sus IDs
+    // para decidir frontal/trasera.
+    // =================================================
+
+    cameraState.cameras =
+      await Html5Qrcode.getCameras();
+
+
+    if (
+      !cameraState.cameras ||
+      cameraState.cameras.length === 0
+    ) {
+
+      throw new Error(
+        'No se encontró ninguna cámara.'
+      );
+
+    }
+
+
+    const selector =
+      document.getElementById(
+        'cameraSelect'
+      );
+
+
+    if (selector) {
+
+      selector.innerHTML = '';
+
+
+      if (cameraState.esMovil) {
+
+        // ---------------------------------------------
+        // MÓVIL / TABLETA
+        // ---------------------------------------------
+        // No mostramos camera 0, 1, 2, 3 porque en
+        // nuestro teléfono esos IDs no corresponden
+        // correctamente a frontal/trasera.
+        // Usaremos facingMode.
+        // ---------------------------------------------
+
+        const frontal =
+          document.createElement('option');
+
+        frontal.value =
+          'user';
+
+        frontal.textContent =
+          '📱 Cámara frontal';
+
+        selector.appendChild(
+          frontal
+        );
+
+
+        const trasera =
+          document.createElement('option');
+
+        trasera.value =
+          'environment';
+
+        trasera.textContent =
+          '📷 Cámara trasera';
+
+        selector.appendChild(
+          trasera
+        );
+
+
+        // Para asistencia QR dejamos la trasera
+        // como cámara inicial SOLO la primera vez.
+        //
+        // IMPORTANTE:
+        // No debemos volver a poner "environment"
+        // cada vez que iniciarCamara() llama a
+        // cargarCamaras(), porque eso anulaba la
+        // selección "user" del botón Cambiar cámara.
+
+        if (
+          cameraState.facingMode !== 'user' &&
+          cameraState.facingMode !== 'environment'
+        ) {
+
+          cameraState.facingMode =
+            'environment';
+
+        }
+
+
+        selector.value =
+          cameraState.facingMode;
+
+      }
+      else {
+
+        // ---------------------------------------------
+        // PC / ESCRITORIO
+        // ---------------------------------------------
+        // Aquí conservamos el comportamiento que ya
+        // comprobamos que funciona correctamente:
+        // seleccionar por deviceId.
+        // ---------------------------------------------
+
+        cameraState.cameras.forEach(
+          function(camera, index) {
+
+            const opcion =
+              document.createElement(
+                'option'
+              );
+
+
+            opcion.value =
+              index;
+
+
+            opcion.textContent =
+              camera.label ||
+              `Cámara ${index + 1}`;
+
+
+            selector.appendChild(
+              opcion
+            );
+
+          }
+        );
+
+
+        let indicePreferido = 0;
+
+
+        for (
+          let i = 0;
+          i < cameraState.cameras.length;
+          i++
+        ) {
+
+          const nombre =
+            String(
+              cameraState.cameras[i].label || ''
+            ).toLowerCase();
+
+
+          if (
+            nombre.includes('back') ||
+            nombre.includes('rear') ||
+            nombre.includes('trasera') ||
+            nombre.includes('posterior')
+          ) {
+
+            indicePreferido =
+              i;
+
+            break;
+
+          }
+
+        }
+
+
+        cameraState.currentIndex =
+          indicePreferido;
+
+
+        selector.value =
+          indicePreferido;
+
+      }
+
+    }
+
+
+    const controles =
+      document.getElementById(
+        'camera-controls'
+      );
+
+
+    if (controles) {
+
+      controles.style.display =
+        'block';
+
+    }
+
+
+    mensajeCamara(
+      cameraState.esMovil
+        ? '📱 Cámara móvil lista. Se usará frontal/trasera mediante el modo de cámara.'
+        : `${cameraState.cameras.length} cámara(s) disponible(s).`
+    );
+
+
+    return true;
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error enumerando cámaras:',
+      error
+    );
+
+
+    mensajeCamara(
+      '❌ No fue posible obtener las cámaras: ' +
+      error.message
+    );
+
+
+    return false;
+
+  }
+
+}
+
+
+// =====================================================
+// IDENTIFICAR QR EN BACKEND
+// =====================================================
+
+async function identificarQRBackend(
+  codigoQR
+) {
+
+  const mensaje =
+    document.getElementById(
+      'regMsg'
+    );
+
+
+  try {
+
+    if (!codigoQR) {
+
+      throw new Error(
+        'El código QR está vacío.'
+      );
+
+    }
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+  '🔄 Consultando ' +
+  (
+    String(state.tipo || 'estudiante').trim().toLowerCase() === 'personal'
+      ? 'personal'
+      : 'estudiante'
+  ) +
+  '...';
+
+    }
+
+
+    const parametros =
+  new URLSearchParams({
+
+    accion:
+      'identificarQR',
+
+    codigoQR:
+      codigoQR,
+
+    tipo:
+      String(state.tipo || 'estudiante')
+        .trim()
+        .toLowerCase()
+
+  });
+
+    const url =
+      CONFIG.API_URL +
+      '?' +
+      parametros.toString();
+
+
+    console.log(
+      'Consultando API:',
+      url
+    );
+
+
+    const nombreCallback =
+      'respuestaQR_MGP_' + Date.now();
+
+    const resultado =
+      await new Promise(function(resolve, reject) {
+
+        const script =
+          document.createElement('script');
+
+        let terminado = false;
+
+        function limpiar() {
+
+          if (
+            script &&
+            script.parentNode
+          ) {
+            script.parentNode.removeChild(script);
+          }
+
+          try {
+            delete window[nombreCallback];
+          }
+          catch (error) {
+            console.warn(
+              'No fue posible eliminar callback QR:',
+              error
+            );
+          }
+
+        }
+
+        window[nombreCallback] =
+          function(data) {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+            resolve(data);
+
+          };
+
+        script.src =
+          url +
+          '&callback=' +
+          encodeURIComponent(nombreCallback);
+
+        script.async = true;
+
+        script.onerror =
+          function() {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+            limpiar();
+
+            reject(
+              new Error(
+                'No se pudo comunicar con el servidor.'
+              )
+            );
+
+          };
+
+        document.head.appendChild(
+          script
+        );
+
+      });
+
+
+    console.log(
+      'Respuesta API QR V2:',
+      resultado
+    );
+
+
+    // =================================================
+    // QR NO IDENTIFICADO
+    // =================================================
+
+    if (!resultado.ok) {
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '❌ ' +
+          (
+            resultado.mensaje ||
+            'No se pudo identificar el QR.'
+          );
+
+      }
+
+
+      return resultado;
+
+    }
+
+
+    // =================================================
+    // GUARDAR PERSONA IDENTIFICADA
+    // =================================================
+
+    state.persona =
+      resultado;
+
+    // =================================================
+    // IMPORTANTE V2
+    // IDENTIFICAR NO ES LO MISMO QUE REGISTRAR
+    //
+    // La cámara ya hizo su trabajo.
+    // Ahora enviamos el DNI identificado al endpoint
+    // apiRegistrar para guardar INGRESO/SALIDA.
+    // =================================================
+
+
+    // =================================================
+    // LEGACY 2026
+    // =================================================
+
+    if (
+      resultado.tipoQR ===
+      'LEGACY_2026'
+      &&
+      resultado.estudiante
+    ) {
+
+      const estudiante =
+        resultado.estudiante;
+
+
+      if (mensaje) {
+
+        mensaje.innerHTML =
+
+          '<strong>✅ ESTUDIANTE IDENTIFICADO</strong><br>' +
+
+          'DNI: ' +
+          estudiante.dni +
+          '<br>' +
+
+          estudiante.apellidoPaterno +
+          ' ' +
+
+          estudiante.apellidoMaterno +
+          ' ' +
+
+          estudiante.nombres +
+          '<br>' +
+
+          'Grado: ' +
+          estudiante.grado +
+          ' ' +
+          estudiante.seccion +
+          '<br>' +
+
+          'Turno: ' +
+          estudiante.turno;
+
+      }
+
+    }
+
+
+    // =================================================
+    // QR V2
+    // =================================================
+
+    else if (
+      resultado.tipoQR ===
+      'MGP_V2'
+    ) {
+
+      if (mensaje) {
+
+        mensaje.innerHTML =
+
+          '<strong>✅ QR V2 IDENTIFICADO</strong><br>' +
+
+          'ID: ' +
+          resultado.identificador;
+
+      }
+
+    }
+
+
+    else {
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '✅ QR identificado correctamente.';
+
+      }
+
+    }
+
+
+    // =================================================
+    // REGISTRAR ASISTENCIA AUTOMÁTICAMENTE
+    // =================================================
+    // Para el QR Legacy 2026 ya tenemos el DNI real.
+    // Ese DNI se envía al endpoint apiRegistrar para registrar la asistencia.
+    // =================================================
+
+    if (
+      resultado.tipoQR === 'LEGACY_2026' &&
+      resultado.estudiante &&
+      resultado.estudiante.dni
+    ) {
+
+      await registrarAsistenciaBackend(
+        resultado.estudiante.dni
+      );
+
+    }
+
+
+    return resultado;
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error consultando API QR V2:',
+      error
+    );
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '❌ No se pudo comunicar con el servidor: ' +
+        error.message;
+
+    }
+
+
+    return {
+
+      ok: false,
+
+      mensaje:
+        error.message
+
+    };
+
+  }
+
+}
+
+
+// =====================================================
+// REGISTRAR ASISTENCIA EN EL SERVIDOR
+// =====================================================
+// Usa JSONP porque GitHub Pages y Google Apps Script
+// están en dominios diferentes.
+// El backend existente recibe:
+// ?action=apiRegistrar&id=...&tipo=...&estado=...
+// =====================================================
+
+let registroScript = null;
+
+function eliminarRegistroScript() {
+
+  if (registroScript && registroScript.parentNode) {
+    registroScript.parentNode.removeChild(registroScript);
+  }
+
+  registroScript = null;
+
+}
+
+
+function reproducirPitidoRegistroMGP() {
+
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioCtx) return;
+
+    if (!window.audioContextMGP) {
+      window.audioContextMGP = new AudioCtx();
+    }
+
+    const ctx = window.audioContextMGP;
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(function() {});
+    }
+
+    const ahora = ctx.currentTime;
+    const oscilador = ctx.createOscillator();
+    const ganancia = ctx.createGain();
+
+    // Sonido tipo lector de código de barras: corto, agudo y marcado.
+    oscilador.type = 'square';
+    oscilador.frequency.setValueAtTime(2200, ahora);
+
+    ganancia.gain.setValueAtTime(0.0001, ahora);
+    ganancia.gain.exponentialRampToValueAtTime(0.24, ahora + 0.004);
+    ganancia.gain.exponentialRampToValueAtTime(0.0001, ahora + 0.085);
+
+    oscilador.connect(ganancia);
+    ganancia.connect(ctx.destination);
+
+    oscilador.start(ahora);
+    oscilador.stop(ahora + 0.09);
+
+  } catch (error) {}
+
+}
+
+function registrarAsistenciaOfflineMGP(id) {
+
+  return new Promise(function(resolve) {
+
+    const mensaje =
+      document.getElementById('regMsg');
+
+    const idLimpio =
+      String(id || '').trim();
+
+    const tipo =
+      String(state.tipo || 'estudiante').trim();
+
+    const estado =
+      String(state.estado || 'INGRESO').trim().toUpperCase();
+
+    if (!idLimpio) {
+
+      if (mensaje) {
+        mensaje.textContent =
+          '❌ No se obtuvo el DNI para registrar.';
+      }
+
+      resolve({ exito: false, offline: true });
+      return;
+
+    }
+
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
+        'DNI: ' + idLimpio + '<br>' +
+        'Tipo: ' + tipo + '<br>' +
+        'Estado: ' + estado;
+    }
+
+    guardarRegistroOfflineMGP(idLimpio)
+      .then(function(registro) {
+
+        reproducirPitidoRegistroMGP();
+
+        if (mensaje) {
+          mensaje.innerHTML =
+            '<strong>✅ GUARDADO OFFLINE</strong><br>' +
+            'DNI: ' + idLimpio + '<br>' +
+            'Estado: ' + estado + '<br>' +
+            'Hora: ' +
+            new Date(registro.fechaHoraCliente)
+              .toLocaleTimeString('es-PE') + '<br>' +
+            'ID local: ' + registro.idOffline + '<br>' +
+            '<strong>⏳ Pendiente de sincronización</strong>';
+        }
+
+        resolve({
+          exito: true,
+          offline: true,
+          pendiente: true,
+          idOffline: registro.idOffline,
+          fechaHoraCliente: registro.fechaHoraCliente,
+          hora: new Date(registro.fechaHoraCliente)
+            .toLocaleTimeString('es-PE')
+        });
+
+      })
+      .catch(function(error) {
+
+        console.error(
+          'Error guardando registro OFFLINE:',
+          error
+        );
+
+        if (mensaje) {
+          mensaje.innerHTML =
+            '<strong>❌ NO SE GUARDÓ OFFLINE</strong><br>' +
+            error.message;
+        }
+
+        resolve({
+          exito: false,
+          offline: true,
+          error: error.message
+        });
+
+      });
+
+  });
+
+}
+
+function registrarAsistenciaSegunModoMGP(id) {
+
+  if (state.registroModo === 'OFFLINE') {
+    return registrarAsistenciaOfflineMGP(id);
+  }
+
+  return registrarAsistenciaBackend(id);
+
+}
+
+function registrarAsistenciaBackend(id) {
+
+  return new Promise(function(resolve) {
+
+    const mensaje =
+      document.getElementById('regMsg');
+
+    const idLimpio =
+      String(id || '').trim();
+
+    const tipo =
+      String(state.tipo || 'estudiante').trim();
+
+    const estado =
+      String(state.estado || 'INGRESO').trim().toUpperCase();
+
+    if (!idLimpio) {
+
+      if (mensaje) {
+        mensaje.textContent =
+          '❌ No se obtuvo el DNI para registrar.';
+      }
+
+      resolve({ exito: false });
+      return;
+
+    }
+
+    eliminarRegistroScript();
+
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>⏳ REGISTRANDO ' +
+        (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO') +
+        '...</strong><br>' +
+        'DNI: ' + idLimpio + '<br>' +
+        'Tipo: ' + tipo + '<br>' +
+        'Estado: ' + estado;
+    }
+
+    window.respuestaRegistroMGP =
+      function(data) {
+
+        eliminarRegistroScript();
+
+        if (!data) {
+          if (mensaje) {
+            mensaje.textContent =
+              '❌ El servidor no devolvió respuesta.';
+          }
+          resolve({ exito: false });
+          return;
+        }
+
+        if (data.exito) {
+
+          reproducirPitidoRegistroMGP();
+
+          const datos = data.datos || {};
+
+          const nombre =
+            datos.nombre ||
+            (state.persona && state.persona.estudiante
+              ? (
+                  (state.persona.estudiante.apellidoPaterno || '') + ' ' +
+                  (state.persona.estudiante.apellidoMaterno || '') + ' ' +
+                  (state.persona.estudiante.nombres || '')
+                ).trim()
+              : '');
+
+          const detalle =
+            datos.gradoSeccion ||
+            (state.persona && state.persona.estudiante
+              ? (
+                  (state.persona.estudiante.grado || '') + ' ' +
+                  (state.persona.estudiante.seccion || '')
+                ).trim()
+              : '');
+
+          if (mensaje) {
+            mensaje.innerHTML =
+              '<strong>✅ ' + (String(data.estado || estado).toUpperCase() === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
+              'DNI: ' + idLimpio + '<br>' +
+              (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
+              (detalle ? 'Grado: ' + detalle + '<br>' : '') +
+              'Estado: ' + (data.estado || estado) + '<br>' +
+              'Hora: ' + (data.hora || '--:--:--') + '<br>' +
+              'Puntualidad: ' + (data.puntualidad || 'N/A');
+          }
+
+          resolve(data);
+          return;
+        }
+
+        if (mensaje) {
+          mensaje.innerHTML =
+            '<strong>❌ NO REGISTRADO</strong><br>' +
+            (data.mensaje || 'No fue posible registrar la asistencia.');
+        }
+
+        resolve(data);
+      };
+
+    registroScript =
+      document.createElement('script');
+
+    registroScript.src =
+      CONFIG.API_URL +
+      '?action=apiRegistrar' +
+      '&id=' + encodeURIComponent(idLimpio) +
+      '&tipo=' + encodeURIComponent(tipo) +
+      '&estado=' + encodeURIComponent(estado) +
+      '&token=' + encodeURIComponent(state.token || '') +
+      '&callback=respuestaRegistroMGP';
+
+    registroScript.onerror =
+      function() {
+
+        eliminarRegistroScript();
+
+        if (mensaje) {
+          mensaje.textContent =
+            '❌ No se pudo conectar con el servidor para registrar la asistencia.';
+        }
+
+        resolve({ exito: false });
+      };
+
+    document.body.appendChild(
+      registroScript
+    );
+
+  });
+
+}
+
+// =====================================================
+// CÁMARA — ARQUITECTURA RECUPERADA DE ASISTENCIAV1
+// =====================================================
+//
+// Esta es la arquitectura que ya funcionó en el proyecto
+// anterior:
+//
+//   camaraFrontal = false  -> environment (trasera)
+//   camaraFrontal = true   -> user        (frontal)
+//
+// En el puesto fijo de la tablet, la frontal es la cámara
+// inicial para que el estudiante pueda presentar el carnet
+// directamente frente al dispositivo.
+//
+// En móvil NO usamos:
+//   - getCameras() para decidir frontal/trasera
+//   - deviceId
+//   - enumerateDevices()
+//   - BarcodeDetector
+//   - detección de cámaras
+//
+// html5-qrcode recibe directamente el facingMode.
+// =====================================================
+
+let camaraFrontal = true;
+
+
+// =====================================================
+// ASEGURAR BOTÓN CAMBIAR CÁMARA
+// =====================================================
+//
+// V1 tenía este control visible en móvil.
+// En V9 la lógica cambiarCamara() estaba presente,
+// pero el botón no se creó si no existía en el HTML.
+//
+// Para no obligar a modificar index.html, lo creamos
+// automáticamente junto al botón DETENER CÁMARA.
+// =====================================================
+
+function asegurarBotonCambiarCamara() {
+
+  return document.getElementById(
+    'switchCamBtn'
+  );
+
+}
+
+
+// =====================================================
+// CARGAR HTML5-QRCODE SI AÚN NO ESTÁ DISPONIBLE
+// =====================================================
+
+function asegurarHtml5QrCode() {
+
+  if (
+    typeof Html5Qrcode !==
+    'undefined'
+  ) {
+
+    return Promise.resolve();
+
+  }
+
+
+  return new Promise(function(resolve, reject) {
+
+    const existente =
+      document.querySelector(
+        'script[data-mgp-html5qr]'
+      );
+
+    if (existente) {
+
+      existente.addEventListener(
+        'load',
+        function() {
+
+          if (
+            typeof Html5Qrcode !==
+            'undefined'
+          ) {
+
+            resolve();
+
+          }
+          else {
+
+            reject(
+              new Error(
+                'html5-qrcode se cargó pero Html5Qrcode no está disponible.'
+              )
+            );
+
+          }
+
+        }
+      );
+
+      existente.addEventListener(
+        'error',
+        function() {
+
+          reject(
+            new Error(
+              'No se pudo cargar html5-qrcode.'
+            )
+          );
+
+        }
+      );
+
+      return;
+
+    }
+
+
+    const script =
+      document.createElement(
+        'script'
+      );
+
+    script.src =
+      'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+
+    script.async =
+      false;
+
+    script.setAttribute(
+      'data-mgp-html5qr',
+      'true'
+    );
+
+
+    script.onload =
+      function() {
+
+        if (
+          typeof Html5Qrcode !==
+          'undefined'
+        ) {
+
+          resolve();
+
+        }
+        else {
+
+          reject(
+            new Error(
+              'html5-qrcode se cargó pero Html5Qrcode no está disponible.'
+            )
+          );
+
+        }
+
+      };
+
+
+    script.onerror =
+      function() {
+
+        reject(
+          new Error(
+            'No se pudo descargar la biblioteca html5-qrcode.'
+          )
+        );
+
+      };
+
+
+    document.head.appendChild(
+      script
+    );
+
+  });
+
+}
+
+
+// =====================================================
+// INICIAR CÁMARA
+// =====================================================
+// Basado directamente en la rutina que funcionó
+// en AsistenciaV1.
+//
+// TRASERA  -> environment
+// FRONTAL  -> user
+//
+// La frontal es la opción inicial para el puesto fijo.
+//
+// No usa deviceId.
+// No enumera cámaras.
+// No intenta adivinar cuál es frontal.
+// =====================================================
+
+async function iniciarCamara() {
+
+  if (
+    cameraState.activa
+  ) {
+
+    mensajeCamara(
+      '📷 La cámara ya está activa.'
+    );
+
+    return;
+
+  }
+
+
+  const reader =
+    document.getElementById(
+      'reader'
+    );
+
+  // En V2 el visor QR (#reader) es el contenedor real.
+  // No dependemos de #reader-container porque no existe
+  // en el index.html actual.
+  const readerContainer =
+    reader;
+
+  const camBtn =
+    document.getElementById(
+      'camBtn'
+    );
+
+  const stopCamBtn =
+    document.getElementById(
+      'stopCamBtn'
+    );
+
+  const switchCamBtn =
+    document.getElementById(
+      'switchCamBtn'
+    );
+
+  const cameraControls =
+    document.getElementById(
+      'camera-controls'
+    );
+
+
+  try {
+
+    if (!reader) {
+
+      throw new Error(
+        'No existe el contenedor de cámara #reader.'
+      );
+
+    }
+
+
+    mensajeCamara(
+      'Solicitando acceso a la cámara...'
+    );
+
+
+    readerContainer.style.display =
+      'block';
+
+
+    if (camBtn) {
+
+      camBtn.disabled =
+        true;
+
+    }
+
+
+    // -------------------------------------------------
+    // Aseguramos la misma biblioteca de V1: 2.3.8
+    // -------------------------------------------------
+
+    await asegurarHtml5QrCode();
+
+
+    // -------------------------------------------------
+    // Limpiamos solamente el lector anterior.
+    // -------------------------------------------------
+
+    reader.innerHTML =
+      '';
+
+
+    cameraState.reader =
+      new Html5Qrcode(
+        'reader'
+      );
+
+
+    // -------------------------------------------------
+    // MISMA SELECCIÓN DE V1
+    // -------------------------------------------------
+
+    const facingMode =
+      camaraFrontal
+        ? 'user'
+        : 'environment';
+
+
+    cameraState.facingMode =
+      facingMode;
+
+
+    await cameraState.reader.start(
+
+      {
+        facingMode:
+          facingMode
+      },
+
+      {
+
+        fps:
+          10,
+
+        qrbox:
+          function(
+            viewfinderWidth,
+            viewfinderHeight
+          ) {
+
+            const size =
+              Math.min(
+                viewfinderWidth,
+                viewfinderHeight
+              ) * 0.70;
+
+
+            return {
+
+              width:
+                size,
+
+              height:
+                size
+
+            };
+
+          },
+
+        // En laptops/Windows usamos formato panorámico para
+        // reducir la altura del visor y dejar visibles
+        // los mensajes del registro.
+        // En móviles conservamos el formato actual 1:1.
+        aspectRatio:
+          window.innerWidth >= 768 ? (16 / 9) : 1.0
+
+      },
+
+      async function(
+        decodedText
+      ) {
+
+        const qrActual =
+          String(decodedText || '').trim();
+
+        const estadoActualQR =
+          String(state.estado || 'INGRESO')
+            .trim()
+            .toUpperCase();
+
+        if (!qrActual) {
+          return;
+        }
+
+        if (
+          cameraState.procesandoQR
+        ) {
+
+          return;
+
+        }
+
+        // -------------------------------------------------
+        // ANTIDUPLICADO SOLO DURANTE LA REINICIALIZACIÓN
+        // -------------------------------------------------
+        // Después de registrar, la cámara vuelve a iniciarse.
+        // Si el mismo carnet continúa frente a la tablet,
+        // html5-qrcode puede detectarlo varias veces de inmediato.
+        // Bloqueamos únicamente ese periodo corto de relectura.
+        // Después del intervalo, una nueva lectura del mismo QR
+        // SÍ se envía al backend, para que el servidor responda
+        // correctamente: INGRESO YA REGISTRADO / SALIDA YA REGISTRADA.
+        // -------------------------------------------------
+        const ahoraQR = Date.now();
+        const mismoQR =
+          cameraState.ultimoQRProcesado === qrActual &&
+          cameraState.ultimoEstadoQRProcesado === estadoActualQR;
+
+        if (
+          mismoQR &&
+          cameraState.ultimoQRProcesadoHasta > ahoraQR
+        ) {
+
+          return;
+
+        }
+
+        cameraState.procesandoQR =
+          true;
+
+        cameraState.ultimoQRProcesado =
+          qrActual;
+
+        cameraState.ultimoEstadoQRProcesado =
+          estadoActualQR;
+
+        cameraState.ultimoQRProcesadoHasta =
+          Date.now() + 2000;
+
+        state.qr =
+          qrActual;
+
+        mensajeCamara(
+          state.registroModo === 'OFFLINE'
+            ? '✅ QR leído. Guardando localmente...'
+            : '✅ QR leído. Consultando servidor...'
+        );
+
+
+        // Iniciamos el registro inmediatamente y detenemos la cámara
+        // en paralelo. En OFFLINE no se realiza ninguna llamada HTTP.
+        const registroPromise =
+          registrarAsistenciaSegunModoMGP(
+            decodedText
+          );
+
+        await detenerCamara();
+
+        
+
+
+        try {
+
+          // Esperamos el mismo registro que ya se inició arriba.
+          // No se realiza una segunda consulta HTTP.
+          await registroPromise;
+
+        }
+
+        finally {
+
+          cameraState.procesandoQR =
+            false;
+
+          // IMPORTANTE: no bloquear la actualización visual del mensaje
+          // esperando la reinicialización de la cámara. Primero dejamos
+          // que el navegador pinte "REGISTRADO" y luego reactivamos
+          // la cámara en una nueva tarea. Esto evita que el usuario vea
+          // la cámara reiniciarse antes del resultado del registro.
+          setTimeout(function() {
+            iniciarCamara();
+          }, 0);
+
+        }
+
+      },
+
+      function(
+        errorMessage
+      ) {
+
+        // Error normal mientras busca un QR.
+        // No mostrarlo continuamente.
+
+      }
+
+    );
+
+
+    cameraState.activa =
+      true;
+
+    // En V2 el botón ya existe en index.html.
+    // Solo hacemos visible su contenedor.
+    if (cameraControls) {
+
+      cameraControls.style.display =
+        'block';
+
+    }
+
+    if (switchCamBtn) {
+
+      switchCamBtn.style.display =
+        'block';
+
+      switchCamBtn.disabled =
+        false;
+
+    }
+
+    state.camara =
+      true;
+
+    cameraState.procesandoQR =
+      false;
+
+
+    mensajeCamara(
+
+      camaraFrontal
+
+        ? '🤳 Cámara frontal activa. Apunte al código QR.'
+
+        : '📷 Cámara trasera activa. Apunte al código QR.'
+
+    );
+
+
+    if (camBtn) {
+
+      camBtn.style.display =
+        'none';
+
+    }
+
+
+    if (stopCamBtn) {
+
+      stopCamBtn.style.display =
+        'block';
+
+    }
+
+
+    if (switchCamBtn) {
+
+      switchCamBtn.style.display =
+        'block';
+
+    }
+
+
+    const selector =
+      document.getElementById(
+        'cameraSelect'
+      );
+
+
+    if (selector) {
+
+      selector.value =
+        facingMode;
+
+    }
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error al iniciar cámara:',
+      error
+    );
+
+
+    cameraState.activa =
+      false;
+
+    state.camara =
+      false;
+
+
+    if (
+      cameraState.reader
+    ) {
+
+      try {
+
+        await cameraState.reader.stop();
+
+      }
+      catch (
+        stopError
+      ) {
+
+        console.warn(
+          'No fue necesario detener el lector:',
+          stopError
+        );
+
+      }
+
+
+      try {
+
+        await cameraState.reader.clear();
+
+      }
+      catch (
+        clearError
+      ) {
+
+        console.warn(
+          'No fue necesario limpiar el lector:',
+          clearError
+        );
+
+      }
+
+    }
+
+
+    cameraState.reader =
+      null;
+
+
+    if (readerContainer) {
+
+      readerContainer.style.display =
+        'none';
+
+    }
+
+
+    if (camBtn) {
+
+      camBtn.style.display =
+        'block';
+
+      camBtn.disabled =
+        false;
+
+    }
+
+
+    if (stopCamBtn) {
+
+      stopCamBtn.style.display =
+        'none';
+
+    }
+
+
+    if (switchCamBtn) {
+
+      switchCamBtn.style.display =
+        'none';
+
+    }
+
+
+    cameraState.procesandoQR =
+      false;
+
+
+    mensajeCamara(
+      '❌ No se pudo iniciar la cámara: ' +
+      (
+        error.name ||
+        'Error'
+      ) +
+      ' — ' +
+      (
+        error.message ||
+        'Error desconocido.'
+      )
+    );
+
+  }
+
+}
+
+
+// =====================================================
+// CAMBIAR CÁMARA
+// =====================================================
+//
+// Esta es la lógica utilizada en AsistenciaV1:
+//
+//   false -> true
+//   true  -> false
+//
+// y luego se vuelve a iniciar html5-qrcode con:
+//   environment <-> user
+// =====================================================
+
+async function cambiarCamara() {
+
+  if (!cameraState.activa) {
+
+    mensajeCamara(
+      'Primero active la cámara.'
+    );
+
+    return;
+
+  }
+
+
+  const switchCamBtn =
+    document.getElementById(
+      'switchCamBtn'
+    );
+
+
+  try {
+
+    if (switchCamBtn) {
+
+      switchCamBtn.disabled =
+        true;
+
+    }
+
+
+    mensajeCamara(
+      '🔄 Cambiando cámara...'
+    );
+
+
+    if (cameraState.reader) {
+
+      try {
+
+        await cameraState.reader.stop();
+
+      }
+      catch (error) {
+
+        console.log(
+          'La cámara ya estaba detenida.'
+        );
+
+      }
+
+
+      try {
+
+        await cameraState.reader.clear();
+
+      }
+      catch (error) {
+
+        console.log(
+          'No fue necesario limpiar el lector.'
+        );
+
+      }
+
+    }
+
+
+    cameraState.reader =
+      null;
+
+    cameraState.activa =
+      false;
+
+    state.camara =
+      false;
+
+
+    // AQUÍ está la conmutación real V1.
+    camaraFrontal =
+      !camaraFrontal;
+
+
+    const selector =
+      document.getElementById(
+        'cameraSelect'
+      );
+
+
+    if (selector) {
+
+      selector.value =
+        camaraFrontal
+          ? 'user'
+          : 'environment';
+
+    }
+
+
+    await iniciarCamara();
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error al cambiar cámara:',
+      error
+    );
+
+
+    cameraState.activa =
+      false;
+
+
+    mensajeCamara(
+      '❌ No se pudo cambiar la cámara: ' +
+      error.name +
+      ' — ' +
+      error.message
+    );
+
+  }
+  finally {
+
+    if (switchCamBtn) {
+
+      switchCamBtn.disabled =
+        false;
+
+    }
+
+  }
+
+}
+
+
+// =====================================================
+// SELECTOR DE CÁMARA
+// =====================================================
+
+const cameraSelect =
+  document.getElementById(
+    'cameraSelect'
+  );
+
+
+if (cameraSelect) {
+
+  cameraSelect.addEventListener(
+
+    'change',
+
+    async function() {
+
+      if (
+        this.value !== 'user' &&
+        this.value !== 'environment'
+      ) {
+
+        return;
+
+      }
+
+
+      const nuevaCamaraFrontal =
+        this.value === 'user';
+
+
+      if (
+        nuevaCamaraFrontal ===
+        camaraFrontal
+      ) {
+
+        return;
+
+      }
+
+
+      camaraFrontal =
+        nuevaCamaraFrontal;
+
+
+      if (cameraState.activa) {
+
+        await cambiarCamara();
+
+      }
+      else {
+
+        mensajeCamara(
+
+          camaraFrontal
+
+            ? '📱 Cámara frontal seleccionada.'
+
+            : '📷 Cámara trasera seleccionada.'
+
+        );
+
+      }
+
+    }
+
+  );
+
+}
+
+
+// =====================================================
+// DETENER CÁMARA
+// =====================================================
+
+async function detenerCamara() {
+
+  if (cameraState.reader) {
+
+    try {
+
+      if (cameraState.activa) {
+
+        await cameraState.reader.stop();
+
+      }
+
+    }
+    catch (error) {
+
+      console.warn(
+        'Error deteniendo lector:',
+        error
+      );
+
+    }
+
+
+    try {
+
+      await cameraState.reader.clear();
+
+    }
+    catch (error) {
+
+      console.warn(
+        'Error limpiando lector:',
+        error
+      );
+
+    }
+
+  }
+
+
+  cameraState.reader =
+    null;
+
+  cameraState.activa =
+    false;
+
+  cameraState.procesandoQR =
+    false;
+
+  state.camara =
+    false;
+
+
+  const camBtn =
+    document.getElementById(
+      'camBtn'
+    );
+
+  if (camBtn) {
+
+  camBtn.style.display =
+    'block';
+
+  camBtn.disabled =
+    false;
+
+}
+
+  const stopCamBtn =
+    document.getElementById(
+      'stopCamBtn'
+    );
+
+  if (stopCamBtn) {
+
+    stopCamBtn.style.display =
+      'none';
+
+  }
+
+
+  const switchCamBtn =
+    document.getElementById(
+      'switchCamBtn'
+    );
+
+  if (switchCamBtn) {
+    switchCamBtn.style.display = 'none';
+  }
+
+  mensajeCamara(
+    'Cámara detenida.'
+  );
+
+}
+
+
+// =====================================================
+// BOTÓN ACTIVAR CÁMARA
+// =====================================================
+
+const camBtn =
+  document.getElementById(
+    'camBtn'
+  );
+
+
+if (camBtn) {
+
+  camBtn.addEventListener(
+    'click',
+    iniciarCamara
+  );
+
+}
+
+
+// =====================================================
+// BOTÓN DETENER CÁMARA
+// =====================================================
+
+const stopCamBtn =
+  document.getElementById(
+    'stopCamBtn'
+  );
+
+if (stopCamBtn) {
+
+  stopCamBtn.addEventListener(
+    'click',
+    detenerCamara
+  );
+
+}
+
+// =====================================================
+// BOTÓN CAMBIAR CÁMARA
+// =====================================================
+//
+// Si index.html ya lo contiene, conectamos el evento.
+// Si no lo contiene, iniciarCamara() lo creará
+// automáticamente mediante asegurarBotonCambiarCamara().
+// =====================================================
+
+const switchCamBtn =
+  document.getElementById(
+    'switchCamBtn'
+  );
+
+
+if (switchCamBtn) {
+
+  switchCamBtn.addEventListener(
+    'click',
+    cambiarCamara
+  );
+
+}
+// =====================================================
+// REPORTES - FASE 1
+// REPORTE DIARIO DE ESTUDIANTES
+// =====================================================
+
+const consultarReporteBtn =
+  document.getElementById(
+    'consultarReporteBtn'
+  );
+
+
+if (consultarReporteBtn) {
+
+  consultarReporteBtn.addEventListener(
+    'click',
+    consultarReporte
+  );
+
+}
+
+
+// =====================================================
+// BOTONES DE DESCARGA DE REPORTES
+// =====================================================
+
+const descargarReporteExcelBtn =
+  document.getElementById(
+    'descargarReporteExcelBtn'
+  );
+
+const descargarReportePdfBtn =
+  document.getElementById(
+    'descargarReportePdfBtn'
+  );
+
+const verMatrizMensualBtn =
+  document.getElementById(
+    'verMatrizMensualBtn'
+  );
+
+
+if (descargarReporteExcelBtn) {
+
+  descargarReporteExcelBtn.addEventListener(
+    'click',
+    descargarReporteExcel
+  );
+
+}
+
+
+if (descargarReportePdfBtn) {
+
+  descargarReportePdfBtn.addEventListener(
+    'click',
+    descargarReportePDF
+  );
+
+}
+
+if (verMatrizMensualBtn) {
+
+  verMatrizMensualBtn.addEventListener(
+    'click',
+    function() {
+      if (!ultimoReporteMGP ||
+          (ultimoReporteMGP.tipoReporte !== 'mensual' &&
+           ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
+        return;
+      }
+
+      matrizMensualVisibleMGP =
+        !matrizMensualVisibleMGP;
+
+      renderizarMatrizMensualMGP();
+
+      verMatrizMensualBtn.textContent =
+        matrizMensualVisibleMGP
+          ? '📅 Ocultar matriz mensual'
+          : '📅 Ver matriz mensual';
+    }
+  );
+
+}
+
+// =====================================================
+// CAMBIO DE FILTRO SEGÚN TIPO DE REPORTE
+// =====================================================
+
+const reporteTipo =
+  document.getElementById(
+    'reporteTipo'
+  );
+
+const reporteFecha =
+  document.getElementById(
+    'reporteFecha'
+  );
+
+const reporteGrado =
+  document.getElementById(
+    'reporteGrado'
+  );
+
+const reporteMes =
+  document.getElementById(
+    'reporteMes'
+  );
+
+const reporteMensualFiltros =
+  document.getElementById(
+    'reporteMensualFiltros'
+  );
+
+// DEV 03: habilitar reporte diario de PERSONAL sin modificar index.html.
+if (reporteTipo) {
+  const existePersonal = Array.from(reporteTipo.options).some(function(opcion) {
+    return String(opcion.value || '').toLowerCase() === 'personal';
+  });
+  if (!existePersonal) {
+    const opcionPersonal = document.createElement('option');
+    opcionPersonal.value = 'personal';
+    opcionPersonal.textContent = 'Diario — Personal';
+    reporteTipo.appendChild(opcionPersonal);
+  }
+
+  const existeMensualPersonal = Array.from(reporteTipo.options).some(function(opcion) {
+    return String(opcion.value || '').toLowerCase() === 'mensual_personal';
+  });
+  if (!existeMensualPersonal) {
+    const opcionMensualPersonal = document.createElement('option');
+    opcionMensualPersonal.value = 'mensual_personal';
+    opcionMensualPersonal.textContent = 'Mensual — Personal';
+    reporteTipo.appendChild(opcionMensualPersonal);
+  }
+}
+
+
+function actualizarFiltroReporte() {
+
+  if (!reporteTipo) {
+    return;
+  }
+
+  const tipo =
+    reporteTipo.value
+      .trim()
+      .toLowerCase();
+
+
+  const esMensual =
+    tipo === 'mensual';
+
+  const esMensualPersonal =
+    tipo === 'mensual_personal';
+
+  const esAlertas =
+    tipo === 'alertas';
+
+  const esPersonal =
+    tipo === 'personal';
+
+  const usaFiltroMensual =
+    esMensual || esMensualPersonal || esAlertas;
+
+  const grupoGrado = reporteGrado
+    ? reporteGrado.closest('.grupo')
+    : null;
+
+  if (grupoGrado) {
+    grupoGrado.style.display = (esPersonal || esMensualPersonal) ? 'none' : '';
+  }
+
+
+  if (reporteFecha) {
+
+    reporteFecha.style.display =
+      usaFiltroMensual
+        ? 'none'
+        : '';
+
+  }
+
+
+  if (reporteMensualFiltros) {
+
+    reporteMensualFiltros.style.display =
+      usaFiltroMensual
+        ? 'block'
+        : 'none';
+
+  }
+
+}
+
+
+if (reporteTipo) {
+
+  reporteTipo.addEventListener(
+    'change',
+    actualizarFiltroReporte
+  );
+
+  actualizarFiltroReporte();
+
+}
+
+async function consultarReporte() {
+
+  const fechaElemento =
+    document.getElementById(
+      'reporteFecha'
+    );
+
+  const gradoElemento =
+    document.getElementById(
+      'reporteGrado'
+    );
+
+  const tipoElemento =
+    document.getElementById(
+      'reporteTipo'
+    );
+
+  const mensaje =
+    document.getElementById(
+      'reporteMsg'
+    );
+
+  const resumen =
+    document.getElementById(
+      'reporteResumen'
+    );
+
+  const resultados =
+    document.getElementById(
+      'reporteResultados'
+    );
+
+  const tabla =
+    document.getElementById(
+      'reporteTablaBody'
+    );
+
+  // -------------------------------------------------
+  // ESTILO FUNCIONAL DE TABLAS DE REPORTES
+  // -------------------------------------------------
+  // Las tablas conservan un ancho mínimo funcional.
+  // En celular se desplazan horizontalmente dentro del
+  // área del reporte para evitar que las columnas se pisen.
+  // -------------------------------------------------
+
+  const fecha =
+    fechaElemento
+      ? fechaElemento.value.trim()
+      : '';
+
+  const grado =
+    gradoElemento
+      ? gradoElemento.value.trim()
+      : '';
+
+  const tipoReporte =
+    tipoElemento
+      ? tipoElemento.value.trim().toLowerCase()
+      : 'asistencia';
+
+  if (tabla) {
+
+    const tablaReporteBase =
+      tabla.closest('table');
+
+    if (tablaReporteBase) {
+      tablaReporteBase.style.width = 'max-content';
+      tablaReporteBase.style.maxWidth = 'none';
+      tablaReporteBase.style.minWidth =
+        (tipoReporte === 'mensual' || tipoReporte === 'mensual_personal')
+          ? '1050px'
+          : '720px';
+      tablaReporteBase.style.tableLayout = 'auto';
+      tablaReporteBase.style.borderCollapse = 'collapse';
+      tablaReporteBase.style.fontSize = '12px';
+
+      // SOLO mensual de personal: ancho funcional para PC y celular.
+      if (tipoReporte === 'mensual_personal') {
+        tablaReporteBase.style.minWidth = '1050px';
+        tablaReporteBase.style.width = 'max-content';
+        tablaReporteBase.style.maxWidth = 'none';
+      }
+    }
+
+    const contenedorTablaReporte =
+      tabla.closest('table')
+        ? tabla.closest('table').parentElement
+        : null;
+
+    if (contenedorTablaReporte) {
+      contenedorTablaReporte.style.maxWidth = '100%';
+      contenedorTablaReporte.style.overflowX = 'auto';
+      contenedorTablaReporte.style.overflowY = 'visible';
+      contenedorTablaReporte.style.webkitOverflowScrolling = 'touch';
+    }
+  }
+
+ 
+  const mesElemento =
+  document.getElementById(
+    'reporteMes'
+  );
+
+const mes =
+  mesElemento
+    ? mesElemento.value.trim()
+    : '';
+
+const esMensual =
+  tipoReporte === 'mensual';
+
+const esMensualPersonal =
+  tipoReporte === 'mensual_personal';
+
+const esAlertas =
+  tipoReporte === 'alertas';
+
+const usaFiltroMensual =
+  esMensual || esMensualPersonal || esAlertas;
+
+  // -------------------------------------------------
+  // VALIDACIONES
+  // -------------------------------------------------
+
+
+  if (
+  usaFiltroMensual
+    ? !mes
+    : !fecha
+) {
+
+  if (mensaje) {
+
+    mensaje.textContent =
+      usaFiltroMensual
+        ? 'Ingrese el mes del reporte.'
+        : 'Ingrese la fecha del reporte.';
+
+  }
+
+  return;
+}
+  
+
+
+  if (!state.token) {
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '❌ La sesión institucional no es válida.';
+
+    }
+
+    return;
+
+  }
+
+
+  // -------------------------------------------------
+  // LIMPIAR RESULTADO ANTERIOR
+  // -------------------------------------------------
+  // Si el reporte anterior fue ALERTAS, eliminamos su
+  // contenedor antes de construir cualquier otro reporte.
+  // Esto evita que Alertas aparezca dentro de Mensual,
+  // Asistencia, Faltas o Tardanzas.
+  // -------------------------------------------------
+
+  const alertasAnteriores =
+    document.getElementById(
+      'reporteAlertasMGP'
+    );
+
+  if (alertasAnteriores) {
+    alertasAnteriores.remove();
+  }
+
+  // Restaurar elementos que solo se ocultan durante Alertas.
+  if (resultados) {
+
+    const elementosOcultosAlertas =
+      resultados.querySelectorAll(
+        '.alertasOcultoMGP'
+      );
+
+    elementosOcultosAlertas.forEach(
+      function(elemento) {
+        elemento.classList.remove(
+          'alertasOcultoMGP'
+        );
+        elemento.style.display = '';
+      }
+    );
+  }
+
+  // La tabla normal puede haber quedado oculta durante Alertas.
+  if (tabla) {
+
+    const tablaNormalAnterior =
+      tabla.closest('table');
+
+    if (tablaNormalAnterior) {
+      tablaNormalAnterior.style.display = '';
+    }
+  }
+
+  if (mensaje) {
+
+    mensaje.textContent =
+      '🔄 Consultando reporte...';
+
+  }
+
+
+  if (resumen) {
+
+    resumen.style.display =
+      'none';
+
+  }
+
+
+  if (resultados) {
+
+    resultados.style.display =
+      'none';
+
+  }
+
+
+  if (tabla) {
+
+    tabla.innerHTML =
+      '';
+
+  }
+
+
+  consultarReporteBtn.disabled =
+    true;
+
+
+  try {
+
+    const nombreCallback =
+      'respuestaReporteMGP_' +
+      Date.now();
+
+
+    const parametros =
+      new URLSearchParams({
+
+        action:
+          'apiReportes',
+
+
+        fecha:
+  usaFiltroMensual
+    ? ''
+    : fecha,
+
+        mes:
+      mes,
+
+        grado:
+          grado,
+
+        reporte:
+          tipoReporte,
+
+        token:
+          state.token,
+
+        callback:
+          nombreCallback
+
+      });
+
+
+    const url =
+      CONFIG.API_URL +
+      '?' +
+      parametros.toString();
+
+
+    console.log(
+      'Consultando reporte:',
+      url
+    );
+
+
+    const resultado =
+      await new Promise(
+        function(resolve, reject) {
+
+          const script =
+            document.createElement(
+              'script'
+            );
+
+          let terminado =
+            false;
+
+
+          function limpiar() {
+
+            if (
+              script &&
+              script.parentNode
+            ) {
+
+              script.parentNode
+                .removeChild(script);
+
+            }
+
+
+            try {
+
+              delete window[
+                nombreCallback
+              ];
+
+            }
+            catch (error) {
+
+              console.warn(
+                'No fue posible eliminar callback REPORTE:',
+                error
+              );
+
+            }
+
+          }
+
+
+          window[nombreCallback] =
+            function(data) {
+
+              if (terminado) {
+
+                return;
+
+              }
+
+
+              terminado =
+                true;
+
+              limpiar();
+
+              resolve(data);
+
+            };
+
+
+          script.src =
+            url;
+
+
+          script.async =
+            true;
+
+
+          script.onerror =
+            function() {
+
+              if (terminado) {
+
+                return;
+
+              }
+
+
+              terminado =
+                true;
+
+              limpiar();
+
+
+              reject(
+                new Error(
+                  'No se pudo comunicar con el servidor.'
+                )
+              );
+
+            };
+
+
+          document.head.appendChild(
+            script
+          );
+
+        }
+      );
+
+
+    console.log(
+      'Respuesta API REPORTES:',
+      resultado
+    );
+
+
+    // -------------------------------------------------
+    // ERROR DEL SERVIDOR
+    // -------------------------------------------------
+
+    if (
+      !resultado ||
+      resultado.ok !== true
+    ) {
+
+      if (mensaje) {
+
+        mensaje.textContent =
+          '❌ ' +
+          (
+            resultado &&
+            resultado.mensaje
+              ? resultado.mensaje
+              : 'No fue posible obtener el reporte.'
+          );
+
+      }
+
+      return;
+
+    }
+
+
+    // -------------------------------------------------
+    // DEV 03 — REPORTE DIARIO DE PERSONAL
+    // Rama independiente del reporte de estudiantes.
+    // -------------------------------------------------
+
+    if (tipoReporte === 'personal') {
+
+      const personal =
+        Array.isArray(resultado.personal)
+          ? resultado.personal
+          : [];
+
+      const datosResumenPersonal =
+        resultado.resumen || {};
+
+      const totalElemento = document.getElementById('reporteTotal');
+      const presentesElemento = document.getElementById('reportePresentes');
+      const puntualesElemento = document.getElementById('reportePuntuales');
+      const tardanzasElemento = document.getElementById('reporteTardanzas');
+      const faltasElemento = document.getElementById('reporteFaltas');
+
+      if (totalElemento) totalElemento.textContent = datosResumenPersonal.total || 0;
+      if (presentesElemento) presentesElemento.textContent = datosResumenPersonal.presentes || 0;
+      if (puntualesElemento) puntualesElemento.textContent = datosResumenPersonal.puntuales || 0;
+      if (tardanzasElemento) tardanzasElemento.textContent = datosResumenPersonal.tardanzas || 0;
+      if (faltasElemento) faltasElemento.textContent = datosResumenPersonal.ausentes || 0;
+
+      if (resumen) resumen.style.display = 'block';
+
+      const tablaElemento = tabla ? tabla.closest('table') : null;
+      const cabeceraPersonal = tablaElemento ? tablaElemento.querySelector('thead') : null;
+
+      if (cabeceraPersonal) {
+        cabeceraPersonal.innerHTML =
+          '<tr>' +
+          '<th>DNI</th>' +
+          '<th>Personal</th>' +
+          '<th>Cargo</th>' +
+          '<th>Área</th>' +
+          '<th>Estado</th>' +
+          '<th>Ingreso</th>' +
+          '<th>Salida</th>' +
+          '<th>Puntualidad</th>' +
+          '<th>Método</th>' +
+          '<th>Usuario</th>' +
+          '<th>Observación</th>' +
+          '</tr>';
+      }
+
+      if (tabla) {
+        // Asegurar que el cuerpo de la tabla sea visible.
+        // Algunas reglas de estilo del reporte pueden dejar el tbody
+        // con display:none después de cambiar entre tipos de reporte.
+        tabla.style.display = 'table-row-group';
+        tabla.hidden = false;
+        tabla.innerHTML = '';
+
+        if (!personal.length) {
+          const filaVacia = document.createElement('tr');
+          filaVacia.style.display = 'table-row';
+          const celdaVacia = document.createElement('td');
+          celdaVacia.colSpan = 11;
+          celdaVacia.textContent = 'No hay registros de personal para el mes seleccionado.';
+          celdaVacia.style.display = 'table-cell';
+          filaVacia.appendChild(celdaVacia);
+          tabla.appendChild(filaVacia);
+        }
+
+        personal.forEach(function(persona) {
+          const fila = document.createElement('tr');
+          fila.style.display = 'table-row';
+          const valores = [
+            persona.dni || '',
+            persona.nombre || '',
+            persona.cargo || '',
+            persona.area || '',
+            persona.estado || '',
+            persona.horaIngreso || '',
+            persona.horaSalida || '',
+            persona.puntualidad || '',
+            persona.metodo || '',
+            persona.usuarioRegistro || '',
+            persona.observacion || ''
+          ];
+
+          valores.forEach(function(valor) {
+            const celda = document.createElement('td');
+            celda.style.display = 'table-cell';
+            celda.textContent = String(valor);
+            fila.appendChild(celda);
+          });
+
+          tabla.appendChild(fila);
+        });
+      }
+
+      if (resultados) {
+        resultados.style.display = 'block';
+        resultados.style.height = 'auto';
+        resultados.style.maxHeight = 'none';
+        resultados.style.overflow = 'visible';
+      }
+
+      const contenedorTablaFinalMGP = tabla
+        ? tabla.closest('table')
+          ? tabla.closest('table').parentElement
+          : null
+        : null;
+
+      if (contenedorTablaFinalMGP) {
+        contenedorTablaFinalMGP.style.height = 'auto';
+        contenedorTablaFinalMGP.style.maxHeight = 'none';
+        contenedorTablaFinalMGP.style.overflowX = 'auto';
+        contenedorTablaFinalMGP.style.overflowY = 'visible';
+      }
+
+      if (tabla) {
+        tabla.style.display = 'table-row-group';
+        tabla.style.height = 'auto';
+        tabla.style.maxHeight = 'none';
+        tabla.style.overflow = 'visible';
+      }
+
+      ultimoReporteMGP = {
+        tipoReporte: 'personal',
+        fecha: fecha,
+        mes: '',
+        grado: '',
+        resumen: datosResumenPersonal,
+        personal: personal
+      };
+
+      actualizarBotonesDescargaReporte();
+      renderizarMatrizMensualMGP();
+
+      if (mensaje) {
+        mensaje.textContent =
+          '✅ Reporte diario de personal generado: ' +
+          personal.length + ' registro(s).';
+      }
+
+      return;
+    }
+
+    // -------------------------------------------------
+    // GUARDAR REPORTE ACTUAL PARA EXPORTACIÓN
+    // -------------------------------------------------
+
+    ultimoReporteMGP = {
+      tipoReporte: tipoReporte,
+      fecha: fecha,
+      mes: mes,
+      grado: grado,
+      resumen: resultado.resumen || {},
+      alumnos: Array.isArray(resultado.alumnos)
+        ? resultado.alumnos
+        : [],
+      personal: Array.isArray(resultado.personal)
+        ? resultado.personal
+        : []
+    };
+
+    actualizarBotonesDescargaReporte();
+    renderizarMatrizMensualMGP();
+
+        // -------------------------------------------------
+    // ALERTAS V2 - VISUALIZACIÓN
+    // -------------------------------------------------
+    // Alertas utiliza resultado.alertas.
+    // No utiliza resultado.alumnos.
+    // -------------------------------------------------
+
+    if (esAlertas) {
+
+      const alertas =
+        Array.isArray(resultado.alertas)
+          ? resultado.alertas
+          : [];
+
+      console.log(
+        'Alertas recibidas:',
+        alertas.length
+      );
+
+      // -------------------------------------------------
+      // GUARDAR ALERTAS ACTUALES
+      // -------------------------------------------------
+
+      ultimoReporteMGP = {
+        tipoReporte: tipoReporte,
+        fecha: fecha,
+        mes: mes,
+        grado: grado,
+        resumen: resultado.resumen || {},
+        alumnos: [],
+        alertas: alertas
+      };
+
+      actualizarBotonesDescargaReporte();
+      renderizarMatrizMensualMGP();
+
+      // -------------------------------------------------
+      // OCULTAR RESUMEN NORMAL
+      // -------------------------------------------------
+
+      if (resumen) {
+        resumen.style.display = 'none';
+      }
+
+      // -------------------------------------------------
+      // MOSTRAR RESULTADOS
+      // -------------------------------------------------
+
+      if (resultados) {
+        resultados.style.display = 'block';
+      }
+
+      // -------------------------------------------------
+      // OCULTAR TABLA NORMAL
+      // -------------------------------------------------
+
+      if (tabla) {
+
+        const tablaNormal =
+          tabla.closest('table');
+
+        if (tablaNormal) {
+          tablaNormal.style.display = 'none';
+        }
+      }
+
+      // -------------------------------------------------
+      // OCULTAR SOLO EL ENCABEZADO "Detalle"
+      // -------------------------------------------------
+      // Se marca la clase para poder restaurarlo al cambiar
+      // a Mensual, Asistencia, Faltas o Tardanzas.
+      // -------------------------------------------------
+
+      if (resultados) {
+
+        const elementosDetalle =
+          resultados.querySelectorAll(
+            'h1,h2,h3,h4,h5,h6,strong,p,div,span,th,td'
+          );
+
+        elementosDetalle.forEach(
+          function(elemento) {
+
+            const texto =
+              String(
+                elemento.textContent || ''
+              ).trim();
+
+            if (texto === 'Detalle') {
+              elemento.classList.add(
+                'alertasOcultoMGP'
+              );
+              elemento.style.display = 'none';
+            }
+
+          }
+        );
+      }
+
+      // -------------------------------------------------
+      // ELIMINAR ALERTAS ANTERIORES
+      // -------------------------------------------------
+
+      const alertaAnterior =
+        document.getElementById(
+          'reporteAlertasMGP'
+        );
+
+      if (alertaAnterior) {
+        alertaAnterior.remove();
+      }
+
+      // -------------------------------------------------
+      // CONTENEDOR PRINCIPAL DE ALERTAS
+      // -------------------------------------------------
+
+      const contenedorAlertas =
+        document.createElement('div');
+
+      contenedorAlertas.id =
+        'reporteAlertasMGP';
+
+      contenedorAlertas.style.marginTop =
+        '10px';
+
+      contenedorAlertas.style.width =
+        '100%';
+
+      contenedorAlertas.style.maxWidth =
+        '100%';
+
+      contenedorAlertas.style.border =
+        '1px solid #2563eb';
+
+      contenedorAlertas.style.borderRadius =
+        '8px';
+
+      contenedorAlertas.style.padding =
+        '10px';
+
+      contenedorAlertas.style.background =
+        '#ffffff';
+
+      contenedorAlertas.style.overflowX =
+        'visible';
+
+      contenedorAlertas.style.overflowY =
+        'visible';
+
+      // -------------------------------------------------
+      // TÍTULO
+      // -------------------------------------------------
+
+      const tituloAlertas =
+        document.createElement('h3');
+
+      tituloAlertas.textContent =
+        'Alertas del mes';
+
+      tituloAlertas.style.margin =
+        '0 0 10px 0';
+
+      tituloAlertas.style.color =
+        '#172033';
+
+      contenedorAlertas.appendChild(
+        tituloAlertas
+      );
+
+      // -------------------------------------------------
+      // RESUMEN DE ALERTAS
+      // -------------------------------------------------
+
+      const resumenAlertas =
+        document.createElement('div');
+
+      const totalAlertas =
+        resultado.resumen &&
+        resultado.resumen.total !== undefined
+          ? resultado.resumen.total
+          : alertas.length;
+
+      const altas =
+        resultado.resumen &&
+        resultado.resumen.altas !== undefined
+          ? resultado.resumen.altas
+          : 0;
+
+      const medias =
+        resultado.resumen &&
+        resultado.resumen.medias !== undefined
+          ? resultado.resumen.medias
+          : 0;
+
+      resumenAlertas.textContent =
+        'Total: ' +
+        totalAlertas +
+        ' | Alta: ' +
+        altas +
+        ' | Media: ' +
+        medias;
+
+      resumenAlertas.style.fontWeight =
+        'bold';
+
+      resumenAlertas.style.marginBottom =
+        '12px';
+
+      resumenAlertas.style.color =
+        '#172033';
+
+      contenedorAlertas.appendChild(
+        resumenAlertas
+      );
+
+      // -------------------------------------------------
+      // CONTENEDOR DE TABLA
+      // -------------------------------------------------
+
+      const contenedorTablaAlertas =
+        document.createElement('div');
+
+      contenedorTablaAlertas.style.width =
+        '100%';
+
+      contenedorTablaAlertas.style.overflowX =
+        'auto';
+
+      contenedorTablaAlertas.style.overflowY =
+        'visible';
+
+      // -------------------------------------------------
+      // TABLA DE ALERTAS
+      // -------------------------------------------------
+
+      const tablaAlertas =
+        document.createElement('table');
+
+      tablaAlertas.style.width =
+        '100%';
+
+      tablaAlertas.style.minWidth =
+        '900px';
+
+      tablaAlertas.style.borderCollapse =
+        'collapse';
+
+      tablaAlertas.style.color =
+        '#172033';
+
+      tablaAlertas.style.background =
+        '#ffffff';
+
+      tablaAlertas.style.tableLayout =
+        'auto';
+
+      const colgroupAlertas =
+        document.createElement('colgroup');
+
+      [
+        '8%',
+        '8%',
+        '13%',
+        '10%',
+        '20%',
+        '10%',
+        '24%',
+        '7%'
+      ].forEach(function(ancho) {
+        const col = document.createElement('col');
+        col.style.width = ancho;
+        colgroupAlertas.appendChild(col);
+      });
+
+      tablaAlertas.appendChild(
+        colgroupAlertas
+      );
+
+      // -------------------------------------------------
+      // CABECERA
+      // -------------------------------------------------
+
+      const theadAlertas =
+        document.createElement('thead');
+
+      const filaCabecera =
+        document.createElement('tr');
+
+      [
+        'Nivel',
+        'Tipo',
+        'Código',
+        'DNI',
+        'Estudiante',
+        'Grado / Sección',
+        'Mensaje',
+        'Valor'
+      ].forEach(
+        function(texto) {
+
+          const th =
+            document.createElement('th');
+
+          th.textContent =
+            texto;
+
+          th.style.padding =
+            '8px';
+
+          th.style.borderBottom =
+            '1px solid #d7dee8';
+
+          th.style.textAlign =
+            'left';
+
+          th.style.background =
+            '#eef3f8';
+
+          th.style.color =
+            '#172033';
+
+          th.style.whiteSpace =
+            'nowrap';
+
+          th.style.verticalAlign =
+            'top';
+
+          filaCabecera.appendChild(
+            th
+          );
+
+        }
+      );
+
+      theadAlertas.appendChild(
+        filaCabecera
+      );
+
+      tablaAlertas.appendChild(
+        theadAlertas
+      );
+
+      // -------------------------------------------------
+      // CUERPO
+      // -------------------------------------------------
+
+      const tbodyAlertas =
+        document.createElement('tbody');
+
+      alertas.forEach(
+        function(alerta) {
+
+          const fila =
+            document.createElement('tr');
+
+          const valores = [
+            alerta.nivel || '',
+            alerta.tipo || '',
+            alerta.codigo || '',
+            alerta.dni || '',
+            alerta.nombre || '',
+            alerta.gradoSeccion || '',
+            alerta.mensaje || '',
+            alerta.valor !== undefined &&
+            alerta.valor !== null
+              ? alerta.valor
+              : ''
+          ];
+
+          valores.forEach(
+            function(valor) {
+
+              const celda =
+                document.createElement('td');
+
+              celda.textContent =
+                valor === undefined ||
+                valor === null
+                  ? ''
+                  : String(valor);
+
+              celda.style.padding =
+                '8px';
+
+              celda.style.borderBottom =
+                '1px solid #ddd';
+
+              celda.style.color =
+                '#172033';
+
+              celda.style.background =
+                '#ffffff';
+
+              celda.style.verticalAlign =
+                'top';
+
+              celda.style.whiteSpace =
+                'normal';
+
+              celda.style.wordBreak =
+                'break-word';
+
+              fila.appendChild(
+                celda
+              );
+
+            }
+          );
+
+          tbodyAlertas.appendChild(
+            fila
+          );
+
+        }
+      );
+
+      // -------------------------------------------------
+      // SIN ALERTAS
+      // -------------------------------------------------
+
+      if (!alertas.length) {
+
+        const filaSinAlertas =
+          document.createElement('tr');
+
+        const celdaSinAlertas =
+          document.createElement('td');
+
+        celdaSinAlertas.colSpan =
+          8;
+
+        celdaSinAlertas.textContent =
+          'No se encontraron alertas para el período seleccionado.';
+
+        celdaSinAlertas.style.padding =
+          '10px';
+
+        celdaSinAlertas.style.color =
+          '#172033';
+
+        filaSinAlertas.appendChild(
+          celdaSinAlertas
+        );
+
+        tbodyAlertas.appendChild(
+          filaSinAlertas
+        );
+
+      }
+
+      tablaAlertas.appendChild(
+        tbodyAlertas
+      );
+
+      contenedorTablaAlertas.appendChild(
+        tablaAlertas
+      );
+
+      contenedorAlertas.appendChild(
+        contenedorTablaAlertas
+      );
+
+      // -------------------------------------------------
+      // INSERTAR DIRECTAMENTE EN RESULTADOS
+      // -------------------------------------------------
+
+      if (resultados) {
+        resultados.appendChild(
+          contenedorAlertas
+        );
+      }
+
+      // -------------------------------------------------
+      // MENSAJE
+      // -------------------------------------------------
+
+      if (mensaje) {
+        mensaje.textContent =
+          '✅ Alertas generadas correctamente.';
+      }
+
+      // -------------------------------------------------
+      // NO CONTINUAR CON REPORTES NORMALES
+      // -------------------------------------------------
+
+      return;
+    }
+    
+    // -------------------------------------------------
+    // RESUMEN
+    // -------------------------------------------------
+
+    const datosResumen =
+      resultado.resumen || {};
+
+
+    const totalElemento =
+      document.getElementById(
+        'reporteTotal'
+      );
+
+    const presentesElemento =
+      document.getElementById(
+        'reportePresentes'
+      );
+
+    const puntualesElemento =
+      document.getElementById(
+        'reportePuntuales'
+      );
+
+    const tardanzasElemento =
+      document.getElementById(
+        'reporteTardanzas'
+      );
+
+    const faltasElemento =
+      document.getElementById(
+        'reporteFaltas'
+      );
+
+
+    if (totalElemento) {
+
+      totalElemento.textContent =
+        datosResumen.total || 0;
+
+    }
+
+
+    if (presentesElemento) {
+
+      presentesElemento.textContent =
+        datosResumen.presentes || 0;
+
+    }
+
+
+    if (puntualesElemento) {
+
+      puntualesElemento.textContent =
+        datosResumen.puntuales || 0;
+
+    }
+
+
+    if (tardanzasElemento) {
+
+      tardanzasElemento.textContent =
+        datosResumen.tardanzas || 0;
+
+    }
+
+
+    if (faltasElemento) {
+
+      faltasElemento.textContent =
+        datosResumen.faltas || 0;
+
+    }
+
+
+    if (resumen) {
+
+      resumen.style.display =
+        'block';
+
+    }
+
+
+    // -------------------------------------------------
+    // CARGAR GRADOS / SECCIONES EN EL SELECTOR
+    //
+    // No inventamos grados.
+    // Los obtenemos de los datos reales
+    // devueltos por apiReportes().
+    // -------------------------------------------------
+
+    if (gradoElemento) {
+
+      const gradosActuales =
+        new Set();
+
+      const alumnos =
+        Array.isArray(resultado.alumnos)
+          ? resultado.alumnos
+          : [];
+
+
+      alumnos.forEach(
+        function(alumno) {
+
+          const gradoSeccion =
+            String(
+              alumno.gradoSeccion || ''
+            ).trim();
+
+
+          if (gradoSeccion) {
+
+            gradosActuales.add(
+              gradoSeccion
+            );
+
+          }
+
+        }
+      );
+
+
+      gradosActuales.forEach(
+        function(gradoSeccion) {
+
+          const existe =
+            Array.from(
+              gradoElemento.options
+            ).some(
+              function(opcion) {
+
+                return (
+                  opcion.value ===
+                  gradoSeccion
+                );
+
+              }
+            );
+
+
+          if (!existe) {
+
+            const opcion =
+              document.createElement(
+                'option'
+              );
+
+
+            opcion.value =
+              gradoSeccion;
+
+            opcion.textContent =
+              gradoSeccion;
+
+
+            gradoElemento.appendChild(
+              opcion
+            );
+
+          }
+
+        }
+      );
+
+    }
+
+
+    // -------------------------------------------------
+    // TABLA
+    // -------------------------------------------------
+
+    const alumnos =
+      esMensualPersonal
+        ? (Array.isArray(resultado.personal)
+            ? resultado.personal
+            : [])
+        : (Array.isArray(resultado.alumnos)
+            ? resultado.alumnos
+            : []);
+
+
+    if (tabla) {
+
+      // El encabezado cambia según el tipo de reporte.
+      // El reporte diario conserva Estado/Puntualidad/Hora.
+      // El reporte mensual muestra los acumulados del mes.
+      const tablaElemento =
+        tabla.closest('table');
+
+      const cabecera =
+        tablaElemento
+          ? tablaElemento.querySelector('thead')
+          : null;
+
+      if (cabecera) {
+
+        if (esMensualPersonal) {
+
+          cabecera.innerHTML =
+            '<tr>' +
+            '<th>DNI</th>' +
+            '<th>Personal</th>' +
+            '<th>Cargo</th>' +
+            '<th>Área</th>' +
+            '<th>Días evaluados</th>' +
+            '<th>Asistencias</th>' +
+            '<th>Faltas</th>' +
+            '<th>Puntuales</th>' +
+            '<th>Tardanzas</th>' +
+            '<th>% Asistencia</th>' +
+            '<th>Salidas</th>' +
+            '<th>Detalle</th>' +
+            '</tr>';
+
+        } else if (esMensual) {
+
+          cabecera.innerHTML =
+            '<tr>' +
+            '<th>DNI</th>' +
+            '<th>Estudiante</th>' +
+            '<th>Grado / Sección</th>' +
+            '<th>Días evaluados</th>' +
+            '<th>Presentes</th>' +
+            '<th>Faltas</th>' +
+            '<th>Faltas derivadas</th>' +
+            '<th>Puntuales</th>' +
+            '<th>Tardanzas</th>' +
+            '<th>Registros DNI</th>' +
+            '<th>Límite DNI</th>' +
+            '<th>Justificación</th>' +
+            '<th>Detalle</th>' +
+            '</tr>';
+
+        } else {
+
+          cabecera.innerHTML =
+            '<tr>' +
+            '<th>DNI</th>' +
+            '<th>Estudiante</th>' +
+            '<th>Grado / Sección</th>' +
+            '<th>Estado</th>' +
+            '<th>Puntualidad</th>' +
+            '<th>Hora</th>' +
+            '</tr>';
+
+        }
+
+      }
+
+      // Mensual de personal: mantener visibles DNI y Personal
+      // al desplazar horizontalmente la tabla, también en celular.
+      if (esMensualPersonal && cabecera) {
+        const encabezadosPersonal = cabecera.querySelectorAll('th');
+        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+        if (encabezadosPersonal.length >= 2) {
+          encabezadosPersonal[0].style.position = 'sticky';
+          encabezadosPersonal[0].style.left = '0';
+          encabezadosPersonal[0].style.zIndex = '3';
+          encabezadosPersonal[0].style.background = '#fff';
+          encabezadosPersonal[0].style.minWidth = '95px';
+          encabezadosPersonal[0].style.width = '95px';
+
+          if (!esCelularMGP) {
+            encabezadosPersonal[1].style.position = 'sticky';
+            encabezadosPersonal[1].style.left = '95px';
+            encabezadosPersonal[1].style.zIndex = '3';
+            encabezadosPersonal[1].style.background = '#fff';
+            encabezadosPersonal[1].style.minWidth = '180px';
+            encabezadosPersonal[1].style.width = '180px';
+          }
+        }
+      }
+
+      // ESTUDIANTES: en PC fijar DNI y Estudiante.
+      // En celular fijar solamente DNI para conservar espacio visible.
+      if (!esMensualPersonal && cabecera) {
+        const encabezadosEstudiante = cabecera.querySelectorAll('th');
+        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+        if (encabezadosEstudiante.length >= 2) {
+          encabezadosEstudiante[0].style.position = 'sticky';
+          encabezadosEstudiante[0].style.left = '0';
+          encabezadosEstudiante[0].style.zIndex = '3';
+          encabezadosEstudiante[0].style.background = '#fff';
+          encabezadosEstudiante[0].style.minWidth = '95px';
+          encabezadosEstudiante[0].style.width = '95px';
+
+          if (!esCelularMGP) {
+            encabezadosEstudiante[1].style.position = 'sticky';
+            encabezadosEstudiante[1].style.left = '95px';
+            encabezadosEstudiante[1].style.zIndex = '3';
+            encabezadosEstudiante[1].style.background = '#fff';
+            encabezadosEstudiante[1].style.minWidth = '180px';
+            encabezadosEstudiante[1].style.width = '180px';
+          }
+        }
+      }
+
+
+      alumnos.forEach(
+        function(alumno) {
+
+          const fila =
+            document.createElement(
+              'tr'
+            );
+
+
+          const celdaDni =
+            document.createElement(
+              'td'
+            );
+
+          celdaDni.textContent =
+            alumno.dni || '';
+
+
+          const celdaNombre =
+            document.createElement(
+              'td'
+            );
+
+          celdaNombre.textContent =
+            alumno.nombre || '';
+
+
+          const celdaGrado =
+            document.createElement(
+              'td'
+            );
+
+          celdaGrado.textContent =
+            alumno.gradoSeccion || '';
+
+
+          if (esMensualPersonal) {
+
+            // Fijar DNI y Personal al desplazarse horizontalmente.
+            celdaDni.style.position = 'sticky';
+            celdaDni.style.left = '0';
+            celdaDni.style.zIndex = '2';
+            celdaDni.style.background = '#fff';
+            celdaDni.style.minWidth = '95px';
+            celdaDni.style.width = '95px';
+
+            const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+            if (!esCelularMGP) {
+              celdaNombre.style.position = 'sticky';
+              celdaNombre.style.left = '95px';
+              celdaNombre.style.zIndex = '2';
+              celdaNombre.style.background = '#fff';
+              celdaNombre.style.minWidth = '180px';
+              celdaNombre.style.width = '180px';
+            }
+
+            fila.appendChild(celdaDni);
+            fila.appendChild(celdaNombre);
+
+            [
+              alumno.cargo || '',
+              alumno.area || '',
+              alumno.diasEvaluados || 0,
+              alumno.presentes || 0,
+              alumno.faltas || 0,
+              alumno.puntuales || 0,
+              alumno.tardanzas || 0,
+              (alumno.porcentajeAsistencia || 0) + '%',
+              alumno.conSalida || 0
+            ].forEach(function(valor) {
+              const celda = document.createElement('td');
+              celda.textContent = String(valor);
+              fila.appendChild(celda);
+            });
+
+            const celdaDetallePersonal = document.createElement('td');
+            const botonDetallePersonal = document.createElement('button');
+            botonDetallePersonal.type = 'button';
+            botonDetallePersonal.textContent = 'Ver detalle';
+            botonDetallePersonal.style.cursor = 'pointer';
+            botonDetallePersonal.style.padding = '4px 8px';
+            botonDetallePersonal.style.borderRadius = '4px';
+            botonDetallePersonal.style.border = '1px solid #ccc';
+            botonDetallePersonal.style.background = '#f5f5f5';
+
+            botonDetallePersonal.addEventListener('click', function() {
+              const siguiente = fila.nextElementSibling;
+              if (siguiente && siguiente.dataset && siguiente.dataset.detallePersonal === '1') {
+                siguiente.remove();
+                botonDetallePersonal.textContent = 'Ver detalle';
+                return;
+              }
+
+              const filaDetalle = document.createElement('tr');
+              filaDetalle.dataset.detallePersonal = '1';
+              const celdaCompleta = document.createElement('td');
+              celdaCompleta.colSpan = 12;
+              celdaCompleta.style.padding = '10px';
+
+              const titulo = document.createElement('strong');
+              titulo.textContent = 'Detalle diario de ' + (alumno.nombre || 'personal');
+              celdaCompleta.appendChild(titulo);
+
+              const tablaDetalle = document.createElement('table');
+              tablaDetalle.style.width = '100%';
+              tablaDetalle.style.marginTop = '8px';
+              tablaDetalle.style.borderCollapse = 'collapse';
+
+              const filaCabecera = document.createElement('tr');
+              ['Fecha','Estado','Puntualidad','Ingreso','Salida','Método','Usuario','Observación'].forEach(function(texto) {
+                const th = document.createElement('th');
+                th.textContent = texto;
+                th.style.textAlign = 'left';
+                th.style.padding = '4px';
+                th.style.borderBottom = '1px solid #ddd';
+                filaCabecera.appendChild(th);
+              });
+              tablaDetalle.appendChild(filaCabecera);
+
+              const detalleDias = Array.isArray(alumno.detalleDias) ? alumno.detalleDias : [];
+              if (!detalleDias.length) {
+                const filaVacia = document.createElement('tr');
+                const celdaVacia = document.createElement('td');
+                celdaVacia.colSpan = 8;
+                celdaVacia.textContent = 'No hay detalle diario disponible.';
+                celdaVacia.style.padding = '6px';
+                filaVacia.appendChild(celdaVacia);
+                tablaDetalle.appendChild(filaVacia);
+              } else {
+                detalleDias.forEach(function(dia) {
+                  const filaDia = document.createElement('tr');
+                  [dia.fecha || '', dia.estado || '', dia.puntualidad || '', dia.horaIngreso || '', dia.horaSalida || '', dia.metodo || '', dia.usuarioRegistro || '', dia.observacion || ''].forEach(function(valor) {
+                    const td = document.createElement('td');
+                    td.textContent = String(valor);
+                    td.style.padding = '4px';
+                    td.style.borderBottom = '1px solid #eee';
+                    filaDia.appendChild(td);
+                  });
+                  tablaDetalle.appendChild(filaDia);
+                });
+              }
+
+              celdaCompleta.appendChild(tablaDetalle);
+              filaDetalle.appendChild(celdaCompleta);
+              fila.parentNode.insertBefore(filaDetalle, fila.nextSibling);
+              botonDetallePersonal.textContent = 'Ocultar detalle';
+            });
+
+            celdaDetallePersonal.appendChild(botonDetallePersonal);
+            fila.appendChild(celdaDetallePersonal);
+
+          } else {
+
+          // ESTUDIANTES: en PC fijar DNI y Estudiante.
+          // En celular fijar solamente DNI para conservar espacio visible.
+          const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+          celdaDni.style.position = 'sticky';
+          celdaDni.style.left = '0';
+          celdaDni.style.zIndex = '2';
+          celdaDni.style.background = '#fff';
+          celdaDni.style.minWidth = '95px';
+          celdaDni.style.width = '95px';
+
+          if (!esCelularMGP) {
+            celdaNombre.style.position = 'sticky';
+            celdaNombre.style.left = '95px';
+            celdaNombre.style.zIndex = '2';
+            celdaNombre.style.background = '#fff';
+            celdaNombre.style.minWidth = '180px';
+            celdaNombre.style.width = '180px';
+          }
+
+          fila.appendChild(
+            celdaDni
+          );
+
+          fila.appendChild(
+            celdaNombre
+          );
+
+          fila.appendChild(
+            celdaGrado
+          );
+
+
+          if (esMensual) {
+
+            const celdaDiasEvaluados =
+              document.createElement(
+                'td'
+              );
+
+            celdaDiasEvaluados.textContent =
+              alumno.diasEvaluados || 0;
+
+
+            const celdaPresentes =
+              document.createElement(
+                'td'
+              );
+
+            celdaPresentes.textContent =
+              alumno.presentes || 0;
+
+
+            const celdaFaltas =
+              document.createElement(
+                'td'
+              );
+
+            celdaFaltas.textContent =
+              alumno.faltas || 0;
+
+
+            const celdaFaltasDerivadas =
+              document.createElement(
+                'td'
+              );
+
+            celdaFaltasDerivadas.textContent =
+              alumno.faltasDerivadasPorTardanzas || 0;
+
+
+            const celdaPuntuales =
+              document.createElement(
+                'td'
+              );
+
+            celdaPuntuales.textContent =
+              alumno.puntuales || 0;
+
+
+            const celdaTardanzas =
+              document.createElement(
+                'td'
+              );
+
+            celdaTardanzas.textContent =
+              alumno.tardanzas || 0;
+
+
+            fila.appendChild(
+              celdaDiasEvaluados
+            );
+
+            fila.appendChild(
+              celdaPresentes
+            );
+
+            fila.appendChild(
+              celdaFaltas
+            );
+
+            fila.appendChild(
+              celdaFaltasDerivadas
+            );
+
+            fila.appendChild(
+              celdaPuntuales
+            );
+
+            fila.appendChild(
+              celdaTardanzas
+            );
+
+
+            // ---------------------------------------------
+            // REGLA MAX_DNI_MENSUAL
+            // ---------------------------------------------
+            const celdaRegistrosDni =
+              document.createElement(
+                'td'
+              );
+
+            celdaRegistrosDni.textContent =
+              alumno.registrosDniMes || 0;
+
+
+            const celdaLimiteDni =
+              document.createElement(
+                'td'
+              );
+
+            celdaLimiteDni.textContent =
+              alumno.limiteDniMensual || 0;
+
+
+            const celdaJustificacion =
+              document.createElement(
+                'td'
+              );
+
+            const requiereJustificacion =
+              alumno.requiereJustificacion === true;
+
+            celdaJustificacion.textContent =
+              requiereJustificacion
+                ? 'REQUIERE'
+                : 'NO';
+
+
+            if (requiereJustificacion) {
+              celdaJustificacion.style.fontWeight =
+                'bold';
+            }
+
+
+            fila.appendChild(
+              celdaRegistrosDni
+            );
+
+            fila.appendChild(
+              celdaLimiteDni
+            );
+
+            fila.appendChild(
+              celdaJustificacion
+            );
+
+
+            // ---------------------------------------------
+            // BOTÓN VER DETALLE DEL MES
+            // ---------------------------------------------
+            const celdaDetalle =
+              document.createElement(
+                'td'
+              );
+
+            const botonDetalle =
+              document.createElement(
+                'button'
+              );
+
+            botonDetalle.type = 'button';
+            botonDetalle.textContent = 'Ver detalle';
+
+            botonDetalle.style.cursor = 'pointer';
+            botonDetalle.style.padding = '4px 8px';
+            botonDetalle.style.borderRadius = '4px';
+            botonDetalle.style.border = '1px solid #ccc';
+            botonDetalle.style.background = '#f5f5f5';
+
+            botonDetalle.addEventListener(
+              'click',
+              function() {
+
+                const siguiente =
+                  fila.nextElementSibling;
+
+                if (
+                  siguiente &&
+                  siguiente.dataset &&
+                  siguiente.dataset.detalleAlumno === '1'
+                ) {
+                  siguiente.remove();
+                  botonDetalle.textContent = 'Ver detalle';
+                  return;
+                }
+
+                const filaDetalle =
+                  document.createElement(
+                    'tr'
+                  );
+
+                filaDetalle.dataset.detalleAlumno = '1';
+
+                const celdaDetalleCompleto =
+                  document.createElement(
+                    'td'
+                  );
+
+                celdaDetalleCompleto.colSpan = 13;
+                celdaDetalleCompleto.style.padding = '10px';
+
+                const tituloDetalle =
+                  document.createElement(
+                    'strong'
+                  );
+
+                tituloDetalle.textContent =
+                  'Detalle diario de ' +
+                  (alumno.nombre || 'estudiante');
+
+                celdaDetalleCompleto.appendChild(
+                  tituloDetalle
+                );
+
+                const tablaDetalle =
+                  document.createElement(
+                    'table'
+                  );
+
+                tablaDetalle.style.width = '100%';
+                tablaDetalle.style.marginTop = '8px';
+                tablaDetalle.style.borderCollapse = 'collapse';
+
+                const encabezadoDetalle =
+                  document.createElement(
+                    'tr'
+                  );
+
+                [
+                  'Fecha',
+                  'Estado',
+                  'Puntualidad',
+                  'Hora'
+                ].forEach(
+                  function(texto) {
+                    const th =
+                      document.createElement(
+                        'th'
+                      );
+
+                    th.textContent = texto;
+                    th.style.textAlign = 'left';
+                    th.style.padding = '4px';
+                    th.style.borderBottom = '1px solid #ddd';
+
+                    encabezadoDetalle.appendChild(th);
+                  }
+                );
+
+                tablaDetalle.appendChild(
+                  encabezadoDetalle
+                );
+
+                const detalleDias =
+                  Array.isArray(alumno.detalleDias)
+                    ? alumno.detalleDias
+                    : [];
+
+                if (!detalleDias.length) {
+
+                  const filaSinDetalle =
+                    document.createElement(
+                      'tr'
+                    );
+
+                  const celdaSinDetalle =
+                    document.createElement(
+                      'td'
+                    );
+
+                  celdaSinDetalle.colSpan = 4;
+                  celdaSinDetalle.textContent =
+                    'No hay detalle diario disponible.';
+                  celdaSinDetalle.style.padding = '6px';
+
+                  filaSinDetalle.appendChild(
+                    celdaSinDetalle
+                  );
+
+                  tablaDetalle.appendChild(
+                    filaSinDetalle
+                  );
+
+                } else {
+
+                  detalleDias.forEach(
+                    function(dia) {
+
+                      const filaDia =
+                        document.createElement(
+                          'tr'
+                        );
+
+                      [
+                        dia.fecha || '',
+                        dia.estado || '',
+                        dia.puntualidad || '',
+                        dia.hora || ''
+                      ].forEach(
+                        function(valor) {
+
+                          const td =
+                            document.createElement(
+                              'td'
+                            );
+
+                          td.textContent = valor;
+                          td.style.padding = '4px';
+                          td.style.borderBottom = '1px solid #eee';
+
+                          filaDia.appendChild(td);
+
+                        }
+                      );
+
+                      tablaDetalle.appendChild(
+                        filaDia
+                      );
+
+                    }
+                  );
+
+                }
+
+                celdaDetalleCompleto.appendChild(
+                  tablaDetalle
+                );
+
+                filaDetalle.appendChild(
+                  celdaDetalleCompleto
+                );
+
+                fila.parentNode.insertBefore(
+                  filaDetalle,
+                  fila.nextSibling
+                );
+
+                botonDetalle.textContent = 'Ocultar detalle';
+
+              }
+            );
+
+            celdaDetalle.appendChild(
+              botonDetalle
+            );
+
+            fila.appendChild(
+              celdaDetalle
+            );
+
+          } else {
+
+            const celdaEstado =
+              document.createElement(
+                'td'
+              );
+
+            celdaEstado.textContent =
+              alumno.estado || '';
+
+
+            const celdaPuntualidad =
+              document.createElement(
+                'td'
+              );
+
+            celdaPuntualidad.textContent =
+              alumno.puntualidad || '';
+
+
+            const celdaHora =
+              document.createElement(
+                'td'
+              );
+
+            celdaHora.textContent =
+              alumno.hora ||
+              alumno.horaRegistro ||
+              alumno.horaIngreso ||
+              '';
+
+
+            fila.appendChild(
+              celdaEstado
+            );
+
+            fila.appendChild(
+              celdaPuntualidad
+            );
+
+            fila.appendChild(
+              celdaHora
+            );
+
+          }
+
+          }
+
+
+          tabla.appendChild(
+            fila
+          );
+
+        }
+      );
+
+      // Ajuste final de celdas del reporte principal.
+      // No altera valores ni estructura; solo presentación.
+      const celdasReporte =
+        tabla.querySelectorAll('th, td');
+
+      celdasReporte.forEach(
+        function(celda) {
+          celda.style.padding = '6px';
+          celda.style.whiteSpace = 'normal';
+          celda.style.wordBreak = 'break-word';
+          celda.style.overflowWrap = 'break-word';
+          celda.style.verticalAlign = 'top';
+        }
+      );
+
+    }
+
+
+    if (resultados) {
+
+      resultados.style.display =
+        'block';
+
+      // -------------------------------------------------
+      // MARCO AZUL PARA TODOS LOS REPORTES NORMALES
+      // -------------------------------------------------
+      // Mismo lenguaje visual utilizado en Alertas.
+      // Solo modifica presentación.
+      // -------------------------------------------------
+      resultados.style.border =
+        '1px solid #2563eb';
+
+      resultados.style.borderRadius =
+        '8px';
+
+      resultados.style.padding =
+        '10px';
+
+      resultados.style.background =
+        '#ffffff';
+
+      resultados.style.boxSizing =
+        'border-box';
+
+    }
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '✅ Reporte generado correctamente.';
+
+    }
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error en consulta de Reportes:',
+      error
+    );
+
+
+    if (mensaje) {
+
+      mensaje.textContent =
+        '❌ No se pudo obtener el reporte: ' +
+        error.message;
+
+    }
+
+  }
+  finally {
+
+    consultarReporteBtn.disabled =
+      false;
+
+  }
+
+}
+// =====================================================
+// MATRIZ MENSUAL V2 - APOYO PARA SIAGIE
+// -----------------------------------------------------
+// Usa el detalle mensual que ya devuelve apiReportes().
+// No modifica datos ni crea nuevos registros.
+// =====================================================
+
+function renderizarMatrizMensualPersonalMGP(
+  contenedorMatriz,
+  contenedorIncidencias,
+  contenedorPrincipal
+) {
+
+  const reporte = ultimoReporteMGP;
+  const mes = String(reporte.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+  const ultimoDia =
+    anio && numeroMes
+      ? new Date(anio, numeroMes, 0).getDate()
+      : 0;
+
+  if (!anio || !numeroMes || !ultimoDia) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No fue posible determinar el mes del reporte.';
+    contenedorIncidencias.textContent = '';
+    return;
+  }
+
+  const personal =
+    Array.isArray(reporte.personal)
+      ? reporte.personal
+      : [];
+
+  if (!personal.length) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No hay personal para mostrar.';
+    contenedorIncidencias.textContent =
+      'No hay incidencias para mostrar.';
+    return;
+  }
+
+  const diasEvaluados = new Set();
+  const datosPorPersona = [];
+  const incidencias = [];
+
+  personal.forEach(function(persona, indicePersona) {
+    const porFecha = {};
+    const detalleDias =
+      Array.isArray(persona.detalleDias)
+        ? persona.detalleDias
+        : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha = String(dia.fecha || '').trim();
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) return;
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) return;
+
+      diasEvaluados.add(diaNumero);
+
+      const estado =
+        String(dia.estado || '').trim().toUpperCase();
+      const puntualidad =
+        String(dia.puntualidad || '').trim().toUpperCase();
+
+      let codigo = 'F';
+      if (estado === 'PRESENTE') {
+        codigo = puntualidad === 'TARDE' ? 'T' : 'A';
+      }
+
+      porFecha[diaNumero] = {
+        codigo: codigo,
+        fecha: fecha
+      };
+    });
+
+    datosPorPersona.push({
+      numero: indicePersona + 1,
+      dni: persona.dni || '',
+      nombre: persona.nombre || '',
+      porFecha: porFecha
+    });
+  });
+
+  const tablaMatriz =
+    document.createElement('table');
+
+  tablaMatriz.style.borderCollapse = 'collapse';
+  tablaMatriz.style.minWidth = '1100px';
+  tablaMatriz.style.width = '100%';
+  tablaMatriz.style.tableLayout = 'auto';
+  tablaMatriz.style.fontSize = '10px';
+
+  const thead =
+    document.createElement('thead');
+  const filaCabecera =
+    document.createElement('tr');
+
+  ['N.º', 'DNI', 'PERSONAL'].forEach(function(texto) {
+    const th = document.createElement('th');
+    th.textContent = texto;
+    th.style.padding = '3px';
+    th.style.border = '1px solid #ccc';
+    th.style.whiteSpace = 'normal';
+    th.style.wordBreak = 'break-word';
+    filaCabecera.appendChild(th);
+  });
+
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    const th = document.createElement('th');
+    th.textContent = String(dia);
+    th.style.padding = '3px';
+    th.style.border = '1px solid #ccc';
+    th.style.textAlign = 'center';
+    th.style.width = '2.2%';
+    filaCabecera.appendChild(th);
+  }
+
+  thead.appendChild(filaCabecera);
+  tablaMatriz.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  datosPorPersona.forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    [
+      item.numero,
+      item.dni,
+      item.nombre
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '3px';
+      td.style.border = '1px solid #ccc';
+      td.style.whiteSpace = 'normal';
+      td.style.wordBreak = 'break-word';
+      fila.appendChild(td);
+    });
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const td = document.createElement('td');
+      const registro = item.porFecha[dia];
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      td.textContent = codigo;
+      td.style.padding = '3px';
+      td.style.border = '1px solid #ccc';
+      td.style.textAlign = 'center';
+      td.style.fontWeight = 'bold';
+      td.style.width = '2.2%';
+      fila.appendChild(td);
+
+      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
+        incidencias.push({
+          numero: item.numero,
+          nombre: item.nombre,
+          dni: item.dni,
+          dia: dia,
+          fecha: registro.fecha || '',
+          codigo: codigo
+        });
+      }
+    }
+
+    tbody.appendChild(fila);
+  });
+
+  tablaMatriz.appendChild(tbody);
+
+  contenedorMatriz.style.maxWidth = '100%';
+  contenedorMatriz.style.overflowX = 'auto';
+  contenedorMatriz.style.overflowY = 'visible';
+  contenedorMatriz.style.webkitOverflowScrolling = 'touch';
+  contenedorMatriz.appendChild(tablaMatriz);
+
+  const leyenda = document.createElement('div');
+  leyenda.style.marginTop = '12px';
+  leyenda.style.padding = '10px';
+  leyenda.style.border = '1px solid #ccc';
+  leyenda.style.background = '#f8f8f8';
+
+  const tituloLeyenda = document.createElement('strong');
+  tituloLeyenda.textContent = 'Leyenda de códigos';
+  leyenda.appendChild(tituloLeyenda);
+
+  const tablaLeyenda = document.createElement('table');
+  tablaLeyenda.style.borderCollapse = 'collapse';
+  tablaLeyenda.style.marginTop = '7px';
+
+  [
+    ['A', 'Asistió'],
+    ['T', 'Tardanza'],
+    ['F', 'Falta'],
+    ['D', 'Día no evaluable']
+  ].forEach(function(item) {
+    const fila = document.createElement('tr');
+    item.forEach(function(valor, indice) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '4px 10px';
+      td.style.border = '1px solid #ccc';
+      if (indice === 0) {
+        td.style.fontWeight = 'bold';
+        td.style.textAlign = 'center';
+      }
+      fila.appendChild(td);
+    });
+    tablaLeyenda.appendChild(fila);
+  });
+
+  leyenda.appendChild(tablaLeyenda);
+  contenedorMatriz.appendChild(leyenda);
+
+  // PERSONAL: no muestra ni genera la sección de incidencias estudiantiles.
+  // Esa sección pertenece exclusivamente a la matriz de estudiantes.
+  contenedorIncidencias.innerHTML = '';
+
+  contenedorPrincipal.style.display = 'block';
+  contenedorPrincipal.style.border = '1px solid #2563eb';
+  contenedorPrincipal.style.borderRadius = '8px';
+  contenedorPrincipal.style.padding = '10px';
+  contenedorPrincipal.style.background = '#ffffff';
+  contenedorPrincipal.style.boxSizing = 'border-box';
+}
+
+function renderizarMatrizMensualMGP() {
+
+  const contenedorMatriz =
+    document.getElementById(
+      'reporteMatrizTablaContenedor'
+    );
+
+  const contenedorIncidencias =
+    document.getElementById(
+      'reporteIncidenciasTablaContenedor'
+    );
+
+  const contenedorPrincipal =
+    document.getElementById(
+      'reporteMatrizMensual'
+    );
+
+  if (!contenedorMatriz ||
+      !contenedorIncidencias ||
+      !contenedorPrincipal) {
+    return;
+  }
+
+  contenedorMatriz.innerHTML = '';
+  contenedorIncidencias.innerHTML = '';
+
+  if (!matrizMensualVisibleMGP ||
+      !ultimoReporteMGP ||
+      (ultimoReporteMGP.tipoReporte !== 'mensual' &&
+       ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
+    contenedorPrincipal.style.display = 'none';
+    return;
+  }
+
+  // MATRIZ MENSUAL DE PERSONAL: usa exactamente la misma
+  // estructura visual de la matriz mensual de estudiantes,
+  // pero trabaja exclusivamente con ultimoReporteMGP.personal.
+  if (ultimoReporteMGP.tipoReporte === 'mensual_personal') {
+    renderizarMatrizMensualPersonalMGP(
+      contenedorMatriz,
+      contenedorIncidencias,
+      contenedorPrincipal
+    );
+    return;
+  }
+
+  const alumnos =
+    Array.isArray(ultimoReporteMGP.alumnos)
+      ? ultimoReporteMGP.alumnos
+      : [];
+
+  if (!alumnos.length) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No hay estudiantes para mostrar.';
+    contenedorIncidencias.textContent =
+      'No hay incidencias para mostrar.';
+    return;
+  }
+
+  const mes =
+    String(ultimoReporteMGP.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+
+  if (!anio || !numeroMes) {
+    contenedorPrincipal.style.display = 'block';
+    contenedorMatriz.textContent =
+      'No fue posible determinar el mes del reporte.';
+    return;
+  }
+
+  const ultimoDia =
+    new Date(anio, numeroMes, 0).getDate();
+
+  const diasEvaluados = new Set();
+  const datosPorAlumno = [];
+  const incidencias = [];
+
+  alumnos.forEach(function(alumno, indiceAlumno) {
+
+    const porFecha = {};
+    const detalleDias =
+      Array.isArray(alumno.detalleDias)
+        ? alumno.detalleDias
+        : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha =
+        String(dia.fecha || '').trim();
+
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) {
+        return;
+      }
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) {
+        return;
+      }
+
+      diasEvaluados.add(diaNumero);
+      porFecha[diaNumero] = {
+        codigo: String(dia.codigo || '').trim().toUpperCase(),
+        fecha: fecha,
+        estado: String(dia.estado || '').trim().toUpperCase(),
+        puntualidad: String(dia.puntualidad || '').trim().toUpperCase(),
+        hora: String(dia.hora || '').trim()
+      };
+    });
+
+    datosPorAlumno.push({
+      alumno: alumno,
+      porFecha: porFecha,
+      numero: indiceAlumno + 1
+    });
+  });
+
+  // ---------------------------------------------------
+  // TABLA MATRIZ
+  // ---------------------------------------------------
+
+  const tablaMatriz =
+    document.createElement('table');
+
+  tablaMatriz.style.borderCollapse = 'collapse';
+  tablaMatriz.style.minWidth = '1100px';
+  tablaMatriz.style.width = '100%';
+  tablaMatriz.style.tableLayout = 'auto';
+  tablaMatriz.style.fontSize = '10px';
+
+  const thead =
+    document.createElement('thead');
+  const filaCabecera =
+    document.createElement('tr');
+
+  [
+    'N.º',
+    'DNI',
+    'APELLIDOS Y NOMBRES'
+  ].forEach(function(texto) {
+    const th = document.createElement('th');
+    th.textContent = texto;
+    th.style.padding = '3px';
+    th.style.border = '1px solid #ccc';
+    th.style.whiteSpace = 'normal';
+    th.style.wordBreak = 'break-word';
+    filaCabecera.appendChild(th);
+  });
+
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    const th = document.createElement('th');
+    th.textContent = String(dia);
+    th.style.padding = '3px';
+    th.style.border = '1px solid #ccc';
+    th.style.textAlign = 'center';
+    th.style.width = '2.2%';
+    filaCabecera.appendChild(th);
+  }
+
+  thead.appendChild(filaCabecera);
+  tablaMatriz.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  datosPorAlumno.forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    [
+      item.numero,
+      item.alumno.dni || '',
+      item.alumno.nombre || ''
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '3px';
+      td.style.border = '1px solid #ccc';
+      td.style.whiteSpace = 'normal';
+      td.style.wordBreak = 'break-word';
+      fila.appendChild(td);
+    });
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const td = document.createElement('td');
+      const registro = item.porFecha[dia];
+
+      // Si el día fue evaluado, el código proviene
+      // directamente de las reglas mensuales actuales.
+      // Si no fue evaluado, se muestra D.
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      td.textContent = codigo;
+      td.style.padding = '3px';
+      td.style.border = '1px solid #ccc';
+      td.style.textAlign = 'center';
+      td.style.fontWeight = 'bold';
+      td.style.width = '2.2%';
+      fila.appendChild(td);
+
+      if (
+        registro &&
+        ['T', 'U', 'F', 'J'].indexOf(codigo) !== -1
+      ) {
+        incidencias.push({
+          numero: item.numero,
+          nombre: item.alumno.nombre || '',
+          dni: item.alumno.dni || '',
+          dia: dia,
+          fecha: registro.fecha || '',
+          codigo: codigo
+        });
+      }
+    }
+
+    tbody.appendChild(fila);
+  });
+
+  tablaMatriz.appendChild(tbody);
+
+  contenedorMatriz.style.maxWidth = '100%';
+  contenedorMatriz.style.overflowX = 'auto';
+  contenedorMatriz.style.overflowY = 'visible';
+  contenedorMatriz.style.webkitOverflowScrolling = 'touch';
+
+  contenedorMatriz.appendChild(tablaMatriz);
+
+  // ---------------------------------------------------
+  // LEYENDA DE CÓDIGOS
+  // ---------------------------------------------------
+
+  const leyenda = document.createElement('div');
+  leyenda.style.marginTop = '12px';
+  leyenda.style.padding = '10px';
+  leyenda.style.border = '1px solid #ccc';
+  leyenda.style.background = '#f8f8f8';
+
+  const tituloLeyenda = document.createElement('strong');
+  tituloLeyenda.textContent = 'Leyenda de códigos';
+  leyenda.appendChild(tituloLeyenda);
+
+  const tablaLeyenda = document.createElement('table');
+  tablaLeyenda.style.borderCollapse = 'collapse';
+  tablaLeyenda.style.marginTop = '7px';
+
+  [
+    ['A', 'Asistió'],
+    ['T', 'Tardanza'],
+    ['U', 'Tardanza justificada'],
+    ['F', 'Falta'],
+    ['J', 'Falta justificada'],
+    ['D', 'Día no evaluable']
+  ].forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    item.forEach(function(valor, indice) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '4px 10px';
+      td.style.border = '1px solid #ccc';
+      if (indice === 0) {
+        td.style.fontWeight = 'bold';
+        td.style.textAlign = 'center';
+      }
+      fila.appendChild(td);
+    });
+
+    tablaLeyenda.appendChild(fila);
+  });
+
+  leyenda.appendChild(tablaLeyenda);
+
+  const notaLeyenda = document.createElement('div');
+  notaLeyenda.style.marginTop = '8px';
+  notaLeyenda.textContent =
+    'Nota: Las incidencias para SIAGIE se muestran en la sección siguiente y corresponden a F, T, U y J.';
+  leyenda.appendChild(notaLeyenda);
+
+  contenedorMatriz.appendChild(leyenda);
+
+  // ---------------------------------------------------
+  // TABLA DE INCIDENCIAS
+  // ---------------------------------------------------
+
+  incidencias.sort(function(a, b) {
+    if (a.numero !== b.numero) {
+      return a.numero - b.numero;
+    }
+    return a.dia - b.dia;
+  });
+
+  const tablaIncidencias =
+    document.createElement('table');
+
+  tablaIncidencias.style.borderCollapse = 'collapse';
+  tablaIncidencias.style.width = '100%';
+  tablaIncidencias.style.minWidth = '700px';
+  tablaIncidencias.style.tableLayout = 'auto';
+  tablaIncidencias.style.fontSize = '11px';
+
+  const filaIncidenciasCabecera =
+    document.createElement('tr');
+
+  [
+    'N.º',
+    'DNI',
+    'ESTUDIANTE',
+    'DÍA',
+    'FECHA',
+    'CÓDIGO'
+  ].forEach(function(texto) {
+    const th = document.createElement('th');
+    th.textContent = texto;
+    th.style.padding = '4px';
+    th.style.border = '1px solid #ccc';
+    th.style.textAlign = 'left';
+    th.style.whiteSpace = 'normal';
+    th.style.wordBreak = 'break-word';
+    filaIncidenciasCabecera.appendChild(th);
+  });
+
+  const theadIncidencias =
+    document.createElement('thead');
+  theadIncidencias.appendChild(filaIncidenciasCabecera);
+  tablaIncidencias.appendChild(theadIncidencias);
+
+  const tbodyIncidencias =
+    document.createElement('tbody');
+
+  incidencias.forEach(function(item) {
+    const fila = document.createElement('tr');
+
+    [
+      item.numero,
+      item.dni,
+      item.nombre,
+      item.dia,
+      item.fecha,
+      item.codigo
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor;
+      td.style.padding = '4px';
+      td.style.border = '1px solid #ccc';
+      td.style.whiteSpace = 'normal';
+      td.style.wordBreak = 'break-word';
+      fila.appendChild(td);
+    });
+
+    tbodyIncidencias.appendChild(fila);
+  });
+
+  tablaIncidencias.appendChild(tbodyIncidencias);
+
+  contenedorIncidencias.style.maxWidth = '100%';
+  contenedorIncidencias.style.overflowX = 'auto';
+  contenedorIncidencias.style.overflowY = 'visible';
+  contenedorIncidencias.style.webkitOverflowScrolling = 'touch';
+
+  contenedorIncidencias.appendChild(tablaIncidencias);
+
+  if (!incidencias.length) {
+    contenedorIncidencias.textContent =
+      'No se encontraron faltas ni tardanzas en el período seleccionado.';
+  }
+
+  contenedorPrincipal.style.display = 'block';
+
+  // ---------------------------------------------------
+  // MARCO AZUL DE LA MATRIZ MENSUAL
+  // ---------------------------------------------------
+  contenedorPrincipal.style.border = '1px solid #2563eb';
+  contenedorPrincipal.style.borderRadius = '8px';
+  contenedorPrincipal.style.padding = '10px';
+  contenedorPrincipal.style.background = '#ffffff';
+  contenedorPrincipal.style.boxSizing = 'border-box';
+}
+
+
+// =====================================================
+// EXPORTACIÓN DE REPORTES V2
+// PDF Y EXCEL
+// -----------------------------------------------------
+// Estas funciones exportan exactamente el último reporte
+// consultado. No vuelven a consultar ni modifican datos.
+// =====================================================
+
+function actualizarBotonesDescargaReporte() {
+
+  const habilitado =
+    !!ultimoReporteMGP &&
+    (Array.isArray(ultimoReporteMGP.alumnos) ||
+     Array.isArray(ultimoReporteMGP.personal));
+
+  if (descargarReporteExcelBtn) {
+    descargarReporteExcelBtn.disabled = !habilitado;
+  }
+
+  if (descargarReportePdfBtn) {
+    descargarReportePdfBtn.disabled = !habilitado;
+  }
+
+  const esMensual =
+    habilitado &&
+    (ultimoReporteMGP.tipoReporte === 'mensual' ||
+     ultimoReporteMGP.tipoReporte === 'mensual_personal');
+
+  if (verMatrizMensualBtn) {
+    verMatrizMensualBtn.disabled = !esMensual;
+  }
+
+  if (!esMensual) {
+    matrizMensualVisibleMGP = false;
+    if (verMatrizMensualBtn) {
+      verMatrizMensualBtn.textContent =
+        '📅 Ver matriz mensual';
+    }
+    renderizarMatrizMensualMGP();
+  }
+
+}
+
+
+function obtenerDatosExportacionReporte() {
+
+  if (!ultimoReporteMGP) {
+    throw new Error(
+      'Primero genere un reporte.'
+    );
+  }
+
+  const reporte = ultimoReporteMGP;
+  const esMensual =
+    reporte.tipoReporte === 'mensual' ||
+    reporte.tipoReporte === 'mensual_personal';
+
+  let encabezados = [];
+  let filas = [];
+
+  if (reporte.tipoReporte === 'personal') {
+
+    encabezados = [
+      'DNI',
+      'Personal',
+      'Cargo',
+      'Área',
+      'Estado',
+      'Ingreso',
+      'Salida',
+      'Puntualidad',
+      'Método',
+      'Usuario',
+      'Observación'
+    ];
+
+    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
+      return [
+        persona.dni || '',
+        persona.nombre || '',
+        persona.cargo || '',
+        persona.area || '',
+        persona.estado || '',
+        persona.horaIngreso || '',
+        persona.horaSalida || '',
+        persona.puntualidad || '',
+        persona.metodo || '',
+        persona.usuarioRegistro || '',
+        persona.observacion || ''
+      ];
+    });
+
+  } else if (reporte.tipoReporte === 'mensual_personal') {
+
+    encabezados = [
+      'DNI',
+      'Personal',
+      'Cargo',
+      'Área',
+      'Días evaluados',
+      'Asistencias',
+      'Faltas',
+      'Puntuales',
+      'Tardanzas',
+      '% Asistencia',
+      'Salidas'
+    ];
+
+    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
+      return [
+        persona.dni || '',
+        persona.nombre || '',
+        persona.cargo || '',
+        persona.area || '',
+        persona.diasEvaluados || 0,
+        persona.presentes || 0,
+        persona.faltas || 0,
+        persona.puntuales || 0,
+        persona.tardanzas || 0,
+        (persona.porcentajeAsistencia || 0) + '%',
+        persona.conSalida || 0
+      ];
+    });
+
+  } else if (esMensual) {
+
+    encabezados = [
+      'DNI',
+      'Estudiante',
+      'Grado / Sección',
+      'Días evaluados',
+      'Presentes',
+      'Faltas',
+      'Faltas derivadas',
+      'Puntuales',
+      'Tardanzas',
+      'Registros DNI',
+      'Límite DNI',
+      'Justificación'
+    ];
+
+    filas = reporte.alumnos.map(function(alumno) {
+      return [
+        alumno.dni || '',
+        alumno.nombre || '',
+        alumno.gradoSeccion || '',
+        alumno.diasEvaluados || 0,
+        alumno.presentes || 0,
+        alumno.faltas || 0,
+        alumno.faltasDerivadasPorTardanzas || 0,
+        alumno.puntuales || 0,
+        alumno.tardanzas || 0,
+        alumno.registrosDniMes || 0,
+        alumno.limiteDniMensual || 0,
+        alumno.requiereJustificacion === true
+          ? 'REQUIERE'
+          : 'NO'
+      ];
+    });
+
+  } else {
+
+    encabezados = [
+      'DNI',
+      'Estudiante',
+      'Grado / Sección',
+      'Estado',
+      'Puntualidad',
+      'Hora'
+    ];
+
+    filas = reporte.alumnos.map(function(alumno) {
+      return [
+        alumno.dni || '',
+        alumno.nombre || '',
+        alumno.gradoSeccion || '',
+        alumno.estado || '',
+        alumno.puntualidad || '',
+        alumno.hora ||
+          alumno.horaRegistro ||
+          alumno.horaIngreso ||
+          ''
+      ];
+    });
+
+  }
+
+  return {
+    reporte: reporte,
+    esMensual: esMensual,
+    encabezados: encabezados,
+    filas: filas
+  };
+}
+
+
+function obtenerTituloReporteMGP(datos) {
+
+  const nombres = {
+    asistencia: 'REPORTE DE ASISTENCIA',
+    personal: 'REPORTE DIARIO DE PERSONAL',
+    faltas: 'REPORTE DE FALTAS',
+    tardanzas: 'REPORTE DE TARDANZAS',
+    mensual: 'REPORTE MENSUAL DE ASISTENCIA',
+    mensual_personal: 'REPORTE MENSUAL DE PERSONAL'
+  };
+
+  return nombres[datos.reporte.tipoReporte] ||
+    'REPORTE DE ASISTENCIA';
+}
+
+
+function obtenerSubtituloReporteMGP(datos) {
+
+  const reporte = datos.reporte;
+  const partes = [];
+
+  if (datos.esMensual) {
+    if (reporte.mes) {
+      partes.push('Mes: ' + reporte.mes);
+    }
+  } else if (reporte.fecha) {
+    const partesFecha = reporte.fecha.split('-');
+    if (partesFecha.length === 3) {
+      partes.push(
+        'Fecha: ' +
+        partesFecha[2] + '/' +
+        partesFecha[1] + '/' +
+        partesFecha[0]
+      );
+    } else {
+      partes.push('Fecha: ' + reporte.fecha);
+    }
+  }
+
+  if (reporte.tipoReporte !== 'personal') {
+    partes.push(
+      'Grado / Sección: ' +
+      (reporte.grado || 'Todos')
+    );
+  }
+
+  return partes.join('   |   ');
+}
+
+
+function obtenerDatosMatrizMensualPersonalMGP(reporte) {
+
+  const mes = String(reporte.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+  const ultimoDia =
+    anio && numeroMes
+      ? new Date(anio, numeroMes, 0).getDate()
+      : 0;
+
+  if (!ultimoDia) {
+    return {
+      encabezados: [],
+      filas: [],
+      incidencias: []
+    };
+  }
+
+  const diasEvaluados = new Set();
+  const datosPorPersona = [];
+  const incidencias = [];
+
+  (Array.isArray(reporte.personal) ? reporte.personal : []).forEach(function(persona, indicePersona) {
+    const porFecha = {};
+    const detalleDias = Array.isArray(persona.detalleDias)
+      ? persona.detalleDias
+      : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha = String(dia.fecha || '').trim();
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) return;
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) return;
+
+      diasEvaluados.add(diaNumero);
+
+      const estado = String(dia.estado || '').trim().toUpperCase();
+      const puntualidad = String(dia.puntualidad || '').trim().toUpperCase();
+      const codigo =
+        estado === 'PRESENTE'
+          ? (puntualidad === 'TARDE' ? 'T' : 'A')
+          : 'F';
+
+      porFecha[diaNumero] = {
+        codigo: codigo,
+        fecha: fecha
+      };
+    });
+
+    datosPorPersona.push({
+      numero: indicePersona + 1,
+      dni: persona.dni || '',
+      nombre: persona.nombre || '',
+      porFecha: porFecha
+    });
+  });
+
+  const encabezados = ['N.º', 'DNI', 'PERSONAL'];
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    encabezados.push(String(dia));
+  }
+
+  const filas = [];
+
+  datosPorPersona.forEach(function(item) {
+    const fila = [item.numero, item.dni, item.nombre];
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const registro = item.porFecha[dia];
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      fila.push(codigo);
+
+      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
+        incidencias.push([
+          item.numero,
+          item.dni,
+          item.nombre,
+          dia,
+          registro.fecha || '',
+          codigo
+        ]);
+      }
+    }
+
+    filas.push(fila);
+  });
+
+  return {
+    encabezados: encabezados,
+    filas: filas,
+    incidencias: incidencias
+  };
+}
+
+function obtenerDatosMatrizMensualMGP() {
+
+  const reporte = ultimoReporteMGP;
+
+  if (!reporte ||
+      (reporte.tipoReporte !== 'mensual' &&
+       reporte.tipoReporte !== 'mensual_personal')) {
+    return {
+      encabezados: [],
+      filas: [],
+      incidencias: []
+    };
+  }
+
+  if (reporte.tipoReporte === 'mensual_personal') {
+    return obtenerDatosMatrizMensualPersonalMGP(reporte);
+  }
+
+  const mes = String(reporte.mes || '').trim();
+  const partesMes = mes.split('-');
+  const anio = Number(partesMes[0]);
+  const numeroMes = Number(partesMes[1]);
+  const ultimoDia =
+    anio && numeroMes
+      ? new Date(anio, numeroMes, 0).getDate()
+      : 0;
+
+  const diasEvaluados = new Set();
+  const datosPorAlumno = [];
+
+  (Array.isArray(reporte.alumnos) ? reporte.alumnos : []).forEach(function(alumno, indiceAlumno) {
+    const porFecha = {};
+    const detalleDias =
+      Array.isArray(alumno.detalleDias)
+        ? alumno.detalleDias
+        : [];
+
+    detalleDias.forEach(function(dia) {
+      const fecha = String(dia.fecha || '').trim();
+      const partesFecha = fecha.split('/');
+      if (partesFecha.length !== 3) return;
+
+      const diaNumero = Number(partesFecha[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) return;
+
+      diasEvaluados.add(diaNumero);
+      porFecha[diaNumero] = {
+        codigo: String(dia.codigo || '').trim().toUpperCase(),
+        fecha: fecha
+      };
+    });
+
+    datosPorAlumno.push({
+      numero: indiceAlumno + 1,
+      dni: alumno.dni || '',
+      nombre: alumno.nombre || '',
+      porFecha: porFecha
+    });
+  });
+
+  const encabezados = ['N.º', 'DNI', 'APELLIDOS Y NOMBRES'];
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    encabezados.push(String(dia));
+  }
+
+  const filas = [];
+  const incidencias = [];
+
+  datosPorAlumno.forEach(function(item) {
+    const fila = [item.numero, item.dni, item.nombre];
+
+    for (let dia = 1; dia <= ultimoDia; dia++) {
+      const registro = item.porFecha[dia];
+      let codigo = '';
+
+      if (registro) {
+        codigo = registro.codigo || '';
+      } else if (diasEvaluados.has(dia)) {
+        codigo = 'F';
+      } else {
+        codigo = 'D';
+      }
+
+      fila.push(codigo);
+
+      if (['T', 'U', 'F', 'J'].indexOf(codigo) !== -1 && registro) {
+        incidencias.push([
+          item.numero,
+          item.dni,
+          item.nombre,
+          dia,
+          registro.fecha || '',
+          codigo
+        ]);
+      }
+    }
+
+    filas.push(fila);
+  });
+
+  return {
+    encabezados: encabezados,
+    filas: filas,
+    incidencias: incidencias
+  };
+}
+
+
+function descargarReporteExcel() {
+
+  try {
+
+    if (
+      typeof XLSX === 'undefined'
+    ) {
+      throw new Error(
+        'No se cargó el módulo de Excel.'
+      );
+    }
+
+    const datos =
+      obtenerDatosExportacionReporte();
+
+    const titulo =
+      obtenerTituloReporteMGP(datos);
+
+    const subtitulo =
+      obtenerSubtituloReporteMGP(datos);
+
+    const filasHoja = [
+      ['IE JEC MANUEL GONZALES PRADA'],
+      [titulo],
+      [subtitulo],
+      [],
+      datos.encabezados,
+      ...datos.filas
+    ];
+
+    const hoja =
+      XLSX.utils.aoa_to_sheet(filasHoja);
+
+    hoja['!cols'] =
+      datos.encabezados.map(function(encabezado, indice) {
+        let maximo = String(encabezado).length;
+
+        datos.filas.forEach(function(fila) {
+          maximo = Math.max(
+            maximo,
+            String(fila[indice] ?? '').length
+          );
+        });
+
+        return {
+          wch: Math.min(40, Math.max(10, maximo + 2))
+        };
+      });
+
+    const libro =
+      XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      libro,
+      hoja,
+      datos.esMensual
+        ? 'Reporte Mensual'
+        : 'Reporte Diario'
+    );
+
+    if (datos.esMensual) {
+      const matriz = obtenerDatosMatrizMensualMGP();
+      const filasMatriz = [
+        ['IE JEC MANUEL GONZALES PRADA'],
+        [ultimoReporteMGP.tipoReporte === 'mensual_personal'
+          ? 'MATRIZ MENSUAL DE PERSONAL'
+          : 'MATRIZ MENSUAL DE ASISTENCIA'],
+        [subtitulo],
+        [],
+        matriz.encabezados,
+        ...matriz.filas,
+        [],
+        ['LEYENDA DE CÓDIGOS'],
+        ...(ultimoReporteMGP.tipoReporte === 'mensual_personal'
+          ? [
+              ['A', 'Asistió'],
+              ['T', 'Tardanza'],
+              ['F', 'Falta'],
+              ['D', 'Día no evaluable']
+            ]
+          : [
+              ['A', 'Asistió'],
+              ['T', 'Tardanza'],
+              ['U', 'Tardanza justificada'],
+              ['F', 'Falta'],
+              ['J', 'Falta justificada'],
+              ['D', 'Día no evaluable']
+            ])
+      ];
+
+      const hojaMatriz = XLSX.utils.aoa_to_sheet(filasMatriz);
+      hojaMatriz['!cols'] = matriz.encabezados.map(function(encabezado, indice) {
+        if (indice === 2) return { wch: 36 };
+        return { wch: Math.max(5, String(encabezado).length + 2) };
+      });
+
+      XLSX.utils.book_append_sheet(
+        libro,
+        hojaMatriz,
+        'Matriz Mensual'
+      );
+
+      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
+      if (ultimoReporteMGP.tipoReporte === 'mensual') {
+        const filasIncidencias = [
+          ['IE JEC MANUEL GONZALES PRADA'],
+          ['INCIDENCIAS PARA SIAGIE'],
+          [subtitulo],
+          [],
+          ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
+          ...matriz.incidencias,
+          [],
+          ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
+          ['T', 'Tardanza'],
+          ['U', 'Tardanza justificada'],
+          ['F', 'Falta'],
+          ['J', 'Falta justificada']
+        ];
+
+        const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
+        hojaIncidencias['!cols'] = [
+          { wch: 7 },
+          { wch: 14 },
+          { wch: 36 },
+          { wch: 8 },
+          { wch: 14 },
+          { wch: 10 }
+        ];
+
+        XLSX.utils.book_append_sheet(
+          libro,
+          hojaIncidencias,
+          'Incidencias SIAGIE'
+        );
+      }
+    }
+
+    const fechaArchivo =
+      datos.reporte.fecha ||
+      datos.reporte.mes ||
+      'reporte';
+
+    XLSX.writeFile(
+      libro,
+      'Asistencia_MGP_' +
+      datos.reporte.tipoReporte.toUpperCase() +
+      '_' +
+      fechaArchivo.replace(/-/g, '') +
+      '.xlsx'
+    );
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error exportando Excel:',
+      error
+    );
+
+    const mensaje =
+      document.getElementById(
+        'reporteMsg'
+      );
+
+    if (mensaje) {
+      mensaje.textContent =
+        '❌ No se pudo descargar Excel: ' +
+        error.message;
+    }
+
+  }
+
+}
+
+
+function descargarReportePDF() {
+
+  try {
+
+    if (
+      typeof window.jspdf === 'undefined' ||
+      typeof window.jspdf.jsPDF === 'undefined'
+    ) {
+      throw new Error(
+        'No se cargó el módulo PDF.'
+      );
+    }
+
+    const datos =
+      obtenerDatosExportacionReporte();
+
+    const jsPDF =
+      window.jspdf.jsPDF;
+
+    const doc =
+      new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+    const titulo =
+      obtenerTituloReporteMGP(datos);
+
+    const subtitulo =
+      obtenerSubtituloReporteMGP(datos);
+
+    doc.setFontSize(14);
+    doc.text(
+      'IE JEC MANUEL GONZALES PRADA',
+      14,
+      13
+    );
+
+    doc.setFontSize(12);
+    doc.text(
+      titulo,
+      14,
+      20
+    );
+
+    doc.setFontSize(9);
+    doc.text(
+      subtitulo,
+      14,
+      26
+    );
+
+    if (
+      typeof doc.autoTable !== 'function'
+    ) {
+      throw new Error(
+        'No se cargó el módulo de tablas PDF.'
+      );
+    }
+
+    doc.autoTable({
+      head: [datos.encabezados],
+      body: datos.filas,
+      startY: 30,
+      theme: 'grid',
+      styles: {
+        fontSize: datos.esMensual ? 6.5 : 8,
+        cellPadding: 2,
+        overflow: 'linebreak'
+      },
+      headStyles: {
+        fontSize: datos.esMensual ? 6.5 : 8
+      },
+      margin: {
+        left: 10,
+        right: 10
+      }
+    });
+
+    if (datos.esMensual) {
+      const matriz = obtenerDatosMatrizMensualMGP();
+      let siguienteY = doc.lastAutoTable.finalY + 8;
+
+      doc.setFontSize(11);
+      doc.text(
+        ultimoReporteMGP.tipoReporte === 'mensual_personal'
+          ? 'MATRIZ MENSUAL DE PERSONAL'
+          : 'MATRIZ MENSUAL DE ASISTENCIA',
+        10,
+        siguienteY
+      );
+      siguienteY += 4;
+
+      doc.autoTable({
+        head: [matriz.encabezados],
+        body: matriz.filas,
+        startY: siguienteY,
+        theme: 'grid',
+        styles: {
+          fontSize: 5,
+          cellPadding: 1.2,
+          overflow: 'linebreak'
+        },
+        headStyles: {
+          fontSize: 5
+        },
+        margin: {
+          left: 8,
+          right: 8
+        }
+      });
+
+      siguienteY = doc.lastAutoTable.finalY + 6;
+
+      doc.setFontSize(10);
+      doc.text('LEYENDA DE CÓDIGOS', 10, siguienteY);
+      siguienteY += 2;
+
+      doc.autoTable({
+        head: [['Código', 'Significado']],
+        body: [
+          ['A', 'Asistió'],
+          ['T', 'Tardanza'],
+          ['U', 'Tardanza justificada'],
+          ['F', 'Falta'],
+          ['J', 'Falta justificada'],
+          ['D', 'Día no evaluable']
+        ],
+        startY: siguienteY,
+        theme: 'grid',
+        styles: {
+          fontSize: 7,
+          cellPadding: 1.5
+        },
+        margin: {
+          left: 10,
+          right: 10
+        }
+      });
+
+      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
+      if (ultimoReporteMGP.tipoReporte === 'mensual') {
+        siguienteY = doc.lastAutoTable.finalY + 6;
+        doc.setFontSize(10);
+        doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
+        siguienteY += 2;
+
+        doc.autoTable({
+          head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
+          body: matriz.incidencias,
+          startY: siguienteY,
+          theme: 'grid',
+          styles: {
+            fontSize: 7,
+            cellPadding: 1.5,
+            overflow: 'linebreak'
+          },
+          margin: {
+            left: 10,
+            right: 10
+          }
+        });
+      }
+    }
+
+    const fechaArchivo =
+      datos.reporte.fecha ||
+      datos.reporte.mes ||
+      'reporte';
+
+    doc.save(
+      'Asistencia_MGP_' +
+      datos.reporte.tipoReporte.toUpperCase() +
+      '_' +
+      fechaArchivo.replace(/-/g, '') +
+      '.pdf'
+    );
+
+  }
+  catch (error) {
+
+    console.error(
+      'Error exportando PDF:',
+      error
+    );
+
+    const mensaje =
+      document.getElementById(
+        'reporteMsg'
+      );
+
+    if (mensaje) {
+      mensaje.textContent =
+        '❌ No se pudo descargar PDF: ' +
+        error.message;
+    }
+
+  }
+
+}
+
+
+actualizarBotonesDescargaReporte();
+
+
+// =====================================================
+// CONSULTA PÚBLICA
+// =====================================================
+
+const consultarBtn =
+  document.getElementById('consultarBtn') ||
+  document.getElementById('consultar');
+
+
+if (consultarBtn) {
+
+  consultarBtn.addEventListener(
+    'click',
+    function() {
+
+      const dni =
+        document
+          .getElementById(
+            'dniConsulta'
+          )
+          .value
+          .trim();
+
+
+      const clave =
+        document
+          .getElementById(
+            'claveConsulta'
+          )
+          .value
+          .trim();
+
+
+      const mensaje =
+        document.getElementById(
+          'consultaMsg'
+        );
+
+
+      if (!dni || !clave) {
+
+        mensaje.textContent =
+          'Ingrese DNI y código de consulta.';
+
+        return;
+
+      }
+
+
+      mensaje.textContent =
+        'Consulta V2 preparada para conexión segura al servidor.';
+
+    }
+  );
+
+}
+
+
+// =====================================================
+// REGISTRO EXCEPCIONAL POR DNI
+// =====================================================
+
+document.getElementById('dniBtn')
+  .addEventListener('click', function() {
+
+    const dni =
+      document.getElementById('dniManual').value.trim();
+
+    const mensaje =
+      document.getElementById('regMsg');
+
+    if (!dni) {
+
+      if (mensaje) {
+        mensaje.textContent =
+          'Ingrese el DNI.';
+      }
+
+      return;
+    }
+
+    registrarAsistenciaSegunModoMGP(dni);
+
+  });
+
+
+
+/* =========================================================
+   JUSTIFICACIONES V2 - DEV 01 FRONTEND
+   ---------------------------------------------------------
+   Integración visual y operativa con apiJustificaciones.
+   No modifica registro, QR, cámara, offline ni reportes.
+   ========================================================= */
+
+let justificacionesMGPInicializado = false;
+let justificacionesMGPCallbackId = 0;
+let justificacionesMGPEnEdicion = null;
+
+function escaparHtmlJustificacionesMGP(valor) {
+  return String(valor == null ? '' : valor)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function solicitarJustificacionesMGP(params) {
+  return new Promise(function(resolve, reject) {
+    const callbackName =
+      'mgpJustificacionesCallback_' +
+      (++justificacionesMGPCallbackId) + '_' + Date.now();
+
+    const script = document.createElement('script');
+    let terminado = false;
+    const timeout = setTimeout(function() {
+      if (terminado) return;
+      terminado = true;
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('Tiempo de espera agotado al consultar justificaciones.'));
+    }, 15000);
+
+    window[callbackName] = function(resultado) {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      resolve(resultado || {});
+    };
+
+    script.onerror = function() {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('No se pudo comunicar con el servidor de justificaciones.'));
+    };
+
+    const query = [];
+    Object.keys(params || {}).forEach(function(clave) {
+      const valor = params[clave];
+      if (valor === undefined || valor === null || valor === '') return;
+      query.push(encodeURIComponent(clave) + '=' + encodeURIComponent(String(valor)));
+    });
+    query.push('action=apiJustificaciones');
+    query.push('token=' + encodeURIComponent(state.token || ''));
+    query.push('callback=' + encodeURIComponent(callbackName));
+    query.push('_t=' + Date.now());
+
+    script.src = CONFIG.API_URL + '?' + query.join('&');
+    document.head.appendChild(script);
+  });
+}
+
+function puedeAdministrarJustificacionesMGP() {
+  return !!(
+    state.permisos &&
+    state.permisos.administrarJustificaciones === true
+  );
+}
+
+function inicializarModuloJustificacionesMGP() {
+  if (justificacionesMGPInicializado) return;
+
+  const admin = document.getElementById('admin');
+  if (!admin) return;
+
+  if (!puedeAdministrarJustificacionesMGP()) return;
+
+  const card = admin.querySelector('.card');
+  if (!card) return;
+
+  const bloque = document.createElement('div');
+  bloque.id = 'justificacionesMGP';
+  bloque.style.marginTop = '18px';
+  bloque.style.borderTop = '1px solid rgba(0,0,0,.12)';
+  bloque.style.paddingTop = '16px';
+
+  bloque.innerHTML = "\n    <h3 style=\"margin:0 0 10px;\">📄 Justificaciones</h3>\n    <p style=\"margin:0 0 14px; font-size:.92rem;\">\n      Registro, edición y resolución de justificaciones de asistencia.\n    </p>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoPersonaMGP\">\n        <option value=\"estudiante\">Estudiante</option>\n        <option value=\"personal\">Personal</option>\n      </select>\n      <select id=\"justEstadoFiltroMGP\">\n        <option value=\"\">Todos los estados</option>\n        <option value=\"PENDIENTE\">Pendientes</option>\n        <option value=\"APROBADA\">Aprobadas</option>\n        <option value=\"RECHAZADA\">Rechazadas</option>\n      </select>\n      <input id=\"justMesFiltroMGP\" type=\"month\" title=\"Mes de la inasistencia\">\n      <button id=\"justListarBtnMGP\" type=\"button\">🔄 Actualizar</button>\n    </div>\n\n    <div style=\"display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoMGP\">\n        <option value=\"FALTA\">FALTA</option>\n        <option value=\"TARDANZA\">TARDANZA</option>\n      </select>\n      <input id=\"justDniMGP\" type=\"text\" inputmode=\"numeric\" maxlength=\"12\" placeholder=\"DNI\">\n      <input id=\"justIdPersonaMGP\" type=\"text\" placeholder=\"ID persona (opcional)\">\n      <input id=\"justFechaMGP\" type=\"date\">\n      <input id=\"justIdRegistroMGP\" type=\"text\" placeholder=\"ID_REGISTRO (solo tardanza)\">\n      <input id=\"justMotivoMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Motivo de la justificación\">\n      <input id=\"justObservacionMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Observación (opcional)\">\n    </div>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <button id=\"justGuardarBtnMGP\" type=\"button\">💾 Registrar justificación</button>\n      <button id=\"justCancelarBtnMGP\" type=\"button\" style=\"display:none;\">✖ Cancelar edición</button>\n    </div>\n\n    <div id=\"justMsgMGP\" style=\"margin-bottom:10px; min-height:20px;\"></div>\n    <div style=\"overflow:auto; max-width:100%;\">\n      <table id=\"justTablaMGP\" style=\"width:100%; min-width:1100px; border-collapse:collapse;\">\n        <thead>\n          <tr>\n            <th>ID</th><th>DNI</th><th>Persona</th><th>Tipo</th><th>Fecha</th>\n            <th>Motivo</th><th>Estado</th><th>Responsable</th><th>Observación</th><th>Acciones</th>\n          </tr>\n        </thead>\n        <tbody id=\"justTablaBodyMGP\"></tbody>\n      </table>\n    </div>\n  ";
+
+  card.appendChild(bloque);
+  justificacionesMGPInicializado = true;
+
+  document.getElementById('justListarBtnMGP')
+    .addEventListener('click', listarJustificacionesMGP);
+  document.getElementById('justGuardarBtnMGP')
+    .addEventListener('click', guardarJustificacionMGP);
+  document.getElementById('justCancelarBtnMGP')
+    .addEventListener('click', cancelarEdicionJustificacionMGP);
+  document.getElementById('justTipoMGP')
+    .addEventListener('change', actualizarCamposJustificacionMGP);
+  document.getElementById('justTipoPersonaMGP')
+    .addEventListener('change', actualizarCamposJustificacionMGP);
+
+  actualizarCamposJustificacionMGP();
+  listarJustificacionesMGP();
+}
+
+function actualizarCamposJustificacionMGP() {
+  const tipo = document.getElementById('justTipoMGP');
+  const idRegistro = document.getElementById('justIdRegistroMGP');
+  if (!tipo || !idRegistro) return;
+
+  const tardanza = tipo.value === 'TARDANZA';
+  idRegistro.disabled = !tardanza;
+  idRegistro.placeholder = tardanza
+    ? 'ID_REGISTRO de la tardanza'
+    : 'No aplica para falta';
+}
+
+function mostrarMensajeJustificacionMGP(texto, error) {
+  const el = document.getElementById('justMsgMGP');
+  if (!el) return;
+  el.textContent = texto || '';
+  el.style.fontWeight = error ? '600' : '400';
+}
+
+async function listarJustificacionesMGP() {
+  if (!puedeAdministrarJustificacionesMGP()) return;
+
+  mostrarMensajeJustificacionMGP('Consultando justificaciones...', false);
+
+  try {
+    const resultado = await solicitarJustificacionesMGP({
+      operacion:'listar',
+      tipoPersona:(document.getElementById('justTipoPersonaMGP') || {}).value || '',
+      estado:(document.getElementById('justEstadoFiltroMGP') || {}).value || '',
+      mes:(document.getElementById('justMesFiltroMGP') || {}).value || ''
+    });
+
+    if (!resultado.ok) {
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudieron listar las justificaciones.'), true);
+      return;
+    }
+
+    renderizarJustificacionesMGP(resultado.justificaciones || []);
+    mostrarMensajeJustificacionMGP('✅ ' + (resultado.total || 0) + ' justificación(es) encontrada(s).', false);
+  } catch (error) {
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+  }
+}
+
+function renderizarJustificacionesMGP(lista) {
+  const body = document.getElementById('justTablaBodyMGP');
+  if (!body) return;
+
+  body.innerHTML = '';
+
+  if (!lista.length) {
+    body.innerHTML = '<tr><td colspan="10" style="padding:10px; text-align:center;">No hay justificaciones para los filtros seleccionados.</td></tr>';
+    return;
+  }
+
+  lista.forEach(function(item) {
+    const tr = document.createElement('tr');
+    const acciones = item.estado === 'PENDIENTE'
+      ? `
+        <button type="button" data-just-accion="editar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✏️</button>
+        <button type="button" data-just-accion="aprobar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✅</button>
+        <button type="button" data-just-accion="rechazar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">❌</button>
+      `
+      : '—';
+
+    [
+      item.idJustificacion,
+      item.dni,
+      item.nombre,
+      item.tipo,
+      item.fechaInasistencia,
+      item.motivo,
+      item.estado,
+      item.responsable,
+      item.observacion
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor || '';
+      td.style.padding = '6px';
+      td.style.borderBottom = '1px solid rgba(0,0,0,.08)';
+      tr.appendChild(td);
+    });
+
+    const tdAcciones = document.createElement('td');
+    tdAcciones.style.padding = '6px';
+    tdAcciones.innerHTML = acciones;
+    tr.appendChild(tdAcciones);
+    body.appendChild(tr);
+  });
+
+  body.querySelectorAll('[data-just-accion]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      ejecutarAccionJustificacionMGP(
+        btn.getAttribute('data-just-accion'),
+        btn.getAttribute('data-id'),
+        lista
+      );
+    });
+  });
+}
+
+async function guardarJustificacionMGP() {
+  const tipoPersona = document.getElementById('justTipoPersonaMGP').value;
+  const tipo = document.getElementById('justTipoMGP').value;
+  const dni = document.getElementById('justDniMGP').value.trim();
+  const idPersona = document.getElementById('justIdPersonaMGP').value.trim();
+  const fecha = document.getElementById('justFechaMGP').value;
+  const idRegistro = document.getElementById('justIdRegistroMGP').value.trim();
+  const motivo = document.getElementById('justMotivoMGP').value.trim();
+  const observacion = document.getElementById('justObservacionMGP').value.trim();
+
+  if (!dni && !idPersona) {
+    mostrarMensajeJustificacionMGP('❌ Indique DNI o ID de persona.', true);
+    return;
+  }
+  if (!fecha) {
+    mostrarMensajeJustificacionMGP('❌ Indique la fecha de inasistencia.', true);
+    return;
+  }
+  if (!motivo) {
+    mostrarMensajeJustificacionMGP('❌ Indique el motivo.', true);
+    return;
+  }
+  if (tipo === 'TARDANZA' && !idRegistro) {
+    mostrarMensajeJustificacionMGP('❌ Para una tardanza debe indicar ID_REGISTRO.', true);
+    return;
+  }
+
+  mostrarMensajeJustificacionMGP('Guardando justificación...', false);
+
+  try {
+    const params = {
+      operacion: justificacionesMGPEnEdicion ? 'editar' : 'crear',
+      tipoPersona:tipoPersona,
+      tipo:tipo,
+      dni:dni,
+      idPersona:idPersona,
+      fechaInasistencia:fecha,
+      idRegistro:tipo === 'TARDANZA' ? idRegistro : '',
+      motivo:motivo,
+      observacion:observacion
+    };
+
+    if (justificacionesMGPEnEdicion) {
+      params.idJustificacion = justificacionesMGPEnEdicion.idJustificacion;
+    }
+
+    const resultado = await solicitarJustificacionesMGP(params);
+
+    if (!resultado.ok) {
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo guardar.'), true);
+      return;
+    }
+
+    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada correctamente.'), false);
+    cancelarEdicionJustificacionMGP();
+    await listarJustificacionesMGP();
+  } catch (error) {
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+  }
+}
+
+function cargarEdicionJustificacionMGP(item) {
+  justificacionesMGPEnEdicion = item;
+  document.getElementById('justTipoPersonaMGP').value = item.tipoPersona || 'estudiante';
+  document.getElementById('justTipoMGP').value = item.tipo || 'FALTA';
+  document.getElementById('justDniMGP').value = item.dni || '';
+  document.getElementById('justIdPersonaMGP').value = item.idPersona || '';
+  document.getElementById('justFechaMGP').value = item.fechaInasistencia || '';
+  document.getElementById('justIdRegistroMGP').value = item.idRegistro || '';
+  document.getElementById('justMotivoMGP').value = item.motivo || '';
+  document.getElementById('justObservacionMGP').value = item.observacion || '';
+  document.getElementById('justGuardarBtnMGP').textContent = '💾 Guardar cambios';
+  document.getElementById('justCancelarBtnMGP').style.display = '';
+  actualizarCamposJustificacionMGP();
+  mostrarMensajeJustificacionMGP('✏️ Editando ' + item.idJustificacion, false);
+}
+
+function cancelarEdicionJustificacionMGP() {
+  justificacionesMGPEnEdicion = null;
+  const ids = [
+    'justDniMGP','justIdPersonaMGP','justFechaMGP',
+    'justIdRegistroMGP','justMotivoMGP','justObservacionMGP'
+  ];
+  ids.forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('justTipoMGP').value = 'FALTA';
+  document.getElementById('justGuardarBtnMGP').textContent = '💾 Registrar justificación';
+  document.getElementById('justCancelarBtnMGP').style.display = 'none';
+  actualizarCamposJustificacionMGP();
+}
+
+async function ejecutarAccionJustificacionMGP(accion, id, lista) {
+  const item = lista.find(function(x) { return x.idJustificacion === id; });
+  if (!item) return;
+
+  if (accion === 'editar') {
+    cargarEdicionJustificacionMGP(item);
+    return;
+  }
+
+  let observacion = item.observacion || '';
+  if (accion === 'rechazar') {
+    observacion = window.prompt('Indique el motivo de rechazo:', observacion) || '';
+    if (!observacion.trim()) {
+      mostrarMensajeJustificacionMGP('❌ El rechazo requiere una observación.', true);
+      return;
+    }
+  }
+
+  if (accion === 'aprobar' && !window.confirm('¿Aprobar esta justificación?')) return;
+  if (accion === 'rechazar' && !window.confirm('¿Rechazar esta justificación?')) return;
+
+  mostrarMensajeJustificacionMGP('Procesando ' + accion + '...', false);
+
+  try {
+    const resultado = await solicitarJustificacionesMGP({
+      operacion:accion,
+      idJustificacion:id,
+      observacion:observacion
+    });
+
+    if (!resultado.ok) {
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo resolver la justificación.'), true);
+      return;
+    }
+
+    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada.'), false);
+    await listarJustificacionesMGP();
+  } catch (error) {
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+  }
+}
+
+// =====================================================
+// COMPATIBILIDAD FINAL V1 / V2
+// =====================================================
+// Estos alias garantizan que los botones del HTML puedan
+// llamar directamente a las funciones aunque app.js haya
+// sido cargado antes o después del HTML.
+window.activarCamara = iniciarCamara;
+window.detenerCamara = detenerCamara;
+window.cambiarCamara = cambiarCamara;
 
 // =====================================================
 // CONFIGURACIÓN
