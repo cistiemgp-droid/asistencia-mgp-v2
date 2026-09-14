@@ -65,11 +65,6 @@ const state = {
 let ultimoReporteMGP = null;
 let matrizMensualVisibleMGP = false;
 
-// DEV27/32: estado controlado de la petición LOGIN.
-// Evita doble envío y permite limpiar correctamente el JSONP.
-let loginScript = null;
-let loginEnProceso = false;
-
 
 const cameraState = {
 
@@ -1827,16 +1822,36 @@ if (salirBtn) {
 // =====================================================
 // LOGIN V2
 // =====================================================
+//
+// CORRECCIÓN CONTROLADA:
+// - LOGIN exclusivamente mediante JSONP.
+// - No usa fetch().
+// - Un solo loginScript.
+// - Callback único por intento.
+// - Limpieza segura del script/callback.
+// - Conserva token, expiraSesion y permisos V2.
+// - No modifica API.gs, Codigo.gs ni otros módulos.
+// =====================================================
 
 const entrarBtn =
   document.getElementById('entrar') ||
   document.getElementById('entrarBtn');
 
+let loginScript = null;
+
+function eliminarLoginScriptMGP() {
+  if (loginScript && loginScript.parentNode) {
+    loginScript.parentNode.removeChild(loginScript);
+  }
+
+  loginScript = null;
+}
+
 if (entrarBtn) {
 
   entrarBtn.addEventListener(
     'click',
-    async function() {
+    function() {
 
       const usuarioElemento =
         document.getElementById('usuario');
@@ -1860,278 +1875,246 @@ if (entrarBtn) {
       if (!usuario || !password) {
 
         if (mensaje) {
-
           mensaje.textContent =
             'Ingrese usuario y contraseña.';
-
         }
 
         return;
-
       }
 
-      // DEV30: impedir dobles peticiones LOGIN por doble clic.
-      // Se genera un loginRequestId de trazabilidad para la solicitud.
-      if (loginEnProceso) {
+      if (entrarBtn.disabled) {
         return;
       }
 
-      loginEnProceso = true;
-
-      if (entrarBtn) {
-        entrarBtn.disabled = true;
-      }
+      eliminarLoginScriptMGP();
 
       if (mensaje) {
-
         mensaje.textContent =
           '🔄 Verificando acceso...';
-
       }
 
-      try {
+      entrarBtn.disabled = true;
 
-        const loginRequestId =
-          'LR-' +
-          Date.now().toString(36) +
-          '-' +
-          Math.random().toString(36).slice(2, 12);
+      const nombreCallback =
+        'respuestaLoginMGP_' + Date.now();
 
-        let intentoActual = 0;
-        const MAX_INTENTOS = 1;
-        const TIMEOUT_POR_INTENTO_MS = 30000;
+      let terminado = false;
+      let temporizador = null;
 
-        const resultado =
-          await new Promise(function(resolve, reject) {
+      function limpiarLogin() {
 
-            /*
-             * DEV38 LOGIN - CANAL DIRECTO
-             *
-             * La cadena de polling apiLoginEstado queda fuera del flujo
-             * principal. La solicitud usa apiLoginDirecto, que en backend
-             * no utiliza LockService ni CacheService.
-             * Si el transporte falla, se realiza UN solo respaldo con
-             * apiLogin, que conserva la idempotencia existente.
-             */
-            let terminado = false;
-            let temporizador = null;
-            const scripts = [];
-            const callbacks = [];
+        if (temporizador) {
+          clearTimeout(temporizador);
+          temporizador = null;
+        }
 
-            const limpiar = function() {
-              if (temporizador) {
-                clearTimeout(temporizador);
-                temporizador = null;
+        eliminarLoginScriptMGP();
+
+        try {
+          delete window[nombreCallback];
+        }
+        catch (error) {
+          console.warn(
+            'No fue posible eliminar callback LOGIN:',
+            error
+          );
+        }
+      }
+
+      window[nombreCallback] =
+        function(resultado) {
+
+          if (terminado) {
+            return;
+          }
+
+          terminado = true;
+
+          limpiarLogin();
+
+          try {
+
+            console.log(
+              'Respuesta LOGIN V2:',
+              resultado
+            );
+
+            if (!resultado) {
+
+              if (mensaje) {
+                mensaje.textContent =
+                  '❌ El servidor no devolvió respuesta.';
               }
 
-              scripts.forEach(function(script) {
-                try {
-                  if (script && script.parentNode) {
-                    script.parentNode.removeChild(script);
-                  }
-                } catch (error) {}
-              });
+              return;
+            }
 
-              callbacks.forEach(function(nombre) {
-                try { delete window[nombre]; }
-                catch (error) {}
-              });
+            if (!resultado.ok) {
 
-              scripts.length = 0;
-              callbacks.length = 0;
-              loginScript = null;
-            };
-
-            const finalizar = function(data) {
-              if (terminado) return;
-              terminado = true;
-              limpiar();
-              resolve(data);
-            };
-
-            const finalizarError = function() {
-              if (terminado) return;
-              terminado = true;
-              limpiar();
-              reject(new Error(
-                'No se pudo comunicar con el servidor de acceso.'
-              ));
-            };
-
-            const lanzar = function(action, esRespaldo) {
-              if (terminado) return;
-
-              const callback =
-                'respuestaLoginMGP38_' +
-                Date.now() + '_' +
-                Math.random().toString(36).slice(2, 8);
-
-              const script = document.createElement('script');
-              scripts.push(script);
-              callbacks.push(callback);
-              loginScript = script;
-
-              window[callback] = function(data) {
-                if (terminado) return;
-                finalizar(data);
-              };
-
-              script.src =
-                CONFIG.API_URL +
-                '?action=' + encodeURIComponent(action) +
-                '&user=' + encodeURIComponent(usuario) +
-                '&pass=' + encodeURIComponent(password) +
-                '&callback=' + encodeURIComponent(callback);
-
-              script.async = true;
-
-              script.onerror = function() {
-                if (terminado) return;
-
-                if (!esRespaldo) {
-                  console.warn(
-                    'DEV38 LOGIN: fallo en apiLoginDirecto; usando respaldo apiLogin.'
+              if (mensaje) {
+                mensaje.textContent =
+                  '❌ ' +
+                  (
+                    resultado.mensaje ||
+                    'Usuario o contraseña incorrectos.'
                   );
-                  lanzar('apiLogin', true);
-                  return;
-                }
+              }
 
-                finalizarError();
-              };
+              return;
+            }
 
-              document.head.appendChild(script);
+            if (
+              !resultado.usuario ||
+              !resultado.usuario.rol ||
+              !resultado.usuario.permisos
+            ) {
 
-              temporizador = setTimeout(function() {
-                temporizador = null;
-                if (terminado) return;
+              if (mensaje) {
+                mensaje.textContent =
+                  '❌ El servidor no devolvió los permisos del usuario.';
+              }
 
-                if (!esRespaldo) {
-                  console.warn(
-                    'DEV38 LOGIN: timeout en apiLoginDirecto; usando respaldo apiLogin.'
-                  );
-                  lanzar('apiLogin', true);
-                  return;
-                }
+              return;
+            }
 
-                finalizarError();
-              }, 15000);
-            };
+            state.usuario =
+              resultado.usuario;
 
-            lanzar('apiLoginDirecto', false);
+            state.permisos =
+              resultado.usuario.permisos;
 
-          });
+            state.token =
+              resultado.usuario.token || null;
 
-        console.log(
-          'Respuesta LOGIN V2:',
-          resultado
-        );
+            state.expiraSesion =
+              resultado.usuario.expiraSesion || null;
 
-        if (!resultado.ok) {
+            if (!state.token) {
 
-          if (mensaje) {
+              if (mensaje) {
+                mensaje.textContent =
+                  '❌ El servidor no devolvió una sesión institucional válida.';
+              }
 
-            mensaje.textContent =
-              '❌ ' +
-              (
-                resultado.mensaje ||
-                'Usuario o contraseña incorrectos.'
+              console.error(
+                'LOGIN V2 sin token de sesión.'
               );
 
+              return;
+            }
+
+            aplicarPermisosPanel();
+
+            inicializarModuloJustificacionesMGP();
+
+            console.log(
+              'Usuario autenticado V2:',
+              state.usuario
+            );
+
+            console.log(
+              'Permisos V2:',
+              state.permisos
+            );
+
+            if (mensaje) {
+              mensaje.textContent =
+                '✅ Acceso autorizado.';
+            }
+
+            mostrarVista('panel');
+
+          }
+          catch (error) {
+
+            console.error(
+              'Error procesando LOGIN V2:',
+              error
+            );
+
+            if (mensaje) {
+              mensaje.textContent =
+                '❌ Error procesando la respuesta del servidor.';
+            }
+
+          }
+          finally {
+
+            entrarBtn.disabled = false;
+
           }
 
-          return;
+        };
 
-        }
+      loginScript =
+        document.createElement('script');
 
-        state.usuario =
-          resultado.usuario || null;
+      const parametros =
+        new URLSearchParams({
+          action: 'apiLogin',
+          user: usuario,
+          pass: password,
+          callback: nombreCallback
+        });
 
-        state.permisos =
-          (
-            resultado.usuario &&
-            resultado.usuario.permisos
-          ) || null;
+      loginScript.src =
+        CONFIG.API_URL +
+        '?' +
+        parametros.toString();
 
-        state.token =
-          (
-            resultado.usuario &&
-            resultado.usuario.token
-          ) || null;
+      loginScript.async = true;
 
-        state.expiraSesion =
-          (
-            resultado.usuario &&
-            resultado.usuario.expiraSesion
-          ) || null;
+      loginScript.onerror =
+        function() {
 
-        if (!state.token) {
+          if (terminado) {
+            return;
+          }
+
+          terminado = true;
+
+          limpiarLogin();
+
           if (mensaje) {
             mensaje.textContent =
-              '❌ El servidor no devolvió una sesión institucional válida.';
+              '❌ No se pudo comunicar con el servidor.';
           }
 
-          console.error(
-            'LOGIN V2 sin token de sesión.'
-          );
-
-          return;
-        }
-
-        aplicarPermisosPanel();
-
-        inicializarModuloJustificacionesMGP();
-
-        console.log(
-          'Usuario autenticado V2:',
-          state.usuario
-        );
-
-        console.log(
-          'Permisos V2:',
-          state.permisos
-        );
-
-        if (mensaje) {
-
-          mensaje.textContent =
-            '✅ Acceso autorizado.';
-
-        }
-
-        mostrarVista('panel');
-
-      }
-      catch (error) {
-
-        console.error(
-          'Error en LOGIN V2:',
-          error
-        );
-
-        if (mensaje) {
-
-          mensaje.textContent =
-            '❌ No se pudo comunicar con el servidor: ' +
-            error.message;
-
-        }
-
-      }
-      finally {
-
-        loginEnProceso = false;
-
-        if (entrarBtn) {
           entrarBtn.disabled = false;
-        }
 
-      }
+        };
+
+      document.head.appendChild(
+        loginScript
+      );
+
+      temporizador =
+        setTimeout(
+          function() {
+
+            if (terminado) {
+              return;
+            }
+
+            terminado = true;
+
+            limpiarLogin();
+
+            if (mensaje) {
+              mensaje.textContent =
+                '❌ Tiempo de espera agotado al conectar con el servidor.';
+            }
+
+            entrarBtn.disabled = false;
+
+          },
+          30000
+        );
 
     }
   );
 
 }
-
 
 // =====================================================
 // PERMISOS V2 - PANEL INSTITUCIONAL
@@ -4748,109 +4731,103 @@ const usaFiltroMensual =
       await new Promise(
         function(resolve, reject) {
 
-          /*
-           * DEV37 REPORTES - TRANSPORTE ROBUSTO
-           *
-           * El reporte es SOLO lectura. Si el canal JSONP queda colgado,
-           * no debemos esperar indefinidamente ni destruir la primera
-           * solicitud. A los 7 s se lanza una segunda lectura idéntica.
-           * La primera respuesta válida gana y las demás se ignoran.
-           *
-           * La lógica, parámetros, cálculo y render del reporte NO cambian.
-           */
-          let terminado = false;
-          const scripts = [];
-          const callbacks = [];
-          let temporizadorRespaldo = null;
+          const script =
+            document.createElement(
+              'script'
+            );
 
-          const limpiar = function() {
-            if (temporizadorRespaldo) {
-              clearTimeout(temporizadorRespaldo);
-              temporizadorRespaldo = null;
+          let terminado =
+            false;
+
+
+          function limpiar() {
+
+            if (
+              script &&
+              script.parentNode
+            ) {
+
+              script.parentNode
+                .removeChild(script);
+
             }
 
-            scripts.forEach(function(script) {
-              try {
-                if (script && script.parentNode) {
-                  script.parentNode.removeChild(script);
-                }
-              } catch (error) {}
-            });
 
-            callbacks.forEach(function(nombre) {
-              try { delete window[nombre]; }
-              catch (error) {}
-            });
+            try {
 
-            scripts.length = 0;
-            callbacks.length = 0;
-          };
+              delete window[
+                nombreCallback
+              ];
 
-          const finalizar = function(data) {
-            if (terminado) return;
-            terminado = true;
-            limpiar();
-            resolve(data);
-          };
+            }
+            catch (error) {
 
-          const lanzar = function(esRespaldo) {
-            if (terminado) return;
-
-            const callback =
-              'respuestaReporteMGP37_' +
-              Date.now() + '_' +
-              Math.random().toString(36).slice(2, 7);
-
-            const script = document.createElement('script');
-            scripts.push(script);
-            callbacks.push(callback);
-
-            window[callback] = function(data) {
-              if (terminado) return;
-              finalizar(data);
-            };
-
-            script.src =
-              CONFIG.API_URL +
-              '?' +
-              parametros.toString().replace(
-                encodeURIComponent(nombreCallback),
-                encodeURIComponent(callback)
+              console.warn(
+                'No fue posible eliminar callback REPORTE:',
+                error
               );
 
-            script.async = true;
+            }
 
-            script.onerror = function() {
-              if (terminado) return;
+          }
 
-              if (esRespaldo) {
-                finalizar({
-                  ok: false,
-                  exito: false,
-                  mensaje: 'No se pudo comunicar con el servidor.'
-                });
+
+          window[nombreCallback] =
+            function(data) {
+
+              if (terminado) {
+
                 return;
+
               }
 
-              console.warn(
-                'DEV37 REPORTES: fallo de transporte; se mantiene la solicitud primaria y se usará respaldo.'
-              );
+
+              terminado =
+                true;
+
+              limpiar();
+
+              resolve(data);
+
             };
 
-            document.head.appendChild(script);
-          };
 
-          lanzar(false);
+          script.src =
+            url;
 
-          temporizadorRespaldo = setTimeout(function() {
-            temporizadorRespaldo = null;
-            if (!terminado) {
-              console.warn(
-                'DEV37 REPORTES: la primera solicitud superó 7 s; enviando lectura de respaldo.'
+
+          script.async =
+            true;
+
+
+          script.onerror =
+            function() {
+
+              if (terminado) {
+
+                return;
+
+              }
+
+
+              terminado =
+                true;
+
+              limpiar();
+
+
+              reject(
+                new Error(
+                  'No se pudo comunicar con el servidor.'
+                )
               );
-              lanzar(true);
-            }
-          }, 7000);
+
+            };
+
+
+          document.head.appendChild(
+            script
+          );
 
         }
       );
