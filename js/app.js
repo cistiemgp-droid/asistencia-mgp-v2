@@ -1904,283 +1904,229 @@ if (entrarBtn) {
         const resultado =
           await new Promise(function(resolve, reject) {
 
+            /*
+             * DEV37 LOGIN - TRANSPORTE ROBUSTO
+             *
+             * Causa aislada del problema actual:
+             * DEV36 elimina el <script> cuando vence el timeout.
+             * Si Apps Script todavía estaba procesando la solicitud,
+             * se corta el canal JSONP y se fuerza una cadena de consultas
+             * de estado que también depende de transporte.
+             *
+             * DEV37 NO cancela una solicitud pendiente. Mantiene vivos
+             * los callbacks y, después de unos segundos, lanza una
+             * segunda solicitud con EL MISMO loginRequestId.
+             * El backend ya tiene idempotencia para ese requestId.
+             */
+
             let terminado = false;
-            let temporizadorTimeout = null;
+            const scriptsPendientes = [];
+            const callbacksPendientes = [];
+            let temporizadorRespaldo = null;
             let temporizadorEstado = null;
-            let scriptActual = null;
-            let callbackNombreActual = null;
-            const TIMEOUT_INICIAL_MS = 8000;
-            const INTERVALO_ESTADO_MS = 1000;
-            const MAX_CONSULTAS_ESTADO = 4;
-            let recuperacionDirectaUsada = false;
             let consultasEstado = 0;
+            const MAX_CONSULTAS_ESTADO = 6;
+            const ESPERA_RESPALDO_MS = 6000;
+            const INTERVALO_ESTADO_MS = 1500;
 
-            const conservarCallbackSeguro =
-              function(nombreCallback) {
+            const conservarCallback = function(nombre) {
+              if (!nombre) return;
+              callbacksPendientes.push(nombre);
+            };
 
-                if (!nombreCallback) return;
+            const limpiarTodo = function() {
+              if (temporizadorRespaldo) {
+                clearTimeout(temporizadorRespaldo);
+                temporizadorRespaldo = null;
+              }
 
+              if (temporizadorEstado) {
+                clearTimeout(temporizadorEstado);
+                temporizadorEstado = null;
+              }
+
+              scriptsPendientes.forEach(function(script) {
                 try {
-                  window[nombreCallback] = function() {};
-                  setTimeout(function() {
-                    try { delete window[nombreCallback]; }
-                    catch (error) {}
-                  }, 60000);
-                }
+                  if (script && script.parentNode) {
+                    script.parentNode.removeChild(script);
+                  }
+                } catch (error) {}
+              });
+
+              callbacksPendientes.forEach(function(nombre) {
+                try { delete window[nombre]; }
                 catch (error) {}
-              };
+              });
 
-            const limpiarScriptActual =
-              function() {
+              scriptsPendientes.length = 0;
+              callbacksPendientes.length = 0;
+              loginScript = null;
+            };
 
-                if (scriptActual && scriptActual.parentNode) {
-                  scriptActual.parentNode.removeChild(scriptActual);
+            const finalizar = function(data) {
+              if (terminado) return;
+              terminado = true;
+              limpiarTodo();
+              resolve(data);
+            };
+
+            const finalizarError = function(mensajeError) {
+              if (terminado) return;
+              terminado = true;
+              limpiarTodo();
+              reject(new Error(mensajeError));
+            };
+
+            const consultarEstado = function() {
+              if (terminado) return;
+
+              consultasEstado += 1;
+
+              const nombreCallback =
+                'estadoLoginMGP37_' +
+                Date.now() + '_' + consultasEstado;
+
+              const script = document.createElement('script');
+              conservarCallback(nombreCallback);
+              scriptsPendientes.push(script);
+              loginScript = script;
+
+              window[nombreCallback] = function(data) {
+                if (terminado) return;
+
+                if (
+                  data &&
+                  data.codigo !== 'LOGIN_NO_LISTO' &&
+                  data.codigo !== 'LOGIN_EN_PROCESO'
+                ) {
+                  finalizar(data);
+                  return;
                 }
 
-                scriptActual = null;
-                loginScript = null;
-              };
-
-            const limpiarTemporizadores =
-              function() {
-
-                if (temporizadorTimeout) {
-                  clearTimeout(temporizadorTimeout);
-                  temporizadorTimeout = null;
+                if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
+                  lanzarPeticionRespaldo();
+                  return;
                 }
 
-                if (temporizadorEstado) {
-                  clearTimeout(temporizadorEstado);
+                temporizadorEstado = setTimeout(function() {
                   temporizadorEstado = null;
-                }
+                  consultarEstado();
+                }, INTERVALO_ESTADO_MS);
               };
 
-            const finalizar =
-              function(data) {
-
+              script.onerror = function() {
                 if (terminado) return;
 
-                terminado = true;
-                limpiarTemporizadores();
-                limpiarScriptActual();
-
-                if (callbackNombreActual) {
-                  try { delete window[callbackNombreActual]; }
-                  catch (error) {}
-                  callbackNombreActual = null;
+                if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
+                  lanzarPeticionRespaldo();
+                  return;
                 }
 
-                resolve(data);
+                temporizadorEstado = setTimeout(function() {
+                  temporizadorEstado = null;
+                  consultarEstado();
+                }, INTERVALO_ESTADO_MS);
               };
 
-            const finalizarError =
-              function(mensajeError) {
+              script.src =
+                CONFIG.API_URL +
+                '?action=apiLoginEstado' +
+                '&loginRequestId=' + encodeURIComponent(loginRequestId) +
+                '&callback=' + encodeURIComponent(nombreCallback);
 
+              script.async = true;
+              document.head.appendChild(script);
+            };
+
+            const lanzarPeticion = function(esRespaldo) {
+              if (terminado) return;
+
+              const nombreCallback =
+                'respuestaLoginMGP37_' +
+                Date.now() + '_' +
+                Math.random().toString(36).slice(2, 7);
+
+              const script = document.createElement('script');
+              conservarCallback(nombreCallback);
+              scriptsPendientes.push(script);
+              loginScript = script;
+
+              window[nombreCallback] = function(data) {
                 if (terminado) return;
 
-                terminado = true;
-                limpiarTemporizadores();
-                limpiarScriptActual();
-                reject(new Error(mensajeError));
+                /*
+                 * Si el backend informa que la solicitud sigue en proceso,
+                 * NO se considera fallo: se consulta su estado.
+                 */
+                if (
+                  data &&
+                  (
+                    data.codigo === 'LOGIN_NO_LISTO' ||
+                    data.codigo === 'LOGIN_EN_PROCESO'
+                  )
+                ) {
+                  consultarEstado();
+                  return;
+                }
+
+                finalizar(data);
               };
 
-            const consultarEstado =
-              function() {
-
+              script.onerror = function() {
                 if (terminado) return;
 
-                consultasEstado += 1;
+                if (!esRespaldo) {
+                  console.warn(
+                    'DEV37 LOGIN: fallo de transporte; se conserva la solicitud y se usa recuperación por requestId.'
+                  );
+                  consultarEstado();
+                  return;
+                }
 
-                const nombreCallback =
-                  'estadoLoginMGP_' +
-                  Date.now() + '_' +
-                  consultasEstado;
-
-                const script =
-                  document.createElement('script');
-
-                scriptActual = script;
-                loginScript = script;
-                callbackNombreActual = nombreCallback;
-
-                window[nombreCallback] =
-                  function(data) {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-
-                    try { delete window[nombreCallback]; }
-                    catch (error) {}
-
-                    callbackNombreActual = null;
-
-                    if (data && data.codigo !== 'LOGIN_NO_LISTO' && data.codigo !== 'LOGIN_EN_PROCESO') {
-                      finalizar(data);
-                      return;
-                    }
-
-                    if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
-                      if (!recuperacionDirectaUsada) {
-                        recuperacionDirectaUsada = true;
-                        console.warn(
-                          'DEV36 LOGIN: el estado no respondió; reenviando LA MISMA solicitud para recuperar el resultado.'
-                        );
-                        lanzarPeticion(true);
-                        return;
-                      }
-
-                      finalizarError(
-                        'No se recibió respuesta del servidor al iniciar sesión.'
-                      );
-                      return;
-                    }
-
-                    temporizadorEstado =
-                      setTimeout(function() {
-                        temporizadorEstado = null;
-                        consultarEstado();
-                      }, INTERVALO_ESTADO_MS);
-                  };
-
-                script.onerror =
-                  function() {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-                    conservarCallbackSeguro(nombreCallback);
-                    callbackNombreActual = null;
-
-                    if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
-                      if (!recuperacionDirectaUsada) {
-                        recuperacionDirectaUsada = true;
-                        console.warn(
-                          'DEV36 LOGIN: no fue posible consultar el estado; reenviando LA MISMA solicitud.'
-                        );
-                        lanzarPeticion(true);
-                        return;
-                      }
-
-                      finalizarError(
-                        'No se pudo consultar el estado del acceso.'
-                      );
-                      return;
-                    }
-
-                    temporizadorEstado =
-                      setTimeout(function() {
-                        temporizadorEstado = null;
-                        consultarEstado();
-                      }, INTERVALO_ESTADO_MS);
-                  };
-
-                script.src =
-                  CONFIG.API_URL +
-                  '?action=apiLoginEstado' +
-                  '&loginRequestId=' +
-                  encodeURIComponent(loginRequestId) +
-                  '&callback=' +
-                  encodeURIComponent(nombreCallback);
-
-                script.async = true;
-                document.head.appendChild(script);
+                finalizarError(
+                  'No se pudo comunicar con el servidor de acceso.'
+                );
               };
 
-            const lanzarPeticion =
-              function(esRecuperacionDirecta) {
+              script.src =
+                CONFIG.API_URL +
+                '?action=apiLogin' +
+                '&user=' + encodeURIComponent(usuario) +
+                '&pass=' + encodeURIComponent(password) +
+                '&loginRequestId=' + encodeURIComponent(loginRequestId) +
+                '&callback=' + encodeURIComponent(nombreCallback);
 
-                esRecuperacionDirecta = esRecuperacionDirecta === true;
+              script.async = true;
+              document.head.appendChild(script);
+            };
 
-                if (terminado) return;
+            const lanzarPeticionRespaldo = function() {
+              if (terminado) return;
 
-                const nombreCallback =
-                  'respuestaLoginMGP_' +
-                  Date.now();
+              if (temporizadorRespaldo) {
+                clearTimeout(temporizadorRespaldo);
+                temporizadorRespaldo = null;
+              }
 
-                const script =
-                  document.createElement('script');
+              console.warn(
+                'DEV37 LOGIN: reenviando LA MISMA solicitud para aprovechar idempotencia del servidor.'
+              );
 
-                scriptActual = script;
-                loginScript = script;
-                callbackNombreActual = nombreCallback;
+              lanzarPeticion(true);
+            };
 
-                window[nombreCallback] =
-                  function(data) {
+            /*
+             * Solicitud primaria. NO se cancela si tarda más de 8 s.
+             * El respaldo se lanza a los 6 s y usa el mismo requestId.
+             */
+            lanzarPeticion(false);
 
-                    if (terminado) return;
-
-                    limpiarTemporizadores();
-                    limpiarScriptActual();
-
-                    try { delete window[nombreCallback]; }
-                    catch (error) {}
-
-                    callbackNombreActual = null;
-                    finalizar(data);
-                  };
-
-                script.onerror =
-                  function() {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-                    conservarCallbackSeguro(nombreCallback);
-                    callbackNombreActual = null;
-
-                    if (esRecuperacionDirecta) {
-                      finalizarError(
-                        'No se pudo recuperar la misma solicitud de acceso.'
-                      );
-                      return;
-                    }
-
-                    console.warn(
-                      'DEV36 LOGIN: fallo de transporte; consultando estado de la misma solicitud.'
-                    );
-
-                    consultarEstado();
-                  };
-
-                script.src =
-                  CONFIG.API_URL +
-                  '?action=apiLogin' +
-                  '&user=' + encodeURIComponent(usuario) +
-                  '&pass=' + encodeURIComponent(password) +
-                  '&loginRequestId=' + encodeURIComponent(loginRequestId) +
-                  '&callback=' + encodeURIComponent(nombreCallback);
-
-                script.async = true;
-
-                temporizadorTimeout =
-                  setTimeout(function() {
-
-                    if (terminado) return;
-
-                    limpiarScriptActual();
-                    conservarCallbackSeguro(nombreCallback);
-                    callbackNombreActual = null;
-
-                    if (esRecuperacionDirecta) {
-                      finalizarError(
-                        'Se agotó la recuperación de la misma solicitud de acceso.'
-                      );
-                      return;
-                    }
-
-                    console.warn(
-                      'DEV36 LOGIN: timeout inicial; consultando estado de la misma solicitud.'
-                    );
-
-                    consultarEstado();
-
-                  }, TIMEOUT_INICIAL_MS);
-
-                document.head.appendChild(script);
-              };
-
-            lanzarPeticion();
+            temporizadorRespaldo = setTimeout(function() {
+              temporizadorRespaldo = null;
+              if (!terminado) {
+                lanzarPeticionRespaldo();
+              }
+            }, ESPERA_RESPALDO_MS);
 
           });
 
@@ -4911,103 +4857,109 @@ const usaFiltroMensual =
       await new Promise(
         function(resolve, reject) {
 
-          const script =
-            document.createElement(
-              'script'
-            );
+          /*
+           * DEV37 REPORTES - TRANSPORTE ROBUSTO
+           *
+           * El reporte es SOLO lectura. Si el canal JSONP queda colgado,
+           * no debemos esperar indefinidamente ni destruir la primera
+           * solicitud. A los 7 s se lanza una segunda lectura idéntica.
+           * La primera respuesta válida gana y las demás se ignoran.
+           *
+           * La lógica, parámetros, cálculo y render del reporte NO cambian.
+           */
+          let terminado = false;
+          const scripts = [];
+          const callbacks = [];
+          let temporizadorRespaldo = null;
 
-          let terminado =
-            false;
-
-
-          function limpiar() {
-
-            if (
-              script &&
-              script.parentNode
-            ) {
-
-              script.parentNode
-                .removeChild(script);
-
+          const limpiar = function() {
+            if (temporizadorRespaldo) {
+              clearTimeout(temporizadorRespaldo);
+              temporizadorRespaldo = null;
             }
 
+            scripts.forEach(function(script) {
+              try {
+                if (script && script.parentNode) {
+                  script.parentNode.removeChild(script);
+                }
+              } catch (error) {}
+            });
 
-            try {
+            callbacks.forEach(function(nombre) {
+              try { delete window[nombre]; }
+              catch (error) {}
+            });
 
-              delete window[
-                nombreCallback
-              ];
+            scripts.length = 0;
+            callbacks.length = 0;
+          };
 
-            }
-            catch (error) {
+          const finalizar = function(data) {
+            if (terminado) return;
+            terminado = true;
+            limpiar();
+            resolve(data);
+          };
+
+          const lanzar = function(esRespaldo) {
+            if (terminado) return;
+
+            const callback =
+              'respuestaReporteMGP37_' +
+              Date.now() + '_' +
+              Math.random().toString(36).slice(2, 7);
+
+            const script = document.createElement('script');
+            scripts.push(script);
+            callbacks.push(callback);
+
+            window[callback] = function(data) {
+              if (terminado) return;
+              finalizar(data);
+            };
+
+            script.src =
+              CONFIG.API_URL +
+              '?' +
+              parametros.toString().replace(
+                encodeURIComponent(nombreCallback),
+                encodeURIComponent(callback)
+              );
+
+            script.async = true;
+
+            script.onerror = function() {
+              if (terminado) return;
+
+              if (esRespaldo) {
+                finalizar({
+                  ok: false,
+                  exito: false,
+                  mensaje: 'No se pudo comunicar con el servidor.'
+                });
+                return;
+              }
 
               console.warn(
-                'No fue posible eliminar callback REPORTE:',
-                error
+                'DEV37 REPORTES: fallo de transporte; se mantiene la solicitud primaria y se usará respaldo.'
               );
+            };
 
+            document.head.appendChild(script);
+          };
+
+          lanzar(false);
+
+          temporizadorRespaldo = setTimeout(function() {
+            temporizadorRespaldo = null;
+            if (!terminado) {
+              console.warn(
+                'DEV37 REPORTES: la primera solicitud superó 7 s; enviando lectura de respaldo.'
+              );
+              lanzar(true);
             }
-
-          }
-
-
-          window[nombreCallback] =
-            function(data) {
-
-              if (terminado) {
-
-                return;
-
-              }
-
-
-              terminado =
-                true;
-
-              limpiar();
-
-              resolve(data);
-
-            };
-
-
-          script.src =
-            url;
-
-
-          script.async =
-            true;
-
-
-          script.onerror =
-            function() {
-
-              if (terminado) {
-
-                return;
-
-              }
-
-
-              terminado =
-                true;
-
-              limpiar();
-
-
-              reject(
-                new Error(
-                  'No se pudo comunicar con el servidor.'
-                )
-              );
-
-            };
-
-
-          document.head.appendChild(
-            script
-          );
+          }, 7000);
 
         }
       );
