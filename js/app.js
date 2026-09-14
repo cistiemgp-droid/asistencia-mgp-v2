@@ -1870,7 +1870,9 @@ if (entrarBtn) {
 
       }
 
-      // DEV27: impedir dobles peticiones LOGIN por doble clic.
+      // DEV29: impedir dobles peticiones LOGIN por doble clic.
+      // La misma solicitud conserva un loginRequestId durante los
+      // reintentos para que el servidor no cree una segunda sesión.
       if (loginEnProceso) {
         return;
       }
@@ -1890,50 +1892,62 @@ if (entrarBtn) {
 
       try {
 
-        const nombreCallback =
-          'respuestaLoginMGP_' + Date.now();
+        const loginRequestId =
+          'LR-' +
+          Date.now().toString(36) +
+          '-' +
+          Math.random().toString(36).slice(2, 12);
 
-        let terminado = false;
-        let temporizadorTimeout = null;
-        let temporizadorReintento = null;
-        let reintentoRealizado = false;
-
-        const limpiar =
-          function() {
-
-            if (temporizadorTimeout) {
-              clearTimeout(temporizadorTimeout);
-              temporizadorTimeout = null;
-            }
-
-            if (temporizadorReintento) {
-              clearTimeout(temporizadorReintento);
-              temporizadorReintento = null;
-            }
-
-            if (
-              loginScript &&
-              loginScript.parentNode
-            ) {
-              loginScript.parentNode.removeChild(loginScript);
-            }
-
-            loginScript = null;
-
-            try {
-              delete window[nombreCallback];
-            }
-            catch (error) {
-              console.warn(
-                'No fue posible eliminar callback LOGIN:',
-                error
-              );
-            }
-
-          };
+        let intentoActual = 0;
+        const MAX_INTENTOS = 2;
+        const TIMEOUT_POR_INTENTO_MS = 10000;
+        const ESPERA_REINTENTO_MS = 500;
 
         const resultado =
           await new Promise(function(resolve, reject) {
+
+            let terminado = false;
+            let temporizadorTimeout = null;
+            let temporizadorReintento = null;
+            let scriptActual = null;
+
+            const conservarCallbackSeguro =
+              function(nombreCallback) {
+
+                if (!nombreCallback) {
+                  return;
+                }
+
+                try {
+                  window[nombreCallback] = function() {};
+
+                  setTimeout(function() {
+                    try {
+                      delete window[nombreCallback];
+                    }
+                    catch (error) {}
+                  }, 60000);
+                }
+                catch (error) {}
+
+              };
+
+            const limpiarScriptActual =
+              function() {
+
+                if (
+                  scriptActual &&
+                  scriptActual.parentNode
+                ) {
+                  scriptActual.parentNode.removeChild(
+                    scriptActual
+                  );
+                }
+
+                scriptActual = null;
+                loginScript = null;
+
+              };
 
             const finalizarError =
               function(mensajeError) {
@@ -1943,7 +1957,19 @@ if (entrarBtn) {
                 }
 
                 terminado = true;
-                limpiar();
+
+                if (temporizadorTimeout) {
+                  clearTimeout(temporizadorTimeout);
+                  temporizadorTimeout = null;
+                }
+
+                if (temporizadorReintento) {
+                  clearTimeout(temporizadorReintento);
+                  temporizadorReintento = null;
+                }
+
+                limpiarScriptActual();
+
                 reject(new Error(mensajeError));
 
               };
@@ -1955,15 +1981,25 @@ if (entrarBtn) {
                   return;
                 }
 
-                if (
-                  loginScript &&
-                  loginScript.parentNode
-                ) {
-                  loginScript.parentNode.removeChild(loginScript);
+                intentoActual += 1;
+
+                if (temporizadorTimeout) {
+                  clearTimeout(temporizadorTimeout);
+                  temporizadorTimeout = null;
                 }
 
-                loginScript =
+                limpiarScriptActual();
+
+                const nombreCallback =
+                  'respuestaLoginMGP_' +
+                  Date.now() + '_' +
+                  intentoActual;
+
+                const script =
                   document.createElement('script');
+
+                scriptActual = script;
+                loginScript = script;
 
                 window[nombreCallback] =
                   function(data) {
@@ -1973,49 +2009,57 @@ if (entrarBtn) {
                     }
 
                     terminado = true;
-                    limpiar();
+
+                    if (temporizadorTimeout) {
+                      clearTimeout(temporizadorTimeout);
+                      temporizadorTimeout = null;
+                    }
+
+                    limpiarScriptActual();
+
+                    try {
+                      delete window[nombreCallback];
+                    }
+                    catch (error) {}
+
                     resolve(data);
 
                   };
 
-                loginScript.src =
+                script.src =
                   CONFIG.API_URL +
                   '?action=apiLogin' +
                   '&user=' + encodeURIComponent(usuario) +
                   '&pass=' + encodeURIComponent(password) +
+                  '&loginRequestId=' + encodeURIComponent(loginRequestId) +
                   '&callback=' + encodeURIComponent(nombreCallback);
 
-                loginScript.async = true;
+                script.async = true;
 
-                loginScript.onerror =
+                script.onerror =
                   function() {
 
                     if (terminado) {
                       return;
                     }
 
-                    if (!reintentoRealizado) {
+                    limpiarScriptActual();
 
-                      reintentoRealizado = true;
+                    conservarCallbackSeguro(nombreCallback);
 
-                      if (
-                        loginScript &&
-                        loginScript.parentNode
-                      ) {
-                        loginScript.parentNode.removeChild(loginScript);
-                      }
-
-                      loginScript = null;
+                    if (intentoActual < MAX_INTENTOS) {
 
                       console.warn(
-                        'DEV27 LOGIN: primer intento de red fallido; reintentando una vez.'
+                        'DEV29 LOGIN: fallo de red en intento ' +
+                        intentoActual +
+                        '; reintentando la misma solicitud.'
                       );
 
                       temporizadorReintento =
                         setTimeout(function() {
                           temporizadorReintento = null;
                           lanzarPeticion();
-                        }, 1000);
+                        }, ESPERA_REINTENTO_MS);
 
                       return;
 
@@ -2027,22 +2071,44 @@ if (entrarBtn) {
 
                   };
 
-                document.head.appendChild(
-                  loginScript
-                );
+                temporizadorTimeout =
+                  setTimeout(function() {
+
+                    if (terminado) {
+                      return;
+                    }
+
+                    limpiarScriptActual();
+
+                    conservarCallbackSeguro(nombreCallback);
+
+                    if (intentoActual < MAX_INTENTOS) {
+
+                      console.warn(
+                        'DEV29 LOGIN: timeout en intento ' +
+                        intentoActual +
+                        '; reintentando la misma solicitud.'
+                      );
+
+                      temporizadorReintento =
+                        setTimeout(function() {
+                          temporizadorReintento = null;
+                          lanzarPeticion();
+                        }, ESPERA_REINTENTO_MS);
+
+                      return;
+
+                    }
+
+                    finalizarError(
+                      'Tiempo de espera agotado al iniciar sesión.'
+                    );
+
+                  }, TIMEOUT_POR_INTENTO_MS);
+
+                document.head.appendChild(script);
 
               };
-
-            // Un único timeout global para toda la operación LOGIN,
-            // incluidos el intento inicial y el único reintento.
-            temporizadorTimeout =
-              setTimeout(function() {
-
-                finalizarError(
-                  'Tiempo de espera agotado al iniciar sesión.'
-                );
-
-              }, 15000);
 
             lanzarPeticion();
 
