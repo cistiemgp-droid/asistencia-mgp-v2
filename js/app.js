@@ -1870,7 +1870,7 @@ if (entrarBtn) {
 
       }
 
-      // DEV30: impedir dobles peticiones LOGIN por doble clic.
+      // DEV31: impedir dobles peticiones LOGIN por doble clic y recuperar solicitudes tardías de forma segura.
       // Se genera un loginRequestId de trazabilidad para la solicitud.
       if (loginEnProceso) {
         return;
@@ -1898,8 +1898,9 @@ if (entrarBtn) {
           Math.random().toString(36).slice(2, 12);
 
         let intentoActual = 0;
-        const MAX_INTENTOS = 1;
-        const TIMEOUT_POR_INTENTO_MS = 30000;
+        const MAX_INTENTOS = 2;
+        const TIMEOUT_POR_INTENTO_MS = 12000;
+        const TIMEOUT_ESTADO_MS = 5000;
 
         const resultado =
           await new Promise(function(resolve, reject) {
@@ -2080,27 +2081,72 @@ if (entrarBtn) {
 
                     conservarCallbackSeguro(nombreCallback);
 
-                    if (intentoActual < MAX_INTENTOS) {
+                    console.warn('DEV31 LOGIN: timeout en intento ' + intentoActual + '; consultando estado de la misma solicitud.');
 
-                      console.warn(
-                        'DEV30 LOGIN: timeout en intento ' +
-                        intentoActual +
-                        '; reintentando la misma solicitud.'
-                      );
+                    const callbackEstado = 'estadoLoginMGP_' + Date.now() + '_' + intentoActual;
+                    let estadoScript = document.createElement('script');
+                    let estadoTimer = null;
+                    let estadoTerminado = false;
 
-                      temporizadorReintento =
-                        setTimeout(function() {
+                    const cerrarEstado = function() {
+                      if (estadoTimer) { clearTimeout(estadoTimer); estadoTimer = null; }
+                      if (estadoScript && estadoScript.parentNode) estadoScript.parentNode.removeChild(estadoScript);
+                      try { delete window[callbackEstado]; } catch (e) {}
+                      estadoScript = null;
+                    };
+
+                    window[callbackEstado] = function(estadoData) {
+                      if (estadoTerminado || terminado) return;
+                      estadoTerminado = true;
+                      cerrarEstado();
+                      if (estadoData && estadoData.estado === 'COMPLETADO' && estadoData.resultado) {
+                        terminado = true;
+                        resolve(estadoData.resultado);
+                        return;
+                      }
+                      if (intentoActual < MAX_INTENTOS) {
+                        temporizadorReintento = setTimeout(function() {
                           temporizadorReintento = null;
                           lanzarPeticion();
-                        }, ESPERA_REINTENTO_MS);
+                        }, 500);
+                        return;
+                      }
+                      finalizarError(estadoData && estadoData.estado === 'PROCESANDO' ? 'El servidor sigue procesando el acceso. Intente nuevamente en unos segundos.' : 'Tiempo de espera agotado al iniciar sesión.');
+                    };
 
-                      return;
+                    estadoScript.onerror = function() {
+                      if (estadoTerminado || terminado) return;
+                      estadoTerminado = true;
+                      cerrarEstado();
+                      if (intentoActual < MAX_INTENTOS) {
+                        temporizadorReintento = setTimeout(function() {
+                          temporizadorReintento = null;
+                          lanzarPeticion();
+                        }, 500);
+                      } else {
+                        finalizarError('Tiempo de espera agotado al iniciar sesión.');
+                      }
+                    };
 
-                    }
+                    estadoTimer = setTimeout(function() {
+                      if (estadoTerminado || terminado) return;
+                      estadoTerminado = true;
+                      cerrarEstado();
+                      if (intentoActual < MAX_INTENTOS) {
+                        temporizadorReintento = setTimeout(function() {
+                          temporizadorReintento = null;
+                          lanzarPeticion();
+                        }, 500);
+                      } else {
+                        finalizarError('Tiempo de espera agotado al iniciar sesión.');
+                      }
+                    }, TIMEOUT_ESTADO_MS);
 
-                    finalizarError(
-                      'Tiempo de espera agotado al iniciar sesión.'
-                    );
+                    estadoScript.src = CONFIG.API_URL + '?action=apiLoginEstado' +
+                      '&loginRequestId=' + encodeURIComponent(loginRequestId) +
+                      '&callback=' + encodeURIComponent(callbackEstado);
+                    estadoScript.async = true;
+                    document.head.appendChild(estadoScript);
 
                   }, TIMEOUT_POR_INTENTO_MS);
 
