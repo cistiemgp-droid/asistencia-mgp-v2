@@ -1,3 +1,4 @@
+let loginScript;
 // =====================================================
 // ASISTENCIA MGP V2
 // FRONTEND - GITHUB
