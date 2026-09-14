@@ -65,6 +65,11 @@ const state = {
 let ultimoReporteMGP = null;
 let matrizMensualVisibleMGP = false;
 
+// DEV27: estado controlado de la petición LOGIN.
+// Evita doble envío y permite limpiar correctamente el JSONP.
+let loginScript = null;
+let loginEnProceso = false;
+
 
 const cameraState = {
 
@@ -1865,6 +1870,17 @@ if (entrarBtn) {
 
       }
 
+      // DEV27: impedir dobles peticiones LOGIN por doble clic.
+      if (loginEnProceso) {
+        return;
+      }
+
+      loginEnProceso = true;
+
+      if (entrarBtn) {
+        entrarBtn.disabled = true;
+      }
+
       if (mensaje) {
 
         mensaje.textContent =
@@ -1878,9 +1894,22 @@ if (entrarBtn) {
           'respuestaLoginMGP_' + Date.now();
 
         let terminado = false;
+        let temporizadorTimeout = null;
+        let temporizadorReintento = null;
+        let reintentoRealizado = false;
 
         const limpiar =
           function() {
+
+            if (temporizadorTimeout) {
+              clearTimeout(temporizadorTimeout);
+              temporizadorTimeout = null;
+            }
+
+            if (temporizadorReintento) {
+              clearTimeout(temporizadorReintento);
+              temporizadorReintento = null;
+            }
 
             if (
               loginScript &&
@@ -1906,11 +1935,8 @@ if (entrarBtn) {
         const resultado =
           await new Promise(function(resolve, reject) {
 
-            loginScript =
-              document.createElement('script');
-
-            window[nombreCallback] =
-              function(data) {
+            const finalizarError =
+              function(mensajeError) {
 
                 if (terminado) {
                   return;
@@ -1918,40 +1944,107 @@ if (entrarBtn) {
 
                 terminado = true;
                 limpiar();
-                resolve(data);
+                reject(new Error(mensajeError));
 
               };
 
-            loginScript.src =
-              CONFIG.API_URL +
-              '?action=apiLogin' +
-              '&user=' + encodeURIComponent(usuario) +
-              '&pass=' + encodeURIComponent(password) +
-              '&callback=' + encodeURIComponent(nombreCallback);
-
-            loginScript.async = true;
-
-            loginScript.onerror =
+            const lanzarPeticion =
               function() {
 
                 if (terminado) {
                   return;
                 }
 
-                terminado = true;
-                limpiar();
+                if (
+                  loginScript &&
+                  loginScript.parentNode
+                ) {
+                  loginScript.parentNode.removeChild(loginScript);
+                }
 
-                reject(
-                  new Error(
-                    'No se pudo comunicar con el servidor.'
-                  )
+                loginScript =
+                  document.createElement('script');
+
+                window[nombreCallback] =
+                  function(data) {
+
+                    if (terminado) {
+                      return;
+                    }
+
+                    terminado = true;
+                    limpiar();
+                    resolve(data);
+
+                  };
+
+                loginScript.src =
+                  CONFIG.API_URL +
+                  '?action=apiLogin' +
+                  '&user=' + encodeURIComponent(usuario) +
+                  '&pass=' + encodeURIComponent(password) +
+                  '&callback=' + encodeURIComponent(nombreCallback);
+
+                loginScript.async = true;
+
+                loginScript.onerror =
+                  function() {
+
+                    if (terminado) {
+                      return;
+                    }
+
+                    if (!reintentoRealizado) {
+
+                      reintentoRealizado = true;
+
+                      if (
+                        loginScript &&
+                        loginScript.parentNode
+                      ) {
+                        loginScript.parentNode.removeChild(loginScript);
+                      }
+
+                      loginScript = null;
+
+                      console.warn(
+                        'DEV27 LOGIN: primer intento de red fallido; reintentando una vez.'
+                      );
+
+                      temporizadorReintento =
+                        setTimeout(function() {
+                          temporizadorReintento = null;
+                          lanzarPeticion();
+                        }, 1000);
+
+                      return;
+
+                    }
+
+                    finalizarError(
+                      'No se pudo comunicar con el servidor.'
+                    );
+
+                  };
+
+                document.head.appendChild(
+                  loginScript
                 );
 
               };
 
-            document.head.appendChild(
-              loginScript
-            );
+            // Un único timeout global para toda la operación LOGIN,
+            // incluidos el intento inicial y el único reintento.
+            temporizadorTimeout =
+              setTimeout(function() {
+
+                finalizarError(
+                  'Tiempo de espera agotado al iniciar sesión.'
+                );
+
+              }, 15000);
+
+            lanzarPeticion();
 
           });
 
@@ -2048,6 +2141,15 @@ if (entrarBtn) {
             '❌ No se pudo comunicar con el servidor: ' +
             error.message;
 
+        }
+
+      }
+      finally {
+
+        loginEnProceso = false;
+
+        if (entrarBtn) {
+          entrarBtn.disabled = false;
         }
 
       }
@@ -4619,6 +4721,19 @@ const usaFiltroMensual =
   consultarReporteBtn.disabled =
     true;
 
+  // DEV17 - AUDITORIA CLIENTE REPORTES:
+  // mide desde el inicio de la solicitud hasta recibir la respuesta JSONP.
+  // No modifica la lógica ni los datos del reporte.
+  const marcaClienteReporteMGP =
+    (window.performance && typeof window.performance.now === 'function')
+      ? window.performance.now()
+      : Date.now();
+
+  // DEV19 - AUDITORIA DE TRANSPORTE REPORTES:
+  // usa reloj absoluto del navegador para compararlo con las marcas epoch
+  // enviadas por el backend. No modifica la lógica ni los datos.
+  const marcaClienteReporteEpochMGP = Date.now();
+
   try {
 
     const nombreCallback =
@@ -4651,7 +4766,13 @@ const usaFiltroMensual =
           state.token,
 
         callback:
-          nombreCallback
+          nombreCallback,
+
+        // DIAGNOSTICO CONTROLADO REPORTES:
+        // solicita al backend las mediciones internas sin cambiar
+        // la lógica ni los datos del reporte.
+        _diag:
+          '1'
 
       });
 
@@ -4660,6 +4781,12 @@ const usaFiltroMensual =
       CONFIG.API_URL +
       '?' +
       parametros.toString();
+
+
+    console.log(
+      'Consultando reporte:',
+      url
+    );
 
 
     const resultado =
@@ -4674,8 +4801,12 @@ const usaFiltroMensual =
           let terminado =
             false;
 
-          // Límite de seguridad para evitar una espera indefinida.
-          // No modifica la ejecución ni el contenido del reporte.
+          // DIAGNOSTICO CONTROLADO REPORTES:
+          // evita que una solicitud JSONP quede esperando indefinidamente.
+          // El tiempo de 120 s es solamente un límite del cliente;
+          // no altera la ejecución ni el contenido del reporte.
+          // Se amplía únicamente para permitir medir el reporte mensual
+          // cuando el backend tarda más de 30 s.
           const temporizadorReporte =
             setTimeout(
               function() {
@@ -4694,7 +4825,7 @@ const usaFiltroMensual =
                 );
 
               },
-              60000
+              120000
             );
 
 
@@ -4748,6 +4879,50 @@ const usaFiltroMensual =
               limpiar();
 
 
+              const marcaClienteReporteFinMGP =
+                (window.performance && typeof window.performance.now === 'function')
+                  ? window.performance.now()
+                  : Date.now();
+
+              const tiempoClienteHastaRespuestaMGP =
+                Math.round(marcaClienteReporteFinMGP - marcaClienteReporteMGP);
+
+              console.log(
+                'DEV17 CLIENTE REPORTES - respuesta recibida en ms:',
+                tiempoClienteHastaRespuestaMGP
+              );
+
+              // DEV19 - separa el tiempo del servidor del tiempo posterior
+              // a la finalización de Apps Script.
+              const diagnosticoServidorMGP =
+                data && data._diagnosticoServidor
+                  ? data._diagnosticoServidor
+                  : null;
+
+              if (diagnosticoServidorMGP &&
+                  Number.isFinite(Number(diagnosticoServidorMGP.accionFin))) {
+
+                const tiempoDesdeFinServidorMGP =
+                  Math.max(0, Date.now() - Number(diagnosticoServidorMGP.accionFin));
+
+                console.log(
+                  'DEV19 TRANSPORTE REPORTES - desde accionFin servidor hasta callback ms:',
+                  tiempoDesdeFinServidorMGP
+                );
+
+                console.log(
+                  'DEV19 TRANSPORTE REPORTES - cliente total hasta callback ms:',
+                  tiempoClienteHastaRespuestaMGP
+                );
+
+              } else {
+
+                console.warn(
+                  'DEV19 TRANSPORTE REPORTES: no se pudo calcular el tramo posterior a accionFin.'
+                );
+
+              }
+
               resolve(data);
 
             };
@@ -4792,6 +4967,73 @@ const usaFiltroMensual =
 
         }
       );
+
+
+    console.log(
+      'Respuesta API REPORTES:',
+      resultado
+    );
+
+    // DEV19 - resumen de auditoría de transporte.
+    if (resultado && resultado._diagnosticoServidor) {
+
+      const d = resultado._diagnosticoServidor;
+      const totalBackend = Number(d.reporteTotalBackendMs);
+      const accionFin = Number(d.accionFin);
+      const clienteHastaRespuesta =
+        (window.performance && typeof window.performance.now === 'function')
+          ? Math.round(window.performance.now() - marcaClienteReporteMGP)
+          : Math.max(0, Date.now() - marcaClienteReporteEpochMGP);
+
+      console.table({
+        'DEV19 cliente hasta respuesta (ms)': clienteHastaRespuesta,
+        'DEV19 backend total reportado (ms)': totalBackend,
+        'DEV19 desde accionFin servidor hasta callback (ms)':
+          Number.isFinite(accionFin)
+            ? Math.max(0, Date.now() - accionFin)
+            : null,
+        'DEV19 diferencia cliente - backend (ms)':
+          Number.isFinite(totalBackend)
+            ? Math.round(clienteHastaRespuesta - totalBackend)
+            : null
+      });
+
+    }
+
+    // DEV16 - AUDITORIA CONTROLADA:
+    // Expone por separado los tiempos internos del backend para no depender
+    // de expandir manualmente el objeto en la consola. No altera el reporte.
+    if (
+      resultado &&
+      resultado._diagnosticoServidor
+    ) {
+
+      console.groupCollapsed(
+        'DIAGNOSTICO REPORTES DEV16'
+      );
+
+      console.table(
+        resultado._diagnosticoServidor
+      );
+
+      console.log(
+        'Diagnostico servidor REPORTES:',
+        JSON.stringify(
+          resultado._diagnosticoServidor,
+          null,
+          2
+        )
+      );
+
+      console.groupEnd();
+
+    } else {
+
+      console.warn(
+        'DEV16: la respuesta no contiene _diagnosticoServidor. Revisar version publicada del backend.'
+      );
+
+    }
 
 
     // -------------------------------------------------
@@ -4996,6 +5238,16 @@ const usaFiltroMensual =
       (window.performance && typeof window.performance.now === 'function')
         ? window.performance.now()
         : Date.now();
+
+    console.log(
+      'DEV17 CLIENTE REPORTES - render matriz ms:',
+      Math.round(marcaClienteRenderDespuesMGP - marcaClienteRenderAntesMGP)
+    );
+
+    console.log(
+      'DEV17 CLIENTE REPORTES - total hasta render ms:',
+      Math.round(marcaClienteRenderDespuesMGP - marcaClienteReporteMGP)
+    );
 
         // -------------------------------------------------
     // ALERTAS V2 - VISUALIZACIÓN
