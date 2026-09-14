@@ -1911,7 +1911,8 @@ if (entrarBtn) {
             let callbackNombreActual = null;
             const TIMEOUT_INICIAL_MS = 8000;
             const INTERVALO_ESTADO_MS = 1000;
-            const MAX_CONSULTAS_ESTADO = 12;
+            const MAX_CONSULTAS_ESTADO = 4;
+            let recuperacionDirectaUsada = false;
             let consultasEstado = 0;
 
             const conservarCallbackSeguro =
@@ -2020,6 +2021,15 @@ if (entrarBtn) {
                     }
 
                     if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
+                      if (!recuperacionDirectaUsada) {
+                        recuperacionDirectaUsada = true;
+                        console.warn(
+                          'DEV36 LOGIN: el estado no respondió; reenviando LA MISMA solicitud para recuperar el resultado.'
+                        );
+                        lanzarPeticion(true);
+                        return;
+                      }
+
                       finalizarError(
                         'No se recibió respuesta del servidor al iniciar sesión.'
                       );
@@ -2043,6 +2053,15 @@ if (entrarBtn) {
                     callbackNombreActual = null;
 
                     if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
+                      if (!recuperacionDirectaUsada) {
+                        recuperacionDirectaUsada = true;
+                        console.warn(
+                          'DEV36 LOGIN: no fue posible consultar el estado; reenviando LA MISMA solicitud.'
+                        );
+                        lanzarPeticion(true);
+                        return;
+                      }
+
                       finalizarError(
                         'No se pudo consultar el estado del acceso.'
                       );
@@ -2069,7 +2088,9 @@ if (entrarBtn) {
               };
 
             const lanzarPeticion =
-              function() {
+              function(esRecuperacionDirecta) {
+
+                esRecuperacionDirecta = esRecuperacionDirecta === true;
 
                 if (terminado) return;
 
@@ -2108,8 +2129,15 @@ if (entrarBtn) {
                     conservarCallbackSeguro(nombreCallback);
                     callbackNombreActual = null;
 
+                    if (esRecuperacionDirecta) {
+                      finalizarError(
+                        'No se pudo recuperar la misma solicitud de acceso.'
+                      );
+                      return;
+                    }
+
                     console.warn(
-                      'DEV32 LOGIN: fallo de transporte; consultando estado de la misma solicitud.'
+                      'DEV36 LOGIN: fallo de transporte; consultando estado de la misma solicitud.'
                     );
 
                     consultarEstado();
@@ -2134,8 +2162,15 @@ if (entrarBtn) {
                     conservarCallbackSeguro(nombreCallback);
                     callbackNombreActual = null;
 
+                    if (esRecuperacionDirecta) {
+                      finalizarError(
+                        'Se agotó la recuperación de la misma solicitud de acceso.'
+                      );
+                      return;
+                    }
+
                     console.warn(
-                      'DEV32 LOGIN: timeout inicial; consultando estado de la misma solicitud.'
+                      'DEV36 LOGIN: timeout inicial; consultando estado de la misma solicitud.'
                     );
 
                     consultarEstado();
