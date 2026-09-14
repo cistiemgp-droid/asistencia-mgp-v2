@@ -4837,238 +4837,182 @@ const usaFiltroMensual =
 
   try {
 
-    const nombreCallback =
-      'respuestaReporteMGP_' +
-      Date.now();
+    // DEV33: transporte de REPORTES robusto.
+    // Los reportes son de solo lectura: un segundo intento es seguro
+    // si el navegador pierde la respuesta del primero.
+    const MAX_INTENTOS_REPORTE = 2;
+    const TIMEOUT_REPORTE_MS = 20000;
+    const ESPERA_REINTENTO_REPORTE_MS = 700;
 
-
-    const parametros =
-      new URLSearchParams({
-
-        action:
-          'apiReportes',
-
-
-        fecha:
-  usaFiltroMensual
-    ? ''
-    : fecha,
-
-        mes:
-      mes,
-
-        grado:
-          grado,
-
-        reporte:
-          tipoReporte,
-
-        token:
-          state.token,
-
-        callback:
-          nombreCallback,
-
-        // DIAGNOSTICO CONTROLADO REPORTES:
-        // solicita al backend las mediciones internas sin cambiar
-        // la lógica ni los datos del reporte.
-        _diag:
-          '1'
-
-      });
-
-
-    const url =
-      CONFIG.API_URL +
-      '?' +
-      parametros.toString();
-
-
-    console.log(
-      'Consultando reporte:',
-      url
-    );
-
+    const conservarCallbackReporteSeguro =
+      function(nombreCallback) {
+        if (!nombreCallback) return;
+        try {
+          window[nombreCallback] = function() {};
+          setTimeout(function() {
+            try { delete window[nombreCallback]; }
+            catch (error) {}
+          }, 60000);
+        } catch (error) {}
+      };
 
     const resultado =
       await new Promise(
         function(resolve, reject) {
 
-          const script =
-            document.createElement(
-              'script'
-            );
+          let terminado = false;
+          let intento = 0;
+          let scriptActual = null;
+          let callbackNombreActual = null;
+          let temporizador = null;
+          let temporizadorReintento = null;
 
-          let terminado =
-            false;
-
-          // DIAGNOSTICO CONTROLADO REPORTES:
-          // evita que una solicitud JSONP quede esperando indefinidamente.
-          // El tiempo de 120 s es solamente un límite del cliente;
-          // no altera la ejecución ni el contenido del reporte.
-          // Se amplía únicamente para permitir medir el reporte mensual
-          // cuando el backend tarda más de 30 s.
-          const temporizadorReporte =
-            setTimeout(
-              function() {
-
-                if (terminado) {
-                  return;
-                }
-
-                terminado = true;
-                limpiar();
-
-                reject(
-                  new Error(
-                    'Tiempo de espera agotado al generar el reporte.'
-                  )
-                );
-
-              },
-              120000
-            );
-
-
-          function limpiar() {
-
-            clearTimeout(temporizadorReporte);
-
-            if (
-              script &&
-              script.parentNode
-            ) {
-
-              script.parentNode
-                .removeChild(script);
-
-            }
-
-
-            try {
-
-              delete window[
-                nombreCallback
-              ];
-
-            }
-            catch (error) {
-
-              console.warn(
-                'No fue posible eliminar callback REPORTE:',
-                error
-              );
-
-            }
-
-          }
-
-
-          window[nombreCallback] =
-            function(data) {
-
-              if (terminado) {
-
-                return;
-
-              }
-
-
-              terminado =
-                true;
-
-              limpiar();
-
-
-              const marcaClienteReporteFinMGP =
-                (window.performance && typeof window.performance.now === 'function')
-                  ? window.performance.now()
-                  : Date.now();
-
-              const tiempoClienteHastaRespuestaMGP =
-                Math.round(marcaClienteReporteFinMGP - marcaClienteReporteMGP);
-
-              console.log(
-                'DEV17 CLIENTE REPORTES - respuesta recibida en ms:',
-                tiempoClienteHastaRespuestaMGP
-              );
-
-              // DEV19 - separa el tiempo del servidor del tiempo posterior
-              // a la finalización de Apps Script.
-              const diagnosticoServidorMGP =
-                data && data._diagnosticoServidor
-                  ? data._diagnosticoServidor
-                  : null;
-
-              if (diagnosticoServidorMGP &&
-                  Number.isFinite(Number(diagnosticoServidorMGP.accionFin))) {
-
-                const tiempoDesdeFinServidorMGP =
-                  Math.max(0, Date.now() - Number(diagnosticoServidorMGP.accionFin));
-
-                console.log(
-                  'DEV19 TRANSPORTE REPORTES - desde accionFin servidor hasta callback ms:',
-                  tiempoDesdeFinServidorMGP
-                );
-
-                console.log(
-                  'DEV19 TRANSPORTE REPORTES - cliente total hasta callback ms:',
-                  tiempoClienteHastaRespuestaMGP
-                );
-
-              } else {
-
-                console.warn(
-                  'DEV19 TRANSPORTE REPORTES: no se pudo calcular el tramo posterior a accionFin.'
-                );
-
-              }
-
-              resolve(data);
-
-            };
-
-
-          script.src =
-            url;
-
-
-          script.async =
-            true;
-
-
-          script.onerror =
+          const limpiarActual =
             function() {
 
-              if (terminado) {
-
-                return;
-
+              if (temporizador) {
+                clearTimeout(temporizador);
+                temporizador = null;
               }
 
+              if (scriptActual && scriptActual.parentNode) {
+                scriptActual.parentNode.removeChild(scriptActual);
+              }
 
-              terminado =
-                true;
+              scriptActual = null;
 
-              limpiar();
-
-
-              reject(
-                new Error(
-                  'No se pudo comunicar con el servidor.'
-                )
-              );
-
+              if (callbackNombreActual) {
+                conservarCallbackReporteSeguro(callbackNombreActual);
+                callbackNombreActual = null;
+              }
             };
 
+          const finalizar =
+            function(data) {
 
-          document.head.appendChild(
-            script
-          );
+              if (terminado) return;
 
+              terminado = true;
+
+              if (temporizadorReintento) {
+                clearTimeout(temporizadorReintento);
+                temporizadorReintento = null;
+              }
+
+              limpiarActual();
+              resolve(data);
+            };
+
+          const fallar =
+            function(mensajeError) {
+
+              if (terminado) return;
+
+              terminado = true;
+
+              if (temporizadorReintento) {
+                clearTimeout(temporizadorReintento);
+                temporizadorReintento = null;
+              }
+
+              limpiarActual();
+              reject(new Error(mensajeError));
+            };
+
+          const lanzarIntento =
+            function() {
+
+              if (terminado) return;
+
+              intento += 1;
+
+              const nombreCallback =
+                'respuestaReporteMGP_' +
+                Date.now() + '_' +
+                intento;
+
+              const script =
+                document.createElement('script');
+
+              scriptActual = script;
+              callbackNombreActual = nombreCallback;
+
+              const parametrosIntento =
+                new URLSearchParams({
+                  action: 'apiReportes',
+                  fecha: usaFiltroMensual ? '' : fecha,
+                  mes: mes,
+                  grado: grado,
+                  reporte: tipoReporte,
+                  token: state.token,
+                  callback: nombreCallback,
+                  _diag: '1'
+                });
+
+              const urlIntento =
+                CONFIG.API_URL +
+                '?' +
+                parametrosIntento.toString();
+
+              window[nombreCallback] =
+                function(data) {
+
+                  if (terminado) return;
+
+                  finalizar(data);
+                };
+
+              const programarReintento =
+                function(motivo) {
+
+                  if (terminado) return;
+
+                  limpiarActual();
+
+                  if (intento >= MAX_INTENTOS_REPORTE) {
+                    fallar(motivo);
+                    return;
+                  }
+
+                  console.warn(
+                    'DEV33 REPORTES: fallo de transporte en intento ' +
+                    intento +
+                    '; reintentando una vez.'
+                  );
+
+                  temporizadorReintento =
+                    setTimeout(function() {
+                      temporizadorReintento = null;
+                      lanzarIntento();
+                    }, ESPERA_REINTENTO_REPORTE_MS);
+                };
+
+              script.onerror =
+                function() {
+                  programarReintento(
+                    'No se pudo comunicar con el servidor.'
+                  );
+                };
+
+              temporizador =
+                setTimeout(function() {
+
+                  if (terminado) return;
+
+                  programarReintento(
+                    'Tiempo de espera agotado al generar el reporte.'
+                  );
+
+                }, TIMEOUT_REPORTE_MS);
+
+              script.async = true;
+              script.src = urlIntento;
+              document.head.appendChild(script);
+            };
+
+          lanzarIntento();
         }
       );
-
 
     console.log(
       'Respuesta API REPORTES:',
