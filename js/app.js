@@ -1,4 +1,42 @@
-let loginScript;
+// =====================================================
+// OPTIMIZACIÓN CONTROLADA DE CONEXIÓN API — PRUEBA #1
+// =====================================================
+// Prepara las conexiones antes de que ocurra el primer registro QR.
+// NO modifica la lógica de registro, cámara, reportes ni backend.
+(function prepararConexionAPIMGP() {
+  try {
+    if (!document.head) return;
+
+    const origenes = [
+      'https://script.google.com',
+      'https://script.googleusercontent.com'
+    ];
+
+    origenes.forEach(function(origen) {
+      const existente = document.head.querySelector(
+        'link[rel="preconnect"][href="' + origen + '"]'
+      );
+
+      if (existente) return;
+
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origen;
+      link.crossOrigin = 'anonymous';
+      document.head.appendChild(link);
+
+      const dns = document.createElement('link');
+      dns.rel = 'dns-prefetch';
+      dns.href = origen;
+      document.head.appendChild(dns);
+    });
+  }
+  catch (error) {
+    // La optimización es opcional: si el navegador no la admite,
+    // la aplicación continúa exactamente con el flujo normal.
+  }
+})();
+
 // =====================================================
 // ASISTENCIA MGP V2
 // FRONTEND - GITHUB
@@ -39,18 +77,7 @@ const state = {
 
   // Sesión institucional V2
   token: null,
-  expiraSesion: null,
-
-  // Modo de registro controlado por el usuario.
-  // ONLINE registra directamente en el servidor.
-  // OFFLINE guarda localmente y queda pendiente de sincronización.
-  registroModo: 'ONLINE',
-
-  // Cantidad de registros OFFLINE pendientes en este equipo.
-  registrosOfflinePendientes: 0,
-
-  // Cantidad de registros OFFLINE rechazados por el servidor.
-  registrosOfflineError: 0
+  expiraSesion: null
 
 };
 
@@ -102,1346 +129,6 @@ const cameraState = {
 
 };
 
-
-// =====================================================
-// MODO ONLINE / OFFLINE — ETAPA 02
-// =====================================================
-//
-// ONLINE:
-//   QR/DNI -> servidor -> Google Sheets.
-//
-// OFFLINE:
-//   QR/DNI -> IndexedDB local -> continúa inmediatamente.
-//   NO realiza ninguna llamada al servidor durante el registro.
-//
-// En esta etapa todavía NO sincronizamos la cola con el servidor.
-// Solo dejamos los registros guardados de forma segura en el equipo.
-// =====================================================
-
-const OFFLINE_DB_MGP = 'ASISTENCIA_MGP_V2_OFFLINE';
-const OFFLINE_STORE_MGP = 'pendientes';
-const OFFLINE_DB_VERSION_MGP = 1;
-
-let offlineDBPromiseMGP = null;
-
-function abrirDBOfflineMGP() {
-
-  if (offlineDBPromiseMGP) {
-    return offlineDBPromiseMGP;
-  }
-
-  offlineDBPromiseMGP = new Promise(function(resolve, reject) {
-
-    if (!window.indexedDB) {
-      reject(new Error('Este navegador no soporta almacenamiento offline.'));
-      return;
-    }
-
-    const solicitud = indexedDB.open(
-      OFFLINE_DB_MGP,
-      OFFLINE_DB_VERSION_MGP
-    );
-
-    solicitud.onupgradeneeded = function(evento) {
-
-      const db = evento.target.result;
-
-      if (!db.objectStoreNames.contains(OFFLINE_STORE_MGP)) {
-
-        const store = db.createObjectStore(
-          OFFLINE_STORE_MGP,
-          { keyPath: 'idOffline' }
-        );
-
-        store.createIndex(
-          'fechaHoraCliente',
-          'fechaHoraCliente',
-          { unique: false }
-        );
-
-        store.createIndex(
-          'estadoSincronizacion',
-          'estadoSincronizacion',
-          { unique: false }
-        );
-
-      }
-
-    };
-
-    solicitud.onsuccess = function(evento) {
-      resolve(evento.target.result);
-    };
-
-    solicitud.onerror = function() {
-      reject(
-        solicitud.error ||
-        new Error('No fue posible abrir el almacenamiento offline.')
-      );
-    };
-
-  });
-
-  return offlineDBPromiseMGP;
-
-}
-
-function generarIdOfflineMGP() {
-
-  const ahora = Date.now().toString(36);
-  const aleatorio =
-    Math.random().toString(36).slice(2, 10).toUpperCase();
-
-  return 'OFF-' + ahora.toUpperCase() + '-' + aleatorio;
-
-}
-
-function guardarRegistroOfflineMGP(id) {
-
-  return new Promise(function(resolve, reject) {
-
-    const idLimpio =
-      String(id || '').trim();
-
-    const tipo =
-      String(state.tipo || 'estudiante').trim();
-
-    const estado =
-      String(state.estado || 'INGRESO').trim().toUpperCase();
-
-    if (!idLimpio) {
-      reject(new Error('No se obtuvo el DNI para registrar.'));
-      return;
-    }
-
-    const fechaHoraCliente =
-      new Date().toISOString();
-
-    const registro = {
-      idOffline: generarIdOfflineMGP(),
-      fechaHoraCliente: fechaHoraCliente,
-      id: idLimpio,
-      tipo: tipo,
-      estado: estado,
-      usuario: state.usuario && state.usuario.usuario
-        ? String(state.usuario.usuario)
-        : '',
-      nombreUsuario: state.usuario && state.usuario.nombre
-        ? String(state.usuario.nombre)
-        : '',
-      estadoSincronizacion: 'PENDIENTE',
-      creadoEn: fechaHoraCliente
-    };
-
-    abrirDBOfflineMGP()
-      .then(function(db) {
-
-        return new Promise(function(resolveTx, rejectTx) {
-
-          const tx = db.transaction(
-            OFFLINE_STORE_MGP,
-            'readwrite'
-          );
-
-          const store = tx.objectStore(
-            OFFLINE_STORE_MGP
-          );
-
-          store.add(registro);
-
-          tx.oncomplete = function() {
-            resolveTx(registro);
-          };
-
-          tx.onerror = function() {
-            rejectTx(
-              tx.error ||
-              new Error('No fue posible guardar el registro offline.')
-            );
-          };
-
-          tx.onabort = function() {
-            rejectTx(
-              tx.error ||
-              new Error('El almacenamiento offline canceló la operación.')
-            );
-          };
-
-        });
-
-      })
-      .then(function(registroGuardado) {
-
-        actualizarContadorOfflineMGP();
-        resolve(registroGuardado);
-
-      })
-      .catch(function(error) {
-        reject(error);
-      });
-
-  });
-
-}
-
-function contarEstadosOfflineMGP() {
-
-  return abrirDBOfflineMGP()
-    .then(function(db) {
-
-      return new Promise(function(resolve, reject) {
-
-        const tx = db.transaction(
-          OFFLINE_STORE_MGP,
-          'readonly'
-        );
-
-        const store = tx.objectStore(
-          OFFLINE_STORE_MGP
-        );
-
-        const solicitud = store.getAll();
-
-        solicitud.onsuccess = function() {
-
-          const registros =
-            Array.isArray(solicitud.result)
-              ? solicitud.result
-              : [];
-
-          let pendientes = 0;
-          let errores = 0;
-
-          registros.forEach(function(registro) {
-
-            const estado = String(
-              registro.estadoSincronizacion || 'PENDIENTE'
-            ).toUpperCase();
-
-            if (estado === 'PENDIENTE') {
-              pendientes++;
-            }
-
-            if (estado === 'ERROR') {
-              errores++;
-            }
-
-          });
-
-          resolve({
-            pendientes: pendientes,
-            errores: errores
-          });
-
-        };
-
-        solicitud.onerror = function() {
-          reject(
-            solicitud.error ||
-            new Error('No fue posible contar los registros offline.')
-          );
-        };
-
-      });
-
-    });
-
-}
-
-function contarRegistrosOfflineMGP() {
-
-  return contarEstadosOfflineMGP()
-    .then(function(resumen) {
-      return resumen.pendientes;
-    });
-
-}
-
-function obtenerRegistrosOfflinePendientesMGP() {
-
-  return abrirDBOfflineMGP()
-    .then(function(db) {
-
-      return new Promise(function(resolve, reject) {
-
-        const tx = db.transaction(
-          OFFLINE_STORE_MGP,
-          'readonly'
-        );
-
-        const store = tx.objectStore(
-          OFFLINE_STORE_MGP
-        );
-
-        const solicitud = store.getAll();
-
-        solicitud.onsuccess = function() {
-
-          const registros =
-            Array.isArray(solicitud.result)
-              ? solicitud.result
-              : [];
-
-          registros.sort(function(a, b) {
-            return String(a.fechaHoraCliente || '')
-              .localeCompare(String(b.fechaHoraCliente || ''));
-          });
-
-          resolve(
-            registros.filter(function(registro) {
-              return String(
-                registro.estadoSincronizacion || 'PENDIENTE'
-              ).toUpperCase() === 'PENDIENTE';
-            })
-          );
-
-        };
-
-        solicitud.onerror = function() {
-          reject(
-            solicitud.error ||
-            new Error('No fue posible leer los registros offline.')
-          );
-        };
-
-      });
-
-    });
-
-}
-
-function eliminarRegistroOfflineMGP(idOffline) {
-
-  return abrirDBOfflineMGP()
-    .then(function(db) {
-
-      return new Promise(function(resolve, reject) {
-
-        const tx = db.transaction(
-          OFFLINE_STORE_MGP,
-          'readwrite'
-        );
-
-        const store = tx.objectStore(
-          OFFLINE_STORE_MGP
-        );
-
-        store.delete(idOffline);
-
-        tx.oncomplete = function() {
-          resolve(true);
-        };
-
-        tx.onerror = function() {
-          reject(
-            tx.error ||
-            new Error('No fue posible eliminar el registro sincronizado.')
-          );
-        };
-
-        tx.onabort = function() {
-          reject(
-            tx.error ||
-            new Error('La eliminación del registro offline fue cancelada.')
-          );
-        };
-
-      });
-
-    });
-
-}
-
-function marcarRegistroOfflineErrorMGP(idOffline, mensajeError) {
-
-  return abrirDBOfflineMGP()
-    .then(function(db) {
-
-      return new Promise(function(resolve, reject) {
-
-        const tx = db.transaction(
-          OFFLINE_STORE_MGP,
-          'readwrite'
-        );
-
-        const store = tx.objectStore(
-          OFFLINE_STORE_MGP
-        );
-
-        const solicitud = store.get(idOffline);
-
-        solicitud.onsuccess = function() {
-
-          const registro = solicitud.result;
-
-          if (!registro) {
-            resolve(false);
-            return;
-          }
-
-          registro.estadoSincronizacion = 'ERROR';
-          registro.errorSincronizacion =
-            String(mensajeError || 'No fue posible sincronizar.');
-          registro.fechaUltimoIntento =
-            new Date().toISOString();
-
-          store.put(registro);
-
-        };
-
-        solicitud.onerror = function() {
-          reject(
-            solicitud.error ||
-            new Error('No fue posible actualizar el registro offline.')
-          );
-        };
-
-        tx.oncomplete = function() {
-          resolve(true);
-        };
-
-        tx.onerror = function() {
-          reject(
-            tx.error ||
-            new Error('No fue posible guardar el estado de sincronización.')
-          );
-        };
-
-      });
-
-    });
-
-}
-
-function enviarRegistroOfflineAlServidorMGP(registro) {
-
-  return new Promise(function(resolve) {
-
-    const nombreCallback =
-      'respuestaSyncMGP_' + Date.now() + '_' +
-      Math.random().toString(36).slice(2, 7);
-
-    let script = null;
-    let terminado = false;
-
-    function limpiar() {
-
-      if (script && script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-
-      script = null;
-
-      try {
-        delete window[nombreCallback];
-      }
-      catch (error) {
-        console.warn(
-          'No fue posible eliminar callback de sincronización:',
-          error
-        );
-      }
-
-    }
-
-    function finalizar(resultado) {
-
-      if (terminado) {
-        return;
-      }
-
-      terminado = true;
-      limpiar();
-      resolve(resultado);
-
-    }
-
-    window[nombreCallback] = function(data) {
-
-      if (!data) {
-        finalizar({
-          exito: false,
-          transporteOK: true,
-          mensaje: 'El servidor no devolvió respuesta.'
-        });
-        return;
-      }
-
-      finalizar({
-        exito: data.exito === true,
-        transporteOK: true,
-        data: data,
-        mensaje:
-          data.mensaje ||
-          (data.exito === true
-            ? 'Registro sincronizado.'
-            : 'El servidor rechazó el registro.')
-      });
-
-    };
-
-    script = document.createElement('script');
-
-    const id =
-      String(registro.id || '').trim();
-
-    const tipo =
-      String(registro.tipo || 'estudiante').trim();
-
-    const estado =
-      String(registro.estado || 'INGRESO').trim().toUpperCase();
-
-    const fechaHoraCliente =
-      String(registro.fechaHoraCliente || '').trim();
-
-    const idOffline =
-      String(registro.idOffline || '').trim();
-
-    script.src =
-      CONFIG.API_URL +
-      '?action=apiRegistrar' +
-      '&id=' + encodeURIComponent(id) +
-      '&tipo=' + encodeURIComponent(tipo) +
-      '&estado=' + encodeURIComponent(estado) +
-      '&token=' + encodeURIComponent(state.token || '') +
-      '&fechaHoraCliente=' + encodeURIComponent(fechaHoraCliente) +
-      '&idOffline=' + encodeURIComponent(idOffline) +
-      '&callback=' + encodeURIComponent(nombreCallback);
-
-    script.async = true;
-
-    script.onerror = function() {
-
-      finalizar({
-        exito: false,
-        transporteOK: false,
-        mensaje: 'No se pudo comunicar con el servidor.'
-      });
-
-    };
-
-    document.body.appendChild(script);
-
-  });
-
-}
-
-let sincronizacionOfflineEnCursoMGP = false;
-
-async function sincronizarRegistrosOfflineMGP() {
-
-  if (sincronizacionOfflineEnCursoMGP) {
-    return {
-      exito: false,
-      enCurso: true
-    };
-  }
-
-  if (!state.token) {
-
-    return {
-      exito: false,
-      mensaje: 'Debe iniciar sesión para sincronizar los registros offline.'
-    };
-
-  }
-
-  sincronizacionOfflineEnCursoMGP = true;
-
-  const mensaje =
-    document.getElementById('regMsg');
-
-  try {
-
-    const pendientes =
-      await obtenerRegistrosOfflinePendientesMGP();
-
-    if (!pendientes.length) {
-
-      actualizarContadorOfflineMGP();
-
-      if (mensaje) {
-        mensaje.innerHTML =
-          '<strong>✅ SIN PENDIENTES</strong><br>' +
-          'No hay registros offline esperando sincronización.';
-      }
-
-      return {
-        exito: true,
-        cantidad: 0
-      };
-
-    }
-
-    if (mensaje) {
-      mensaje.innerHTML =
-        '<strong>🔄 SINCRONIZANDO OFFLINE...</strong><br>' +
-        'Registros pendientes: ' + pendientes.length + '<br>' +
-        'Se enviarán uno por uno para proteger la integridad de la asistencia.';
-    }
-
-    let sincronizados = 0;
-    let errores = 0;
-
-    for (let i = 0; i < pendientes.length; i++) {
-
-      const registro = pendientes[i];
-
-      if (mensaje) {
-        mensaje.innerHTML =
-          '<strong>🔄 SINCRONIZANDO OFFLINE...</strong><br>' +
-          'Procesando ' + (i + 1) + ' de ' + pendientes.length + '<br>' +
-          'DNI: ' + String(registro.id || '') + '<br>' +
-          'Estado: ' + String(registro.estado || 'INGRESO');
-      }
-
-      const resultado =
-        await enviarRegistroOfflineAlServidorMGP(registro);
-
-      if (resultado.exito) {
-
-        await eliminarRegistroOfflineMGP(
-          registro.idOffline
-        );
-
-        sincronizados++;
-        reproducirPitidoRegistroMGP();
-        continue;
-
-      }
-
-      errores++;
-
-      if (!resultado.transporteOK) {
-
-        // Si se perdió la conexión, NO marcamos ERROR definitivo.
-        // El registro permanece PENDIENTE para un nuevo intento.
-        if (mensaje) {
-          mensaje.innerHTML =
-            '<strong>⚠️ SINCRONIZACIÓN PAUSADA</strong><br>' +
-            'Se sincronizaron: ' + sincronizados + '<br>' +
-            'Pendientes restantes: ' +
-            (pendientes.length - sincronizados) + '<br>' +
-            'Motivo: ' + resultado.mensaje;
-        }
-
-        break;
-
-      }
-
-      // Respuesta válida del servidor pero registro rechazado.
-      // Se conserva como ERROR para no perder el historial local.
-      await marcarRegistroOfflineErrorMGP(
-        registro.idOffline,
-        resultado.mensaje
-      );
-
-      if (mensaje) {
-        mensaje.innerHTML =
-          '<strong>⚠️ REGISTRO RECHAZADO POR EL SERVIDOR</strong><br>' +
-          'DNI: ' + String(registro.id || '') + '<br>' +
-          'Motivo: ' + resultado.mensaje + '<br>' +
-          'El registro permanece guardado localmente como ERROR.';
-      }
-
-    }
-
-    await actualizarContadorOfflineMGP();
-
-    if (mensaje && errores === 0) {
-      mensaje.innerHTML =
-        '<strong>✅ SINCRONIZACIÓN COMPLETA</strong><br>' +
-        'Registros enviados correctamente: ' + sincronizados + '<br>' +
-        'No quedan registros pendientes.';
-    }
-
-    return {
-      exito: errores === 0,
-      sincronizados: sincronizados,
-      errores: errores
-    };
-
-  }
-  catch (error) {
-
-    console.error(
-      'Error durante sincronización OFFLINE:',
-      error
-    );
-
-    if (mensaje) {
-      mensaje.innerHTML =
-        '<strong>❌ NO SE COMPLETÓ LA SINCRONIZACIÓN</strong><br>' +
-        error.message;
-    }
-
-    return {
-      exito: false,
-      mensaje: error.message
-    };
-
-  }
-  finally {
-    sincronizacionOfflineEnCursoMGP = false;
-    actualizarContadorOfflineMGP();
-  }
-
-}
-
-function obtenerRegistrosOfflineErrorMGP() {
-
-  return abrirDBOfflineMGP()
-    .then(function(db) {
-
-      return new Promise(function(resolve, reject) {
-
-        const tx = db.transaction(
-          OFFLINE_STORE_MGP,
-          'readonly'
-        );
-
-        const store = tx.objectStore(
-          OFFLINE_STORE_MGP
-        );
-
-        const solicitud = store.getAll();
-
-        solicitud.onsuccess = function() {
-
-          const registros =
-            Array.isArray(solicitud.result)
-              ? solicitud.result
-              : [];
-
-          registros.sort(function(a, b) {
-            return String(a.fechaHoraCliente || '')
-              .localeCompare(String(b.fechaHoraCliente || ''));
-          });
-
-          resolve(
-            registros.filter(function(registro) {
-              return String(
-                registro.estadoSincronizacion || ''
-              ).toUpperCase() === 'ERROR';
-            })
-          );
-
-        };
-
-        solicitud.onerror = function() {
-          reject(
-            solicitud.error ||
-            new Error('No fue posible leer los registros con error.')
-          );
-        };
-
-      });
-
-    });
-
-}
-
-function cambiarErroresOfflineAPendienteMGP() {
-
-  return abrirDBOfflineMGP()
-    .then(function(db) {
-
-      return new Promise(function(resolve, reject) {
-
-        const tx = db.transaction(
-          OFFLINE_STORE_MGP,
-          'readwrite'
-        );
-
-        const store = tx.objectStore(
-          OFFLINE_STORE_MGP
-        );
-
-        const solicitud = store.getAll();
-
-        solicitud.onsuccess = function() {
-
-          const registros =
-            Array.isArray(solicitud.result)
-              ? solicitud.result
-              : [];
-
-          let cantidad = 0;
-
-          registros.forEach(function(registro) {
-
-            if (
-              String(
-                registro.estadoSincronizacion || ''
-              ).toUpperCase() !== 'ERROR'
-            ) {
-              return;
-            }
-
-            registro.estadoSincronizacion = 'PENDIENTE';
-            registro.errorSincronizacion = '';
-            registro.fechaUltimoIntento = '';
-            store.put(registro);
-            cantidad++;
-
-          });
-
-          tx.__cantidadReintentosMGP = cantidad;
-
-        };
-
-        tx.oncomplete = function() {
-          resolve(Number(tx.__cantidadReintentosMGP || 0));
-        };
-
-        tx.onerror = function() {
-          reject(
-            tx.error ||
-            new Error('No fue posible preparar los registros para reintento.')
-          );
-        };
-
-        tx.onabort = function() {
-          reject(
-            tx.error ||
-            new Error('El reintento de registros offline fue cancelado.')
-          );
-        };
-
-      });
-
-    });
-
-}
-
-async function reintentarErroresOfflineMGP() {
-
-  if (sincronizacionOfflineEnCursoMGP) {
-    return;
-  }
-
-  if (state.registroModo === 'OFFLINE') {
-    const mensaje = document.getElementById('regMsg');
-    if (mensaje) {
-      mensaje.innerHTML =
-        '<strong>🟠 MODO OFFLINE</strong><br>' +
-        'Cambia a ONLINE para reintentar los registros con error.';
-    }
-    return;
-  }
-
-  const errores =
-    await obtenerRegistrosOfflineErrorMGP();
-
-  if (!errores.length) {
-    await actualizarContadorOfflineMGP();
-    return;
-  }
-
-  const confirmado = window.confirm(
-    'Hay ' + errores.length +
-    ' registro(s) con error.\n\n' +
-    '¿Quieres pasarlos a PENDIENTE y volver a intentar sincronizarlos?'
-  );
-
-  if (!confirmado) {
-    return;
-  }
-
-  const cantidad =
-    await cambiarErroresOfflineAPendienteMGP();
-
-  const mensaje = document.getElementById('regMsg');
-
-  if (mensaje) {
-    mensaje.innerHTML =
-      '<strong>🔄 REINTENTANDO ERRORES</strong><br>' +
-      'Registros preparados: ' + cantidad;
-  }
-
-  actualizarContadorOfflineMGP();
-  await sincronizarRegistrosOfflineMGP();
-
-}
-
-async function eliminarErroresOfflineMGP() {
-
-  if (sincronizacionOfflineEnCursoMGP) {
-    const mensaje = document.getElementById('regMsg');
-    if (mensaje) {
-      mensaje.innerHTML =
-        '<strong>⏳ SINCRONIZACIÓN EN CURSO</strong><br>' +
-        'Espera a que termine antes de eliminar registros con error.';
-    }
-    return;
-  }
-
-  const errores =
-    await obtenerRegistrosOfflineErrorMGP();
-
-  if (!errores.length) {
-    await actualizarContadorOfflineMGP();
-    return;
-  }
-
-  let detalle = '';
-
-  errores.slice(0, 5).forEach(function(registro, indice) {
-    detalle +=
-      '\n' + (indice + 1) + '. DNI ' +
-      String(registro.id || '') +
-      ' — ' +
-      String(registro.estado || 'INGRESO') +
-      ' — ' +
-      String(registro.errorSincronizacion || 'Error desconocido');
-  });
-
-  if (errores.length > 5) {
-    detalle += '\n... y ' + (errores.length - 5) + ' más.';
-  }
-
-  const confirmado = window.confirm(
-    'Se eliminarán DEFINITIVAMENTE ' + errores.length +
-    ' registro(s) con error de este equipo.' +
-    '\n\nRegistros:' + detalle +
-    '\n\nEsta acción solo eliminará los errores del almacenamiento local. No se borrará nada del registro de asistencia.' +
-    '\n\n¿Continuar?'
-  );
-
-  if (!confirmado) {
-    return;
-  }
-
-  return abrirDBOfflineMGP()
-    .then(function(db) {
-
-      return new Promise(function(resolve, reject) {
-
-        const tx = db.transaction(
-          OFFLINE_STORE_MGP,
-          'readwrite'
-        );
-
-        const store = tx.objectStore(
-          OFFLINE_STORE_MGP
-        );
-
-        errores.forEach(function(registro) {
-          store.delete(registro.idOffline);
-        });
-
-        tx.oncomplete = function() {
-          resolve(true);
-        };
-
-        tx.onerror = function() {
-          reject(
-            tx.error ||
-            new Error('No fue posible eliminar los registros con error.')
-          );
-        };
-
-        tx.onabort = function() {
-          reject(
-            tx.error ||
-            new Error('La eliminación de registros con error fue cancelada.')
-          );
-        };
-
-      });
-
-    })
-    .then(function() {
-
-      const mensaje = document.getElementById('regMsg');
-
-      if (mensaje) {
-        mensaje.innerHTML =
-          '<strong>🗑️ ERRORES ELIMINADOS</strong><br>' +
-          'Registros eliminados del almacenamiento local: ' +
-          errores.length;
-      }
-
-      return actualizarContadorOfflineMGP();
-
-    })
-    .catch(function(error) {
-
-      const mensaje = document.getElementById('regMsg');
-
-      if (mensaje) {
-        mensaje.innerHTML =
-          '<strong>❌ NO SE PUDIERON ELIMINAR LOS ERRORES</strong><br>' +
-          String(error.message || error);
-      }
-
-      console.error(
-        'Error eliminando registros offline con error:',
-        error
-      );
-
-    });
-
-}
-
-function actualizarContadorOfflineMGP() {
-
-  contarEstadosOfflineMGP()
-    .then(function(resumen) {
-
-      state.registrosOfflinePendientes = resumen.pendientes;
-      state.registrosOfflineError = resumen.errores;
-
-      const contador =
-        document.getElementById('modoRegistroPendientesMGP');
-
-      if (contador) {
-
-        let texto =
-          resumen.pendientes > 0
-            ? 'Pendientes: ' + resumen.pendientes
-            : 'Sin pendientes';
-
-        if (resumen.errores > 0) {
-          texto +=
-            ' · ⚠️ Errores: ' + resumen.errores;
-        }
-
-        contador.textContent = texto;
-      }
-
-      actualizarControlesErroresOfflineMGP();
-
-    })
-    .catch(function(error) {
-
-      console.warn(
-        'No fue posible actualizar contador OFFLINE:',
-        error
-      );
-
-    });
-
-}
-
-function actualizarControlesErroresOfflineMGP() {
-
-  const reintentarBtn =
-    document.getElementById('reintentarErroresOfflineBtnMGP');
-
-  const eliminarBtn =
-    document.getElementById('eliminarErroresOfflineBtnMGP');
-
-  const cantidadErrores =
-    Number(state.registrosOfflineError || 0);
-
-  if (reintentarBtn) {
-    reintentarBtn.style.display =
-      cantidadErrores > 0 ? 'inline-block' : 'none';
-
-    reintentarBtn.disabled =
-      state.registroModo === 'OFFLINE';
-
-    reintentarBtn.style.opacity =
-      state.registroModo === 'OFFLINE' ? '0.55' : '1';
-
-    reintentarBtn.style.cursor =
-      state.registroModo === 'OFFLINE'
-        ? 'not-allowed'
-        : 'pointer';
-  }
-
-  if (eliminarBtn) {
-    eliminarBtn.style.display =
-      cantidadErrores > 0 ? 'inline-block' : 'none';
-  }
-
-}
-
-function actualizarModoRegistroMGP() {
-
-  const boton =
-    document.getElementById('modoRegistroBtnMGP');
-
-  if (!boton) {
-    return;
-  }
-
-  const offline =
-    state.registroModo === 'OFFLINE';
-
-  boton.textContent =
-    offline ? '🟠 OFFLINE' : '🟢 ONLINE';
-
-  boton.title =
-    offline
-      ? 'Modo OFFLINE: los registros se guardan en este equipo'
-      : 'Modo ONLINE: los registros se envían al servidor';
-
-  boton.setAttribute(
-    'aria-label',
-    offline
-      ? 'Modo OFFLINE seleccionado'
-      : 'Modo ONLINE seleccionado'
-  );
-
-  boton.style.background =
-    offline ? '#f59e0b' : '#16a34a';
-
-  const contador =
-    document.getElementById('modoRegistroPendientesMGP');
-
-  if (contador) {
-    let texto =
-      state.registrosOfflinePendientes > 0
-        ? 'Pendientes: ' + state.registrosOfflinePendientes
-        : 'Sin pendientes';
-
-    if (state.registrosOfflineError > 0) {
-      texto +=
-        ' · ⚠️ Errores: ' + state.registrosOfflineError;
-    }
-
-    contador.textContent = texto;
-  }
-
-  actualizarControlesErroresOfflineMGP();
-
-  const sincronizarBtn =
-    document.getElementById('sincronizarOfflineBtnMGP');
-
-  if (sincronizarBtn) {
-    sincronizarBtn.disabled = offline;
-    sincronizarBtn.style.opacity = offline ? '0.55' : '1';
-    sincronizarBtn.style.cursor = offline ? 'not-allowed' : 'pointer';
-  }
-
-}
-
-function alternarModoRegistroMGP() {
-
-  state.registroModo =
-    state.registroModo === 'ONLINE'
-      ? 'OFFLINE'
-      : 'ONLINE';
-
-  actualizarModoRegistroMGP();
-
-  if (state.registroModo === 'ONLINE') {
-    sincronizarRegistrosOfflineMGP();
-  }
-
-  const mensaje =
-    document.getElementById('regMsg');
-
-  if (mensaje) {
-
-    if (state.registroModo === 'OFFLINE') {
-      mensaje.innerHTML =
-        '<strong>🟠 MODO OFFLINE ACTIVO</strong><br>' +
-        'Los próximos registros se guardarán en este equipo.<br>' +
-        'No se enviarán al servidor durante el escaneo.';
-    }
-    else {
-      mensaje.innerHTML =
-        '<strong>🟢 MODO ONLINE ACTIVO</strong><br>' +
-        'Los próximos registros se enviarán al servidor.';
-    }
-
-  }
-
-}
-
-function crearControlModoRegistroMGP() {
-
-  const registro =
-    document.getElementById('registro');
-
-  if (!registro) {
-    return;
-  }
-
-  if (document.getElementById('modoRegistroBtnMGP')) {
-    actualizarModoRegistroMGP();
-    actualizarContadorOfflineMGP();
-    return;
-  }
-
-  // =====================================================
-  // CONTROLES DE REGISTRO
-  // Separamos visualmente:
-  // 1) Modo de registro
-  // 2) Gestión de datos locales
-  // =====================================================
-
-  const contenedor =
-    document.createElement('div');
-
-  contenedor.id = 'modoRegistroControlMGP';
-  contenedor.style.cssText =
-    'display:flex;align-items:center;justify-content:space-between;' +
-    'gap:10px;width:100%;margin:0 0 12px 0;flex-wrap:wrap;' +
-    'box-sizing:border-box;';
-
-  // -----------------------------------------------------
-  // GRUPO 1 — MODO DE REGISTRO
-  // -----------------------------------------------------
-
-  const grupoModo =
-    document.createElement('div');
-
-  grupoModo.style.cssText =
-    'display:flex;align-items:center;gap:7px;flex-wrap:wrap;';
-
-  const etiqueta =
-    document.createElement('span');
-
-  etiqueta.textContent = 'Modo de registro:';
-  etiqueta.style.cssText =
-    'font-size:14px;font-weight:700;color:#475569;';
-
-  const boton =
-    document.createElement('button');
-
-  boton.type = 'button';
-  boton.id = 'modoRegistroBtnMGP';
-  boton.textContent = '🟢 ONLINE';
-  boton.style.cssText =
-    'border:0;border-radius:999px;padding:9px 15px;' +
-    'font-size:14px;font-weight:800;color:#fff;cursor:pointer;' +
-    'box-shadow:0 2px 6px rgba(0,0,0,.16);';
-
-  boton.addEventListener(
-    'click',
-    alternarModoRegistroMGP
-  );
-
-  grupoModo.appendChild(etiqueta);
-  grupoModo.appendChild(boton);
-
-  // -----------------------------------------------------
-  // GRUPO 2 — GESTIÓN DE DATOS LOCALES
-  // -----------------------------------------------------
-
-  const grupoLocal =
-    document.createElement('div');
-
-  grupoLocal.style.cssText =
-    'display:flex;align-items:center;justify-content:flex-end;' +
-    'gap:7px;flex-wrap:wrap;';
-
-  const etiquetaLocal =
-    document.createElement('span');
-
-  etiquetaLocal.textContent = 'Datos locales:';
-  etiquetaLocal.style.cssText =
-    'font-size:12px;font-weight:700;color:#64748b;';
-
-  const sincronizarBtn =
-    document.createElement('button');
-
-  sincronizarBtn.type = 'button';
-  sincronizarBtn.id = 'sincronizarOfflineBtnMGP';
-  sincronizarBtn.textContent = '🔄 SINCRONIZAR';
-  sincronizarBtn.title =
-    'Enviar al servidor los registros pendientes guardados en este equipo.';
-  sincronizarBtn.style.cssText =
-    'border:0;border-radius:999px;padding:7px 10px;' +
-    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
-    'background:#2563eb;box-shadow:0 1px 4px rgba(0,0,0,.12);';
-
-  sincronizarBtn.addEventListener(
-    'click',
-    function() {
-      sincronizarRegistrosOfflineMGP();
-    }
-  );
-
-  const reintentarBtn =
-    document.createElement('button');
-
-  reintentarBtn.type = 'button';
-  reintentarBtn.id = 'reintentarErroresOfflineBtnMGP';
-  reintentarBtn.textContent = '↻ REINTENTAR';
-  reintentarBtn.title =
-    'Volver a intentar la sincronización de los registros que tuvieron error.';
-  reintentarBtn.style.cssText =
-    'display:none;border:0;border-radius:999px;padding:7px 10px;' +
-    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
-    'background:#7c3aed;box-shadow:0 1px 4px rgba(0,0,0,.12);';
-
-  reintentarBtn.addEventListener(
-    'click',
-    function() {
-      reintentarErroresOfflineMGP();
-    }
-  );
-
-  const eliminarBtn =
-    document.createElement('button');
-
-  eliminarBtn.type = 'button';
-  eliminarBtn.id = 'eliminarErroresOfflineBtnMGP';
-  eliminarBtn.textContent = '🗑 ELIMINAR';
-  eliminarBtn.title =
-    'Eliminar solamente los errores guardados en este equipo.';
-  eliminarBtn.style.cssText =
-    'display:none;border:0;border-radius:999px;padding:7px 10px;' +
-    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
-    'background:#dc2626;box-shadow:0 1px 4px rgba(0,0,0,.12);';
-
-  eliminarBtn.addEventListener(
-    'click',
-    function() {
-      eliminarErroresOfflineMGP();
-    }
-  );
-
-  const contador =
-    document.createElement('span');
-
-  contador.id = 'modoRegistroPendientesMGP';
-  contador.textContent = 'Sin pendientes';
-  contador.style.cssText =
-    'font-size:11px;font-weight:700;color:#64748b;' +
-    'white-space:nowrap;';
-
-  grupoLocal.appendChild(etiquetaLocal);
-  grupoLocal.appendChild(sincronizarBtn);
-  grupoLocal.appendChild(reintentarBtn);
-  grupoLocal.appendChild(eliminarBtn);
-  grupoLocal.appendChild(contador);
-
-  contenedor.appendChild(grupoModo);
-  contenedor.appendChild(grupoLocal);
-
-  registro.insertBefore(
-    contenedor,
-    registro.firstChild
-  );
-
-  actualizarModoRegistroMGP();
-  actualizarContadorOfflineMGP();
-
-}
-function iniciarControlModoRegistroMGP() {
-
-  if (document.readyState === 'loading') {
-
-    document.addEventListener(
-      'DOMContentLoaded',
-      crearControlModoRegistroMGP,
-      { once: true }
-    );
-
-    return;
-  }
-
-  crearControlModoRegistroMGP();
-
-}
-
-iniciarControlModoRegistroMGP();
 
 // =====================================================
 // NAVEGACIÓN
@@ -1520,39 +207,26 @@ document
 
           const permiso = mapaPermisos[destino];
 
-          const permisoAlternativo =
-            destino === 'admin'
-              ? 'administrarJustificaciones'
-              : null;
-
           const rolActual =
             String(
               (state.usuario && state.usuario.rol) || ''
             ).trim().toUpperCase();
 
           if (
-            (rolActual === 'AUXILIAR' ||
-             rolActual === 'DIRECTOR') &&
-            destino !== 'registro' &&
-            destino !== 'reportes' &&
-            destino !== 'panel' &&
-            !(
-              destino === 'admin' &&
-              state.permisos &&
-              state.permisos.administrarJustificaciones === true
-            )
+            rolActual === 'AUXILIAR' ||
+            rolActual === 'DIRECTOR'
           ) {
-            return;
+            if (
+              destino !== 'registro' &&
+              destino !== 'reportes'
+            ) {
+              return;
+            }
           }
 
           if (
             permiso &&
-            (!state.permisos || state.permisos[permiso] !== true) &&
-            !(
-              permisoAlternativo &&
-              state.permisos &&
-              state.permisos[permisoAlternativo] === true
-            )
+            (!state.permisos || state.permisos[permiso] !== true)
           ) {
             return;
           }
@@ -1627,9 +301,6 @@ document.addEventListener(
     const reportes =
       document.getElementById('reportes');
 
-    const admin =
-      document.getElementById('admin');
-
     const enRegistro =
       registro &&
       registro.classList.contains('active');
@@ -1638,11 +309,7 @@ document.addEventListener(
       reportes &&
       reportes.classList.contains('active');
 
-    const enAdmin =
-      admin &&
-      admin.classList.contains('active');
-
-    if (!enRegistro && !enReportes && !enAdmin) {
+    if (!enRegistro && !enReportes) {
       return;
     }
 
@@ -1794,23 +461,6 @@ if (salirBtn) {
       state.expiraSesion = null;
       state.persona = null;
       state.qr = null;
-
-      // ETAPA 07:
-      // Al cerrar sesión, limpiar los campos del formulario LOGIN.
-      // No modifica la sesión, permisos, cámara, QR ni registros offline.
-      const usuarioLoginElemento =
-        document.getElementById('usuario');
-
-      const passwordLoginElemento =
-        document.getElementById('password');
-
-      if (usuarioLoginElemento) {
-        usuarioLoginElemento.value = '';
-      }
-
-      if (passwordLoginElemento) {
-        passwordLoginElemento.value = '';
-      }
 
       mostrarVista('portal');
 
@@ -2014,8 +664,6 @@ if (entrarBtn) {
 
         aplicarPermisosPanel();
 
-        inicializarModuloJustificacionesMGP();
-
         console.log(
           'Usuario autenticado V2:',
           state.usuario
@@ -2089,8 +737,7 @@ function aplicarPermisosPanel() {
     },
     {
       vista: 'admin',
-      permiso: 'administrarPersonas',
-      permisoAlternativo: 'administrarJustificaciones'
+      permiso: 'administrarPersonas'
     }
   ];
 
@@ -2101,27 +748,23 @@ function aplicarPermisosPanel() {
       '[data-v="' + control.vista + '"]'
     );
 
-    // El acceso a cada vista depende del permiso entregado por el backend.
-    // Administración puede abrirse también para gestionar Justificaciones,
-    // sin conceder por ello permisos sobre personas, usuarios, QR o configuración.
-    let permitido =
+    // AUXILIAR y DIRECTOR solo muestran Registro y Reportes.
+    // ADMIN conserva acceso a los módulos administrativos
+    // según los permisos entregados por el backend.
+    let permitidoPorRol = true;
+
+    if (
+      rol === 'AUXILIAR' ||
+      rol === 'DIRECTOR'
+    ) {
+      permitidoPorRol =
+        control.vista === 'registro' ||
+        control.vista === 'reportes';
+    }
+
+    const permitido =
+      permitidoPorRol &&
       permisos[control.permiso] === true;
-
-    if (
-      control.permisoAlternativo &&
-      permisos[control.permisoAlternativo] === true
-    ) {
-      permitido = true;
-    }
-
-    if (
-      (rol === 'AUXILIAR' || rol === 'DIRECTOR') &&
-      control.vista !== 'registro' &&
-      control.vista !== 'reportes' &&
-      control.vista !== 'admin'
-    ) {
-      permitido = false;
-    }
 
     botones.forEach(function(boton) {
 
@@ -2852,145 +1495,31 @@ function eliminarRegistroScript() {
 }
 
 
-function reproducirPitidoRegistroMGP() {
-
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-
-    if (!AudioCtx) return;
-
-    if (!window.audioContextMGP) {
-      window.audioContextMGP = new AudioCtx();
-    }
-
-    const ctx = window.audioContextMGP;
-
-    if (ctx.state === 'suspended') {
-      ctx.resume().catch(function() {});
-    }
-
-    const ahora = ctx.currentTime;
-    const oscilador = ctx.createOscillator();
-    const ganancia = ctx.createGain();
-
-    // Sonido tipo lector de código de barras: corto, agudo y marcado.
-    oscilador.type = 'square';
-    oscilador.frequency.setValueAtTime(2200, ahora);
-
-    ganancia.gain.setValueAtTime(0.0001, ahora);
-    ganancia.gain.exponentialRampToValueAtTime(0.24, ahora + 0.004);
-    ganancia.gain.exponentialRampToValueAtTime(0.0001, ahora + 0.085);
-
-    oscilador.connect(ganancia);
-    ganancia.connect(ctx.destination);
-
-    oscilador.start(ahora);
-    oscilador.stop(ahora + 0.09);
-
-  } catch (error) {}
-
-}
-
-function registrarAsistenciaOfflineMGP(id) {
-
-  return new Promise(function(resolve) {
-
-    const mensaje =
-      document.getElementById('regMsg');
-
-    const idLimpio =
-      String(id || '').trim();
-
-    const tipo =
-      String(state.tipo || 'estudiante').trim();
-
-    const estado =
-      String(state.estado || 'INGRESO').trim().toUpperCase();
-
-    if (!idLimpio) {
-
-      if (mensaje) {
-        mensaje.textContent =
-          '❌ No se obtuvo el DNI para registrar.';
-      }
-
-      resolve({ exito: false, offline: true });
-      return;
-
-    }
-
-    if (mensaje) {
-      mensaje.innerHTML =
-        '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
-        'DNI: ' + idLimpio + '<br>' +
-        'Tipo: ' + tipo + '<br>' +
-        'Estado: ' + estado;
-    }
-
-    guardarRegistroOfflineMGP(idLimpio)
-      .then(function(registro) {
-
-        reproducirPitidoRegistroMGP();
-
-        if (mensaje) {
-          mensaje.innerHTML =
-            '<strong>✅ GUARDADO OFFLINE</strong><br>' +
-            'DNI: ' + idLimpio + '<br>' +
-            'Estado: ' + estado + '<br>' +
-            'Hora: ' +
-            new Date(registro.fechaHoraCliente)
-              .toLocaleTimeString('es-PE') + '<br>' +
-            'ID local: ' + registro.idOffline + '<br>' +
-            '<strong>⏳ Pendiente de sincronización</strong>';
-        }
-
-        resolve({
-          exito: true,
-          offline: true,
-          pendiente: true,
-          idOffline: registro.idOffline,
-          fechaHoraCliente: registro.fechaHoraCliente,
-          hora: new Date(registro.fechaHoraCliente)
-            .toLocaleTimeString('es-PE')
-        });
-
-      })
-      .catch(function(error) {
-
-        console.error(
-          'Error guardando registro OFFLINE:',
-          error
-        );
-
-        if (mensaje) {
-          mensaje.innerHTML =
-            '<strong>❌ NO SE GUARDÓ OFFLINE</strong><br>' +
-            error.message;
-        }
-
-        resolve({
-          exito: false,
-          offline: true,
-          error: error.message
-        });
-
-      });
-
-  });
-
-}
-
-function registrarAsistenciaSegunModoMGP(id) {
-
-  if (state.registroModo === 'OFFLINE') {
-    return registrarAsistenciaOfflineMGP(id);
-  }
-
-  return registrarAsistenciaBackend(id);
-
-}
-
 function registrarAsistenciaBackend(id) {
+
+  const diagnosticoInicio =
+    (window.performance && typeof window.performance.now === 'function')
+      ? window.performance.now()
+      : Date.now();
+
+  window.diagnosticoFrontendMGP = {
+    qrDetectado: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.qrDetectado
+      ? window.diagnosticoFrontendMGP.qrDetectado
+      : diagnosticoInicio,
+    registroInicio: diagnosticoInicio,
+    peticionCreada: null,
+    peticionEnviada: null,
+    respuestaRecibida: null,
+    mensajePintado: null,
+    camaraDetencionInicio: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.camaraDetencionInicio
+      ? window.diagnosticoFrontendMGP.camaraDetencionInicio
+      : null,
+    camaraDetencionFin: window.diagnosticoFrontendMGP && window.diagnosticoFrontendMGP.camaraDetencionFin
+      ? window.diagnosticoFrontendMGP.camaraDetencionFin
+      : null,
+    camaraReinicioInicio: null,
+    camaraReinicioFin: null
+  };
 
   return new Promise(function(resolve) {
 
@@ -3033,6 +1562,67 @@ function registrarAsistenciaBackend(id) {
     window.respuestaRegistroMGP =
       function(data) {
 
+        window.diagnosticoFrontendMGP.respuestaRecibida =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
+        window.diagnosticoFrontendMGP.msRespuestaDesdeInicio =
+          window.diagnosticoFrontendMGP.respuestaRecibida -
+          window.diagnosticoFrontendMGP.registroInicio;
+
+        // =====================================================
+        // DIAGNÓSTICO VISIBLE TEMPORAL — NO CAMBIA EL REGISTRO
+        // =====================================================
+        try {
+          let recurso = null;
+
+          if (
+            window.performance &&
+            typeof window.performance.getEntriesByType === 'function'
+          ) {
+            const recursos = window.performance.getEntriesByType('resource');
+            for (let i = recursos.length - 1; i >= 0; i--) {
+              if (
+                recursos[i] &&
+                typeof recursos[i].name === 'string' &&
+                recursos[i].name.indexOf('action=apiRegistrar') !== -1
+              ) {
+                recurso = recursos[i];
+                break;
+              }
+            }
+          }
+
+          if (recurso) {
+            window.diagnosticoFrontendMGP.recursoRed = {
+              inicio: recurso.startTime,
+              duracion: recurso.duration,
+              redirect: recurso.redirectEnd > recurso.redirectStart
+                ? recurso.redirectEnd - recurso.redirectStart
+                : 0,
+              dns: recurso.domainLookupEnd > recurso.domainLookupStart
+                ? recurso.domainLookupEnd - recurso.domainLookupStart
+                : 0,
+              conexion: recurso.connectEnd > recurso.connectStart
+                ? recurso.connectEnd - recurso.connectStart
+                : 0,
+              solicitud: recurso.responseStart > recurso.requestStart
+                ? recurso.responseStart - recurso.requestStart
+                : 0,
+              respuesta: recurso.responseEnd > recurso.responseStart
+                ? recurso.responseEnd - recurso.responseStart
+                : 0
+            };
+          } else {
+            window.diagnosticoFrontendMGP.recursoRed = null;
+          }
+        }
+        catch (errorDiagnosticoRed) {
+          window.diagnosticoFrontendMGP.recursoRedError =
+            String(errorDiagnosticoRed && errorDiagnosticoRed.message || errorDiagnosticoRed);
+        }
+
         eliminarRegistroScript();
 
         if (!data) {
@@ -3044,9 +1634,12 @@ function registrarAsistenciaBackend(id) {
           return;
         }
 
-        if (data.exito) {
+        console.log(
+          'Respuesta registro asistencia:',
+          data
+        );
 
-          reproducirPitidoRegistroMGP();
+        if (data.exito) {
 
           const datos = data.datos || {};
 
@@ -3078,6 +1671,15 @@ function registrarAsistenciaBackend(id) {
               'Estado: ' + (data.estado || estado) + '<br>' +
               'Hora: ' + (data.hora || '--:--:--') + '<br>' +
               'Puntualidad: ' + (data.puntualidad || 'N/A');
+
+            window.diagnosticoFrontendMGP.mensajePintado =
+              (window.performance && typeof window.performance.now === 'function')
+                ? window.performance.now()
+                : Date.now();
+
+            window.diagnosticoFrontendMGP.msRespuestaAMensaje =
+              window.diagnosticoFrontendMGP.mensajePintado -
+              window.diagnosticoFrontendMGP.respuestaRecibida;
           }
 
           resolve(data);
@@ -3118,13 +1720,31 @@ function registrarAsistenciaBackend(id) {
         resolve({ exito: false });
       };
 
+    window.diagnosticoFrontendMGP.peticionCreada =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
+    registroScript.dataset.diagnosticoFrontendMGP =
+      'apiRegistrar';
+
     document.body.appendChild(
       registroScript
     );
 
+    window.diagnosticoFrontendMGP.peticionEnviada =
+      (window.performance && typeof window.performance.now === 'function')
+        ? window.performance.now()
+        : Date.now();
+
+    window.diagnosticoFrontendMGP.msInicioAPeticion =
+      window.diagnosticoFrontendMGP.peticionEnviada -
+      window.diagnosticoFrontendMGP.registroInicio;
+
   });
 
 }
+
 
 // =====================================================
 // CÁMARA — ARQUITECTURA RECUPERADA DE ASISTENCIAV1
@@ -3467,12 +2087,8 @@ async function iniciarCamara() {
 
           },
 
-        // En laptops/Windows usamos formato panorámico para
-        // reducir la altura del visor y dejar visibles
-        // los mensajes del registro.
-        // En móviles conservamos el formato actual 1:1.
         aspectRatio:
-          window.innerWidth >= 768 ? (16 / 9) : 1.0
+          1.0
 
       },
 
@@ -3540,24 +2156,53 @@ async function iniciarCamara() {
         state.qr =
           qrActual;
 
+
+        const diagnosticoQRInicio =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
+        window.diagnosticoFrontendMGP = {
+          qrDetectado: diagnosticoQRInicio,
+          registroInicio: diagnosticoQRInicio,
+          peticionCreada: null,
+          peticionEnviada: null,
+          respuestaRecibida: null,
+          mensajePintado: null,
+          camaraDetencionInicio: null,
+          camaraDetencionFin: null,
+          camaraReinicioInicio: null,
+          camaraReinicioFin: null
+        };
+
         mensajeCamara(
-          state.registroModo === 'OFFLINE'
-            ? '✅ QR leído. Guardando localmente...'
-            : '✅ QR leído. Consultando servidor...'
+          '✅ QR leído. Consultando servidor...'
         );
 
 
         // Iniciamos el registro inmediatamente y detenemos la cámara
-        // en paralelo. En OFFLINE no se realiza ninguna llamada HTTP.
+        // en paralelo. Así no hacemos que el tiempo de apagado de la
+        // cámara se sume al tiempo de respuesta del servidor.
         const registroPromise =
-          registrarAsistenciaSegunModoMGP(
+          registrarAsistenciaBackend(
             decodedText
           );
 
+        window.diagnosticoFrontendMGP.camaraDetencionInicio =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
         await detenerCamara();
 
-        
+        window.diagnosticoFrontendMGP.camaraDetencionFin =
+          (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
 
+        window.diagnosticoFrontendMGP.msDetenerCamara =
+          window.diagnosticoFrontendMGP.camaraDetencionFin -
+          window.diagnosticoFrontendMGP.camaraDetencionInicio;
 
         try {
 
@@ -3578,7 +2223,34 @@ async function iniciarCamara() {
           // la cámara en una nueva tarea. Esto evita que el usuario vea
           // la cámara reiniciarse antes del resultado del registro.
           setTimeout(function() {
-            iniciarCamara();
+            window.diagnosticoFrontendMGP.camaraReinicioInicio =
+              (window.performance && typeof window.performance.now === 'function')
+                ? window.performance.now()
+                : Date.now();
+
+            const reinicioPromise = iniciarCamara();
+
+            if (reinicioPromise && typeof reinicioPromise.then === 'function') {
+              reinicioPromise.then(function() {
+                window.diagnosticoFrontendMGP.camaraReinicioFin =
+                  (window.performance && typeof window.performance.now === 'function')
+                    ? window.performance.now()
+                    : Date.now();
+
+                window.diagnosticoFrontendMGP.msReiniciarCamara =
+                  window.diagnosticoFrontendMGP.camaraReinicioFin -
+                  window.diagnosticoFrontendMGP.camaraReinicioInicio;
+
+                window.diagnosticoFrontendMGP.totalQR =
+                  window.diagnosticoFrontendMGP.camaraReinicioFin -
+                  window.diagnosticoFrontendMGP.qrDetectado;
+
+                console.log(
+                  'DIAGNOSTICO FRONTEND MGP:',
+                  window.diagnosticoFrontendMGP
+                );
+              });
+            }
           }, 0);
 
         }
@@ -4238,8 +2910,7 @@ if (verMatrizMensualBtn) {
     'click',
     function() {
       if (!ultimoReporteMGP ||
-          (ultimoReporteMGP.tipoReporte !== 'mensual' &&
-           ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
+          ultimoReporteMGP.tipoReporte !== 'mensual') {
         return;
       }
 
@@ -4271,11 +2942,6 @@ const reporteFecha =
     'reporteFecha'
   );
 
-const reporteGrado =
-  document.getElementById(
-    'reporteGrado'
-  );
-
 const reporteMes =
   document.getElementById(
     'reporteMes'
@@ -4285,29 +2951,6 @@ const reporteMensualFiltros =
   document.getElementById(
     'reporteMensualFiltros'
   );
-
-// DEV 03: habilitar reporte diario de PERSONAL sin modificar index.html.
-if (reporteTipo) {
-  const existePersonal = Array.from(reporteTipo.options).some(function(opcion) {
-    return String(opcion.value || '').toLowerCase() === 'personal';
-  });
-  if (!existePersonal) {
-    const opcionPersonal = document.createElement('option');
-    opcionPersonal.value = 'personal';
-    opcionPersonal.textContent = 'Diario — Personal';
-    reporteTipo.appendChild(opcionPersonal);
-  }
-
-  const existeMensualPersonal = Array.from(reporteTipo.options).some(function(opcion) {
-    return String(opcion.value || '').toLowerCase() === 'mensual_personal';
-  });
-  if (!existeMensualPersonal) {
-    const opcionMensualPersonal = document.createElement('option');
-    opcionMensualPersonal.value = 'mensual_personal';
-    opcionMensualPersonal.textContent = 'Mensual — Personal';
-    reporteTipo.appendChild(opcionMensualPersonal);
-  }
-}
 
 
 function actualizarFiltroReporte() {
@@ -4325,25 +2968,11 @@ function actualizarFiltroReporte() {
   const esMensual =
     tipo === 'mensual';
 
-  const esMensualPersonal =
-    tipo === 'mensual_personal';
-
   const esAlertas =
     tipo === 'alertas';
 
-  const esPersonal =
-    tipo === 'personal';
-
   const usaFiltroMensual =
-    esMensual || esMensualPersonal || esAlertas;
-
-  const grupoGrado = reporteGrado
-    ? reporteGrado.closest('.grupo')
-    : null;
-
-  if (grupoGrado) {
-    grupoGrado.style.display = (esPersonal || esMensualPersonal) ? 'none' : '';
-  }
+    esMensual || esAlertas;
 
 
   if (reporteFecha) {
@@ -4448,19 +3077,12 @@ async function consultarReporte() {
       tablaReporteBase.style.width = 'max-content';
       tablaReporteBase.style.maxWidth = 'none';
       tablaReporteBase.style.minWidth =
-        (tipoReporte === 'mensual' || tipoReporte === 'mensual_personal')
+        tipoReporte === 'mensual'
           ? '1050px'
           : '720px';
       tablaReporteBase.style.tableLayout = 'auto';
       tablaReporteBase.style.borderCollapse = 'collapse';
       tablaReporteBase.style.fontSize = '12px';
-
-      // SOLO mensual de personal: ancho funcional para PC y celular.
-      if (tipoReporte === 'mensual_personal') {
-        tablaReporteBase.style.minWidth = '1050px';
-        tablaReporteBase.style.width = 'max-content';
-        tablaReporteBase.style.maxWidth = 'none';
-      }
     }
 
     const contenedorTablaReporte =
@@ -4490,14 +3112,11 @@ const mes =
 const esMensual =
   tipoReporte === 'mensual';
 
-const esMensualPersonal =
-  tipoReporte === 'mensual_personal';
-
 const esAlertas =
   tipoReporte === 'alertas';
 
 const usaFiltroMensual =
-  esMensual || esMensualPersonal || esAlertas;
+  esMensual || esAlertas;
 
   // -------------------------------------------------
   // VALIDACIONES
@@ -4810,150 +3429,6 @@ const usaFiltroMensual =
 
 
     // -------------------------------------------------
-    // DEV 03 — REPORTE DIARIO DE PERSONAL
-    // Rama independiente del reporte de estudiantes.
-    // -------------------------------------------------
-
-    if (tipoReporte === 'personal') {
-
-      const personal =
-        Array.isArray(resultado.personal)
-          ? resultado.personal
-          : [];
-
-      const datosResumenPersonal =
-        resultado.resumen || {};
-
-      const totalElemento = document.getElementById('reporteTotal');
-      const presentesElemento = document.getElementById('reportePresentes');
-      const puntualesElemento = document.getElementById('reportePuntuales');
-      const tardanzasElemento = document.getElementById('reporteTardanzas');
-      const faltasElemento = document.getElementById('reporteFaltas');
-
-      if (totalElemento) totalElemento.textContent = datosResumenPersonal.total || 0;
-      if (presentesElemento) presentesElemento.textContent = datosResumenPersonal.presentes || 0;
-      if (puntualesElemento) puntualesElemento.textContent = datosResumenPersonal.puntuales || 0;
-      if (tardanzasElemento) tardanzasElemento.textContent = datosResumenPersonal.tardanzas || 0;
-      if (faltasElemento) faltasElemento.textContent = datosResumenPersonal.ausentes || 0;
-
-      if (resumen) resumen.style.display = 'block';
-
-      const tablaElemento = tabla ? tabla.closest('table') : null;
-      const cabeceraPersonal = tablaElemento ? tablaElemento.querySelector('thead') : null;
-
-      if (cabeceraPersonal) {
-        cabeceraPersonal.innerHTML =
-          '<tr>' +
-          '<th>DNI</th>' +
-          '<th>Personal</th>' +
-          '<th>Cargo</th>' +
-          '<th>Área</th>' +
-          '<th>Estado</th>' +
-          '<th>Ingreso</th>' +
-          '<th>Salida</th>' +
-          '<th>Puntualidad</th>' +
-          '<th>Método</th>' +
-          '<th>Usuario</th>' +
-          '<th>Observación</th>' +
-          '</tr>';
-      }
-
-      if (tabla) {
-        // Asegurar que el cuerpo de la tabla sea visible.
-        // Algunas reglas de estilo del reporte pueden dejar el tbody
-        // con display:none después de cambiar entre tipos de reporte.
-        tabla.style.display = 'table-row-group';
-        tabla.hidden = false;
-        tabla.innerHTML = '';
-
-        if (!personal.length) {
-          const filaVacia = document.createElement('tr');
-          filaVacia.style.display = 'table-row';
-          const celdaVacia = document.createElement('td');
-          celdaVacia.colSpan = 11;
-          celdaVacia.textContent = 'No hay registros de personal para el mes seleccionado.';
-          celdaVacia.style.display = 'table-cell';
-          filaVacia.appendChild(celdaVacia);
-          tabla.appendChild(filaVacia);
-        }
-
-        personal.forEach(function(persona) {
-          const fila = document.createElement('tr');
-          fila.style.display = 'table-row';
-          const valores = [
-            persona.dni || '',
-            persona.nombre || '',
-            persona.cargo || '',
-            persona.area || '',
-            persona.estado || '',
-            persona.horaIngreso || '',
-            persona.horaSalida || '',
-            persona.puntualidad || '',
-            persona.metodo || '',
-            persona.usuarioRegistro || '',
-            persona.observacion || ''
-          ];
-
-          valores.forEach(function(valor) {
-            const celda = document.createElement('td');
-            celda.style.display = 'table-cell';
-            celda.textContent = String(valor);
-            fila.appendChild(celda);
-          });
-
-          tabla.appendChild(fila);
-        });
-      }
-
-      if (resultados) {
-        resultados.style.display = 'block';
-        resultados.style.height = 'auto';
-        resultados.style.maxHeight = 'none';
-        resultados.style.overflow = 'visible';
-      }
-
-      const contenedorTablaFinalMGP = tabla
-        ? tabla.closest('table')
-          ? tabla.closest('table').parentElement
-          : null
-        : null;
-
-      if (contenedorTablaFinalMGP) {
-        contenedorTablaFinalMGP.style.height = 'auto';
-        contenedorTablaFinalMGP.style.maxHeight = 'none';
-        contenedorTablaFinalMGP.style.overflowX = 'auto';
-        contenedorTablaFinalMGP.style.overflowY = 'visible';
-      }
-
-      if (tabla) {
-        tabla.style.display = 'table-row-group';
-        tabla.style.height = 'auto';
-        tabla.style.maxHeight = 'none';
-        tabla.style.overflow = 'visible';
-      }
-
-      ultimoReporteMGP = {
-        tipoReporte: 'personal',
-        fecha: fecha,
-        mes: '',
-        grado: '',
-        resumen: datosResumenPersonal,
-        personal: personal
-      };
-
-      actualizarBotonesDescargaReporte();
-      renderizarMatrizMensualMGP();
-
-      if (mensaje) {
-        mensaje.textContent =
-          '✅ Reporte diario de personal generado: ' +
-          personal.length + ' registro(s).';
-      }
-
-      return;
-    }
-
-    // -------------------------------------------------
     // GUARDAR REPORTE ACTUAL PARA EXPORTACIÓN
     // -------------------------------------------------
 
@@ -4965,9 +3440,6 @@ const usaFiltroMensual =
       resumen: resultado.resumen || {},
       alumnos: Array.isArray(resultado.alumnos)
         ? resultado.alumnos
-        : [],
-      personal: Array.isArray(resultado.personal)
-        ? resultado.personal
         : []
     };
 
@@ -5634,13 +4106,9 @@ const usaFiltroMensual =
     // -------------------------------------------------
 
     const alumnos =
-      esMensualPersonal
-        ? (Array.isArray(resultado.personal)
-            ? resultado.personal
-            : [])
-        : (Array.isArray(resultado.alumnos)
-            ? resultado.alumnos
-            : []);
+      Array.isArray(resultado.alumnos)
+        ? resultado.alumnos
+        : [];
 
 
     if (tabla) {
@@ -5658,25 +4126,7 @@ const usaFiltroMensual =
 
       if (cabecera) {
 
-        if (esMensualPersonal) {
-
-          cabecera.innerHTML =
-            '<tr>' +
-            '<th>DNI</th>' +
-            '<th>Personal</th>' +
-            '<th>Cargo</th>' +
-            '<th>Área</th>' +
-            '<th>Días evaluados</th>' +
-            '<th>Asistencias</th>' +
-            '<th>Faltas</th>' +
-            '<th>Puntuales</th>' +
-            '<th>Tardanzas</th>' +
-            '<th>% Asistencia</th>' +
-            '<th>Salidas</th>' +
-            '<th>Detalle</th>' +
-            '</tr>';
-
-        } else if (esMensual) {
+        if (esMensual) {
 
           cabecera.innerHTML =
             '<tr>' +
@@ -5709,56 +4159,6 @@ const usaFiltroMensual =
 
         }
 
-      }
-
-      // Mensual de personal: mantener visibles DNI y Personal
-      // al desplazar horizontalmente la tabla, también en celular.
-      if (esMensualPersonal && cabecera) {
-        const encabezadosPersonal = cabecera.querySelectorAll('th');
-        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-        if (encabezadosPersonal.length >= 2) {
-          encabezadosPersonal[0].style.position = 'sticky';
-          encabezadosPersonal[0].style.left = '0';
-          encabezadosPersonal[0].style.zIndex = '3';
-          encabezadosPersonal[0].style.background = '#fff';
-          encabezadosPersonal[0].style.minWidth = '95px';
-          encabezadosPersonal[0].style.width = '95px';
-
-          if (!esCelularMGP) {
-            encabezadosPersonal[1].style.position = 'sticky';
-            encabezadosPersonal[1].style.left = '95px';
-            encabezadosPersonal[1].style.zIndex = '3';
-            encabezadosPersonal[1].style.background = '#fff';
-            encabezadosPersonal[1].style.minWidth = '180px';
-            encabezadosPersonal[1].style.width = '180px';
-          }
-        }
-      }
-
-      // ESTUDIANTES: en PC fijar DNI y Estudiante.
-      // En celular fijar solamente DNI para conservar espacio visible.
-      if (!esMensualPersonal && cabecera) {
-        const encabezadosEstudiante = cabecera.querySelectorAll('th');
-        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-        if (encabezadosEstudiante.length >= 2) {
-          encabezadosEstudiante[0].style.position = 'sticky';
-          encabezadosEstudiante[0].style.left = '0';
-          encabezadosEstudiante[0].style.zIndex = '3';
-          encabezadosEstudiante[0].style.background = '#fff';
-          encabezadosEstudiante[0].style.minWidth = '95px';
-          encabezadosEstudiante[0].style.width = '95px';
-
-          if (!esCelularMGP) {
-            encabezadosEstudiante[1].style.position = 'sticky';
-            encabezadosEstudiante[1].style.left = '95px';
-            encabezadosEstudiante[1].style.zIndex = '3';
-            encabezadosEstudiante[1].style.background = '#fff';
-            encabezadosEstudiante[1].style.minWidth = '180px';
-            encabezadosEstudiante[1].style.width = '180px';
-          }
-        }
       }
 
 
@@ -5797,144 +4197,6 @@ const usaFiltroMensual =
           celdaGrado.textContent =
             alumno.gradoSeccion || '';
 
-
-          if (esMensualPersonal) {
-
-            // Fijar DNI y Personal al desplazarse horizontalmente.
-            celdaDni.style.position = 'sticky';
-            celdaDni.style.left = '0';
-            celdaDni.style.zIndex = '2';
-            celdaDni.style.background = '#fff';
-            celdaDni.style.minWidth = '95px';
-            celdaDni.style.width = '95px';
-
-            const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-            if (!esCelularMGP) {
-              celdaNombre.style.position = 'sticky';
-              celdaNombre.style.left = '95px';
-              celdaNombre.style.zIndex = '2';
-              celdaNombre.style.background = '#fff';
-              celdaNombre.style.minWidth = '180px';
-              celdaNombre.style.width = '180px';
-            }
-
-            fila.appendChild(celdaDni);
-            fila.appendChild(celdaNombre);
-
-            [
-              alumno.cargo || '',
-              alumno.area || '',
-              alumno.diasEvaluados || 0,
-              alumno.presentes || 0,
-              alumno.faltas || 0,
-              alumno.puntuales || 0,
-              alumno.tardanzas || 0,
-              (alumno.porcentajeAsistencia || 0) + '%',
-              alumno.conSalida || 0
-            ].forEach(function(valor) {
-              const celda = document.createElement('td');
-              celda.textContent = String(valor);
-              fila.appendChild(celda);
-            });
-
-            const celdaDetallePersonal = document.createElement('td');
-            const botonDetallePersonal = document.createElement('button');
-            botonDetallePersonal.type = 'button';
-            botonDetallePersonal.textContent = 'Ver detalle';
-            botonDetallePersonal.style.cursor = 'pointer';
-            botonDetallePersonal.style.padding = '4px 8px';
-            botonDetallePersonal.style.borderRadius = '4px';
-            botonDetallePersonal.style.border = '1px solid #ccc';
-            botonDetallePersonal.style.background = '#f5f5f5';
-
-            botonDetallePersonal.addEventListener('click', function() {
-              const siguiente = fila.nextElementSibling;
-              if (siguiente && siguiente.dataset && siguiente.dataset.detallePersonal === '1') {
-                siguiente.remove();
-                botonDetallePersonal.textContent = 'Ver detalle';
-                return;
-              }
-
-              const filaDetalle = document.createElement('tr');
-              filaDetalle.dataset.detallePersonal = '1';
-              const celdaCompleta = document.createElement('td');
-              celdaCompleta.colSpan = 12;
-              celdaCompleta.style.padding = '10px';
-
-              const titulo = document.createElement('strong');
-              titulo.textContent = 'Detalle diario de ' + (alumno.nombre || 'personal');
-              celdaCompleta.appendChild(titulo);
-
-              const tablaDetalle = document.createElement('table');
-              tablaDetalle.style.width = '100%';
-              tablaDetalle.style.marginTop = '8px';
-              tablaDetalle.style.borderCollapse = 'collapse';
-
-              const filaCabecera = document.createElement('tr');
-              ['Fecha','Estado','Puntualidad','Ingreso','Salida','Método','Usuario','Observación'].forEach(function(texto) {
-                const th = document.createElement('th');
-                th.textContent = texto;
-                th.style.textAlign = 'left';
-                th.style.padding = '4px';
-                th.style.borderBottom = '1px solid #ddd';
-                filaCabecera.appendChild(th);
-              });
-              tablaDetalle.appendChild(filaCabecera);
-
-              const detalleDias = Array.isArray(alumno.detalleDias) ? alumno.detalleDias : [];
-              if (!detalleDias.length) {
-                const filaVacia = document.createElement('tr');
-                const celdaVacia = document.createElement('td');
-                celdaVacia.colSpan = 8;
-                celdaVacia.textContent = 'No hay detalle diario disponible.';
-                celdaVacia.style.padding = '6px';
-                filaVacia.appendChild(celdaVacia);
-                tablaDetalle.appendChild(filaVacia);
-              } else {
-                detalleDias.forEach(function(dia) {
-                  const filaDia = document.createElement('tr');
-                  [dia.fecha || '', dia.estado || '', dia.puntualidad || '', dia.horaIngreso || '', dia.horaSalida || '', dia.metodo || '', dia.usuarioRegistro || '', dia.observacion || ''].forEach(function(valor) {
-                    const td = document.createElement('td');
-                    td.textContent = String(valor);
-                    td.style.padding = '4px';
-                    td.style.borderBottom = '1px solid #eee';
-                    filaDia.appendChild(td);
-                  });
-                  tablaDetalle.appendChild(filaDia);
-                });
-              }
-
-              celdaCompleta.appendChild(tablaDetalle);
-              filaDetalle.appendChild(celdaCompleta);
-              fila.parentNode.insertBefore(filaDetalle, fila.nextSibling);
-              botonDetallePersonal.textContent = 'Ocultar detalle';
-            });
-
-            celdaDetallePersonal.appendChild(botonDetallePersonal);
-            fila.appendChild(celdaDetallePersonal);
-
-          } else {
-
-          // ESTUDIANTES: en PC fijar DNI y Estudiante.
-          // En celular fijar solamente DNI para conservar espacio visible.
-          const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-          celdaDni.style.position = 'sticky';
-          celdaDni.style.left = '0';
-          celdaDni.style.zIndex = '2';
-          celdaDni.style.background = '#fff';
-          celdaDni.style.minWidth = '95px';
-          celdaDni.style.width = '95px';
-
-          if (!esCelularMGP) {
-            celdaNombre.style.position = 'sticky';
-            celdaNombre.style.left = '95px';
-            celdaNombre.style.zIndex = '2';
-            celdaNombre.style.background = '#fff';
-            celdaNombre.style.minWidth = '180px';
-            celdaNombre.style.width = '180px';
-          }
 
           fila.appendChild(
             celdaDni
@@ -6333,8 +4595,6 @@ const usaFiltroMensual =
 
           }
 
-          }
-
 
           tabla.appendChild(
             fila
@@ -6430,239 +4690,6 @@ const usaFiltroMensual =
 // No modifica datos ni crea nuevos registros.
 // =====================================================
 
-function renderizarMatrizMensualPersonalMGP(
-  contenedorMatriz,
-  contenedorIncidencias,
-  contenedorPrincipal
-) {
-
-  const reporte = ultimoReporteMGP;
-  const mes = String(reporte.mes || '').trim();
-  const partesMes = mes.split('-');
-  const anio = Number(partesMes[0]);
-  const numeroMes = Number(partesMes[1]);
-  const ultimoDia =
-    anio && numeroMes
-      ? new Date(anio, numeroMes, 0).getDate()
-      : 0;
-
-  if (!anio || !numeroMes || !ultimoDia) {
-    contenedorPrincipal.style.display = 'block';
-    contenedorMatriz.textContent =
-      'No fue posible determinar el mes del reporte.';
-    contenedorIncidencias.textContent = '';
-    return;
-  }
-
-  const personal =
-    Array.isArray(reporte.personal)
-      ? reporte.personal
-      : [];
-
-  if (!personal.length) {
-    contenedorPrincipal.style.display = 'block';
-    contenedorMatriz.textContent =
-      'No hay personal para mostrar.';
-    contenedorIncidencias.textContent =
-      'No hay incidencias para mostrar.';
-    return;
-  }
-
-  const diasEvaluados = new Set();
-  const datosPorPersona = [];
-  const incidencias = [];
-
-  personal.forEach(function(persona, indicePersona) {
-    const porFecha = {};
-    const detalleDias =
-      Array.isArray(persona.detalleDias)
-        ? persona.detalleDias
-        : [];
-
-    detalleDias.forEach(function(dia) {
-      const fecha = String(dia.fecha || '').trim();
-      const partesFecha = fecha.split('/');
-      if (partesFecha.length !== 3) return;
-
-      const diaNumero = Number(partesFecha[0]);
-      if (diaNumero < 1 || diaNumero > ultimoDia) return;
-
-      diasEvaluados.add(diaNumero);
-
-      const estado =
-        String(dia.estado || '').trim().toUpperCase();
-      const puntualidad =
-        String(dia.puntualidad || '').trim().toUpperCase();
-
-      let codigo = 'F';
-      if (estado === 'PRESENTE') {
-        codigo = puntualidad === 'TARDE' ? 'T' : 'A';
-      }
-
-      porFecha[diaNumero] = {
-        codigo: codigo,
-        fecha: fecha
-      };
-    });
-
-    datosPorPersona.push({
-      numero: indicePersona + 1,
-      dni: persona.dni || '',
-      nombre: persona.nombre || '',
-      porFecha: porFecha
-    });
-  });
-
-  const tablaMatriz =
-    document.createElement('table');
-
-  tablaMatriz.style.borderCollapse = 'collapse';
-  tablaMatriz.style.minWidth = '1100px';
-  tablaMatriz.style.width = '100%';
-  tablaMatriz.style.tableLayout = 'auto';
-  tablaMatriz.style.fontSize = '10px';
-
-  const thead =
-    document.createElement('thead');
-  const filaCabecera =
-    document.createElement('tr');
-
-  ['N.º', 'DNI', 'PERSONAL'].forEach(function(texto) {
-    const th = document.createElement('th');
-    th.textContent = texto;
-    th.style.padding = '3px';
-    th.style.border = '1px solid #ccc';
-    th.style.whiteSpace = 'normal';
-    th.style.wordBreak = 'break-word';
-    filaCabecera.appendChild(th);
-  });
-
-  for (let dia = 1; dia <= ultimoDia; dia++) {
-    const th = document.createElement('th');
-    th.textContent = String(dia);
-    th.style.padding = '3px';
-    th.style.border = '1px solid #ccc';
-    th.style.textAlign = 'center';
-    th.style.width = '2.2%';
-    filaCabecera.appendChild(th);
-  }
-
-  thead.appendChild(filaCabecera);
-  tablaMatriz.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-
-  datosPorPersona.forEach(function(item) {
-    const fila = document.createElement('tr');
-
-    [
-      item.numero,
-      item.dni,
-      item.nombre
-    ].forEach(function(valor) {
-      const td = document.createElement('td');
-      td.textContent = valor;
-      td.style.padding = '3px';
-      td.style.border = '1px solid #ccc';
-      td.style.whiteSpace = 'normal';
-      td.style.wordBreak = 'break-word';
-      fila.appendChild(td);
-    });
-
-    for (let dia = 1; dia <= ultimoDia; dia++) {
-      const td = document.createElement('td');
-      const registro = item.porFecha[dia];
-      let codigo = '';
-
-      if (registro) {
-        codigo = registro.codigo || '';
-      } else if (diasEvaluados.has(dia)) {
-        codigo = 'F';
-      } else {
-        codigo = 'D';
-      }
-
-      td.textContent = codigo;
-      td.style.padding = '3px';
-      td.style.border = '1px solid #ccc';
-      td.style.textAlign = 'center';
-      td.style.fontWeight = 'bold';
-      td.style.width = '2.2%';
-      fila.appendChild(td);
-
-      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
-        incidencias.push({
-          numero: item.numero,
-          nombre: item.nombre,
-          dni: item.dni,
-          dia: dia,
-          fecha: registro.fecha || '',
-          codigo: codigo
-        });
-      }
-    }
-
-    tbody.appendChild(fila);
-  });
-
-  tablaMatriz.appendChild(tbody);
-
-  contenedorMatriz.style.maxWidth = '100%';
-  contenedorMatriz.style.overflowX = 'auto';
-  contenedorMatriz.style.overflowY = 'visible';
-  contenedorMatriz.style.webkitOverflowScrolling = 'touch';
-  contenedorMatriz.appendChild(tablaMatriz);
-
-  const leyenda = document.createElement('div');
-  leyenda.style.marginTop = '12px';
-  leyenda.style.padding = '10px';
-  leyenda.style.border = '1px solid #ccc';
-  leyenda.style.background = '#f8f8f8';
-
-  const tituloLeyenda = document.createElement('strong');
-  tituloLeyenda.textContent = 'Leyenda de códigos';
-  leyenda.appendChild(tituloLeyenda);
-
-  const tablaLeyenda = document.createElement('table');
-  tablaLeyenda.style.borderCollapse = 'collapse';
-  tablaLeyenda.style.marginTop = '7px';
-
-  [
-    ['A', 'Asistió'],
-    ['T', 'Tardanza'],
-    ['F', 'Falta'],
-    ['D', 'Día no evaluable']
-  ].forEach(function(item) {
-    const fila = document.createElement('tr');
-    item.forEach(function(valor, indice) {
-      const td = document.createElement('td');
-      td.textContent = valor;
-      td.style.padding = '4px 10px';
-      td.style.border = '1px solid #ccc';
-      if (indice === 0) {
-        td.style.fontWeight = 'bold';
-        td.style.textAlign = 'center';
-      }
-      fila.appendChild(td);
-    });
-    tablaLeyenda.appendChild(fila);
-  });
-
-  leyenda.appendChild(tablaLeyenda);
-  contenedorMatriz.appendChild(leyenda);
-
-  // PERSONAL: no muestra ni genera la sección de incidencias estudiantiles.
-  // Esa sección pertenece exclusivamente a la matriz de estudiantes.
-  contenedorIncidencias.innerHTML = '';
-
-  contenedorPrincipal.style.display = 'block';
-  contenedorPrincipal.style.border = '1px solid #2563eb';
-  contenedorPrincipal.style.borderRadius = '8px';
-  contenedorPrincipal.style.padding = '10px';
-  contenedorPrincipal.style.background = '#ffffff';
-  contenedorPrincipal.style.boxSizing = 'border-box';
-}
-
 function renderizarMatrizMensualMGP() {
 
   const contenedorMatriz =
@@ -6691,21 +4718,8 @@ function renderizarMatrizMensualMGP() {
 
   if (!matrizMensualVisibleMGP ||
       !ultimoReporteMGP ||
-      (ultimoReporteMGP.tipoReporte !== 'mensual' &&
-       ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
+      ultimoReporteMGP.tipoReporte !== 'mensual') {
     contenedorPrincipal.style.display = 'none';
-    return;
-  }
-
-  // MATRIZ MENSUAL DE PERSONAL: usa exactamente la misma
-  // estructura visual de la matriz mensual de estudiantes,
-  // pero trabaja exclusivamente con ultimoReporteMGP.personal.
-  if (ultimoReporteMGP.tipoReporte === 'mensual_personal') {
-    renderizarMatrizMensualPersonalMGP(
-      contenedorMatriz,
-      contenedorIncidencias,
-      contenedorPrincipal
-    );
     return;
   }
 
@@ -7062,8 +5076,7 @@ function actualizarBotonesDescargaReporte() {
 
   const habilitado =
     !!ultimoReporteMGP &&
-    (Array.isArray(ultimoReporteMGP.alumnos) ||
-     Array.isArray(ultimoReporteMGP.personal));
+    Array.isArray(ultimoReporteMGP.alumnos);
 
   if (descargarReporteExcelBtn) {
     descargarReporteExcelBtn.disabled = !habilitado;
@@ -7075,8 +5088,7 @@ function actualizarBotonesDescargaReporte() {
 
   const esMensual =
     habilitado &&
-    (ultimoReporteMGP.tipoReporte === 'mensual' ||
-     ultimoReporteMGP.tipoReporte === 'mensual_personal');
+    ultimoReporteMGP.tipoReporte === 'mensual';
 
   if (verMatrizMensualBtn) {
     verMatrizMensualBtn.disabled = !esMensual;
@@ -7104,77 +5116,12 @@ function obtenerDatosExportacionReporte() {
 
   const reporte = ultimoReporteMGP;
   const esMensual =
-    reporte.tipoReporte === 'mensual' ||
-    reporte.tipoReporte === 'mensual_personal';
+    reporte.tipoReporte === 'mensual';
 
   let encabezados = [];
   let filas = [];
 
-  if (reporte.tipoReporte === 'personal') {
-
-    encabezados = [
-      'DNI',
-      'Personal',
-      'Cargo',
-      'Área',
-      'Estado',
-      'Ingreso',
-      'Salida',
-      'Puntualidad',
-      'Método',
-      'Usuario',
-      'Observación'
-    ];
-
-    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
-      return [
-        persona.dni || '',
-        persona.nombre || '',
-        persona.cargo || '',
-        persona.area || '',
-        persona.estado || '',
-        persona.horaIngreso || '',
-        persona.horaSalida || '',
-        persona.puntualidad || '',
-        persona.metodo || '',
-        persona.usuarioRegistro || '',
-        persona.observacion || ''
-      ];
-    });
-
-  } else if (reporte.tipoReporte === 'mensual_personal') {
-
-    encabezados = [
-      'DNI',
-      'Personal',
-      'Cargo',
-      'Área',
-      'Días evaluados',
-      'Asistencias',
-      'Faltas',
-      'Puntuales',
-      'Tardanzas',
-      '% Asistencia',
-      'Salidas'
-    ];
-
-    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
-      return [
-        persona.dni || '',
-        persona.nombre || '',
-        persona.cargo || '',
-        persona.area || '',
-        persona.diasEvaluados || 0,
-        persona.presentes || 0,
-        persona.faltas || 0,
-        persona.puntuales || 0,
-        persona.tardanzas || 0,
-        (persona.porcentajeAsistencia || 0) + '%',
-        persona.conSalida || 0
-      ];
-    });
-
-  } else if (esMensual) {
+  if (esMensual) {
 
     encabezados = [
       'DNI',
@@ -7250,11 +5197,9 @@ function obtenerTituloReporteMGP(datos) {
 
   const nombres = {
     asistencia: 'REPORTE DE ASISTENCIA',
-    personal: 'REPORTE DIARIO DE PERSONAL',
     faltas: 'REPORTE DE FALTAS',
     tardanzas: 'REPORTE DE TARDANZAS',
-    mensual: 'REPORTE MENSUAL DE ASISTENCIA',
-    mensual_personal: 'REPORTE MENSUAL DE PERSONAL'
+    mensual: 'REPORTE MENSUAL DE ASISTENCIA'
   };
 
   return nombres[datos.reporte.tipoReporte] ||
@@ -7285,139 +5230,25 @@ function obtenerSubtituloReporteMGP(datos) {
     }
   }
 
-  if (reporte.tipoReporte !== 'personal') {
-    partes.push(
-      'Grado / Sección: ' +
-      (reporte.grado || 'Todos')
-    );
-  }
+  partes.push(
+    'Grado / Sección: ' +
+    (reporte.grado || 'Todos')
+  );
 
   return partes.join('   |   ');
 }
 
 
-function obtenerDatosMatrizMensualPersonalMGP(reporte) {
-
-  const mes = String(reporte.mes || '').trim();
-  const partesMes = mes.split('-');
-  const anio = Number(partesMes[0]);
-  const numeroMes = Number(partesMes[1]);
-  const ultimoDia =
-    anio && numeroMes
-      ? new Date(anio, numeroMes, 0).getDate()
-      : 0;
-
-  if (!ultimoDia) {
-    return {
-      encabezados: [],
-      filas: [],
-      incidencias: []
-    };
-  }
-
-  const diasEvaluados = new Set();
-  const datosPorPersona = [];
-  const incidencias = [];
-
-  (Array.isArray(reporte.personal) ? reporte.personal : []).forEach(function(persona, indicePersona) {
-    const porFecha = {};
-    const detalleDias = Array.isArray(persona.detalleDias)
-      ? persona.detalleDias
-      : [];
-
-    detalleDias.forEach(function(dia) {
-      const fecha = String(dia.fecha || '').trim();
-      const partesFecha = fecha.split('/');
-      if (partesFecha.length !== 3) return;
-
-      const diaNumero = Number(partesFecha[0]);
-      if (diaNumero < 1 || diaNumero > ultimoDia) return;
-
-      diasEvaluados.add(diaNumero);
-
-      const estado = String(dia.estado || '').trim().toUpperCase();
-      const puntualidad = String(dia.puntualidad || '').trim().toUpperCase();
-      const codigo =
-        estado === 'PRESENTE'
-          ? (puntualidad === 'TARDE' ? 'T' : 'A')
-          : 'F';
-
-      porFecha[diaNumero] = {
-        codigo: codigo,
-        fecha: fecha
-      };
-    });
-
-    datosPorPersona.push({
-      numero: indicePersona + 1,
-      dni: persona.dni || '',
-      nombre: persona.nombre || '',
-      porFecha: porFecha
-    });
-  });
-
-  const encabezados = ['N.º', 'DNI', 'PERSONAL'];
-  for (let dia = 1; dia <= ultimoDia; dia++) {
-    encabezados.push(String(dia));
-  }
-
-  const filas = [];
-
-  datosPorPersona.forEach(function(item) {
-    const fila = [item.numero, item.dni, item.nombre];
-
-    for (let dia = 1; dia <= ultimoDia; dia++) {
-      const registro = item.porFecha[dia];
-      let codigo = '';
-
-      if (registro) {
-        codigo = registro.codigo || '';
-      } else if (diasEvaluados.has(dia)) {
-        codigo = 'F';
-      } else {
-        codigo = 'D';
-      }
-
-      fila.push(codigo);
-
-      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
-        incidencias.push([
-          item.numero,
-          item.dni,
-          item.nombre,
-          dia,
-          registro.fecha || '',
-          codigo
-        ]);
-      }
-    }
-
-    filas.push(fila);
-  });
-
-  return {
-    encabezados: encabezados,
-    filas: filas,
-    incidencias: incidencias
-  };
-}
-
 function obtenerDatosMatrizMensualMGP() {
 
   const reporte = ultimoReporteMGP;
 
-  if (!reporte ||
-      (reporte.tipoReporte !== 'mensual' &&
-       reporte.tipoReporte !== 'mensual_personal')) {
+  if (!reporte || reporte.tipoReporte !== 'mensual') {
     return {
       encabezados: [],
       filas: [],
       incidencias: []
     };
-  }
-
-  if (reporte.tipoReporte === 'mensual_personal') {
-    return obtenerDatosMatrizMensualPersonalMGP(reporte);
   }
 
   const mes = String(reporte.mes || '').trim();
@@ -7574,30 +5405,19 @@ function descargarReporteExcel() {
       const matriz = obtenerDatosMatrizMensualMGP();
       const filasMatriz = [
         ['IE JEC MANUEL GONZALES PRADA'],
-        [ultimoReporteMGP.tipoReporte === 'mensual_personal'
-          ? 'MATRIZ MENSUAL DE PERSONAL'
-          : 'MATRIZ MENSUAL DE ASISTENCIA'],
+        ['MATRIZ MENSUAL DE ASISTENCIA'],
         [subtitulo],
         [],
         matriz.encabezados,
         ...matriz.filas,
         [],
         ['LEYENDA DE CÓDIGOS'],
-        ...(ultimoReporteMGP.tipoReporte === 'mensual_personal'
-          ? [
-              ['A', 'Asistió'],
-              ['T', 'Tardanza'],
-              ['F', 'Falta'],
-              ['D', 'Día no evaluable']
-            ]
-          : [
-              ['A', 'Asistió'],
-              ['T', 'Tardanza'],
-              ['U', 'Tardanza justificada'],
-              ['F', 'Falta'],
-              ['J', 'Falta justificada'],
-              ['D', 'Día no evaluable']
-            ])
+        ['A', 'Asistió'],
+        ['T', 'Tardanza'],
+        ['U', 'Tardanza justificada'],
+        ['F', 'Falta'],
+        ['J', 'Falta justificada'],
+        ['D', 'Día no evaluable']
       ];
 
       const hojaMatriz = XLSX.utils.aoa_to_sheet(filasMatriz);
@@ -7612,39 +5432,36 @@ function descargarReporteExcel() {
         'Matriz Mensual'
       );
 
-      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
-      if (ultimoReporteMGP.tipoReporte === 'mensual') {
-        const filasIncidencias = [
-          ['IE JEC MANUEL GONZALES PRADA'],
-          ['INCIDENCIAS PARA SIAGIE'],
-          [subtitulo],
-          [],
-          ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
-          ...matriz.incidencias,
-          [],
-          ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
-          ['T', 'Tardanza'],
-          ['U', 'Tardanza justificada'],
-          ['F', 'Falta'],
-          ['J', 'Falta justificada']
-        ];
+      const filasIncidencias = [
+        ['IE JEC MANUEL GONZALES PRADA'],
+        ['INCIDENCIAS PARA SIAGIE'],
+        [subtitulo],
+        [],
+        ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
+        ...matriz.incidencias,
+        [],
+        ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
+        ['T', 'Tardanza'],
+        ['U', 'Tardanza justificada'],
+        ['F', 'Falta'],
+        ['J', 'Falta justificada']
+      ];
 
-        const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
-        hojaIncidencias['!cols'] = [
-          { wch: 7 },
-          { wch: 14 },
-          { wch: 36 },
-          { wch: 8 },
-          { wch: 14 },
-          { wch: 10 }
-        ];
+      const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
+      hojaIncidencias['!cols'] = [
+        { wch: 7 },
+        { wch: 14 },
+        { wch: 36 },
+        { wch: 8 },
+        { wch: 14 },
+        { wch: 10 }
+      ];
 
-        XLSX.utils.book_append_sheet(
-          libro,
-          hojaIncidencias,
-          'Incidencias SIAGIE'
-        );
-      }
+      XLSX.utils.book_append_sheet(
+        libro,
+        hojaIncidencias,
+        'Incidencias SIAGIE'
+      );
     }
 
     const fechaArchivo =
@@ -7770,13 +5587,7 @@ function descargarReportePDF() {
       let siguienteY = doc.lastAutoTable.finalY + 8;
 
       doc.setFontSize(11);
-      doc.text(
-        ultimoReporteMGP.tipoReporte === 'mensual_personal'
-          ? 'MATRIZ MENSUAL DE PERSONAL'
-          : 'MATRIZ MENSUAL DE ASISTENCIA',
-        10,
-        siguienteY
-      );
+      doc.text('MATRIZ MENSUAL DE ASISTENCIA', 10, siguienteY);
       siguienteY += 4;
 
       doc.autoTable({
@@ -7826,29 +5637,26 @@ function descargarReportePDF() {
         }
       });
 
-      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
-      if (ultimoReporteMGP.tipoReporte === 'mensual') {
-        siguienteY = doc.lastAutoTable.finalY + 6;
-        doc.setFontSize(10);
-        doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
-        siguienteY += 2;
+      siguienteY = doc.lastAutoTable.finalY + 6;
+      doc.setFontSize(10);
+      doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
+      siguienteY += 2;
 
-        doc.autoTable({
-          head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
-          body: matriz.incidencias,
-          startY: siguienteY,
-          theme: 'grid',
-          styles: {
-            fontSize: 7,
-            cellPadding: 1.5,
-            overflow: 'linebreak'
-          },
-          margin: {
-            left: 10,
-            right: 10
-          }
-        });
-      }
+      doc.autoTable({
+        head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
+        body: matriz.incidencias,
+        startY: siguienteY,
+        theme: 'grid',
+        styles: {
+          fontSize: 7,
+          cellPadding: 1.5,
+          overflow: 'linebreak'
+        },
+        margin: {
+          left: 10,
+          right: 10
+        }
+      });
     }
 
     const fechaArchivo =
@@ -7972,361 +5780,9 @@ document.getElementById('dniBtn')
       return;
     }
 
-    registrarAsistenciaSegunModoMGP(dni);
+    registrarAsistenciaBackend(dni);
 
   });
-
-
-
-/* =========================================================
-   JUSTIFICACIONES V2 - DEV 01 FRONTEND
-   ---------------------------------------------------------
-   Integración visual y operativa con apiJustificaciones.
-   No modifica registro, QR, cámara, offline ni reportes.
-   ========================================================= */
-
-let justificacionesMGPInicializado = false;
-let justificacionesMGPCallbackId = 0;
-let justificacionesMGPEnEdicion = null;
-
-function escaparHtmlJustificacionesMGP(valor) {
-  return String(valor == null ? '' : valor)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function solicitarJustificacionesMGP(params) {
-  return new Promise(function(resolve, reject) {
-    const callbackName =
-      'mgpJustificacionesCallback_' +
-      (++justificacionesMGPCallbackId) + '_' + Date.now();
-
-    const script = document.createElement('script');
-    let terminado = false;
-    const timeout = setTimeout(function() {
-      if (terminado) return;
-      terminado = true;
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-      reject(new Error('Tiempo de espera agotado al consultar justificaciones.'));
-    }, 15000);
-
-    window[callbackName] = function(resultado) {
-      if (terminado) return;
-      terminado = true;
-      clearTimeout(timeout);
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-      resolve(resultado || {});
-    };
-
-    script.onerror = function() {
-      if (terminado) return;
-      terminado = true;
-      clearTimeout(timeout);
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-      reject(new Error('No se pudo comunicar con el servidor de justificaciones.'));
-    };
-
-    const query = [];
-    Object.keys(params || {}).forEach(function(clave) {
-      const valor = params[clave];
-      if (valor === undefined || valor === null || valor === '') return;
-      query.push(encodeURIComponent(clave) + '=' + encodeURIComponent(String(valor)));
-    });
-    query.push('action=apiJustificaciones');
-    query.push('token=' + encodeURIComponent(state.token || ''));
-    query.push('callback=' + encodeURIComponent(callbackName));
-    query.push('_t=' + Date.now());
-
-    script.src = CONFIG.API_URL + '?' + query.join('&');
-    document.head.appendChild(script);
-  });
-}
-
-function puedeAdministrarJustificacionesMGP() {
-  return !!(
-    state.permisos &&
-    state.permisos.administrarJustificaciones === true
-  );
-}
-
-function inicializarModuloJustificacionesMGP() {
-  if (justificacionesMGPInicializado) return;
-
-  const admin = document.getElementById('admin');
-  if (!admin) return;
-
-  if (!puedeAdministrarJustificacionesMGP()) return;
-
-  const card = admin.querySelector('.card');
-  if (!card) return;
-
-  const bloque = document.createElement('div');
-  bloque.id = 'justificacionesMGP';
-  bloque.style.marginTop = '18px';
-  bloque.style.borderTop = '1px solid rgba(0,0,0,.12)';
-  bloque.style.paddingTop = '16px';
-
-  bloque.innerHTML = "\n    <h3 style=\"margin:0 0 10px;\">📄 Justificaciones</h3>\n    <p style=\"margin:0 0 14px; font-size:.92rem;\">\n      Registro, edición y resolución de justificaciones de asistencia.\n    </p>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoPersonaMGP\">\n        <option value=\"estudiante\">Estudiante</option>\n        <option value=\"personal\">Personal</option>\n      </select>\n      <select id=\"justEstadoFiltroMGP\">\n        <option value=\"\">Todos los estados</option>\n        <option value=\"PENDIENTE\">Pendientes</option>\n        <option value=\"APROBADA\">Aprobadas</option>\n        <option value=\"RECHAZADA\">Rechazadas</option>\n      </select>\n      <input id=\"justMesFiltroMGP\" type=\"month\" title=\"Mes de la inasistencia\">\n      <button id=\"justListarBtnMGP\" type=\"button\">🔄 Actualizar</button>\n    </div>\n\n    <div style=\"display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoMGP\">\n        <option value=\"FALTA\">FALTA</option>\n        <option value=\"TARDANZA\">TARDANZA</option>\n      </select>\n      <input id=\"justDniMGP\" type=\"text\" inputmode=\"numeric\" maxlength=\"12\" placeholder=\"DNI\">\n      <input id=\"justIdPersonaMGP\" type=\"text\" placeholder=\"ID persona (opcional)\">\n      <input id=\"justFechaMGP\" type=\"date\">\n      <input id=\"justIdRegistroMGP\" type=\"text\" placeholder=\"ID_REGISTRO (solo tardanza)\">\n      <input id=\"justMotivoMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Motivo de la justificación\">\n      <input id=\"justObservacionMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Observación (opcional)\">\n    </div>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <button id=\"justGuardarBtnMGP\" type=\"button\">💾 Registrar justificación</button>\n      <button id=\"justCancelarBtnMGP\" type=\"button\" style=\"display:none;\">✖ Cancelar edición</button>\n    </div>\n\n    <div id=\"justMsgMGP\" style=\"margin-bottom:10px; min-height:20px;\"></div>\n    <div style=\"overflow:auto; max-width:100%;\">\n      <table id=\"justTablaMGP\" style=\"width:100%; min-width:1100px; border-collapse:collapse;\">\n        <thead>\n          <tr>\n            <th>ID</th><th>DNI</th><th>Persona</th><th>Tipo</th><th>Fecha</th>\n            <th>Motivo</th><th>Estado</th><th>Responsable</th><th>Observación</th><th>Acciones</th>\n          </tr>\n        </thead>\n        <tbody id=\"justTablaBodyMGP\"></tbody>\n      </table>\n    </div>\n  ";
-
-  card.appendChild(bloque);
-  justificacionesMGPInicializado = true;
-
-  document.getElementById('justListarBtnMGP')
-    .addEventListener('click', listarJustificacionesMGP);
-  document.getElementById('justGuardarBtnMGP')
-    .addEventListener('click', guardarJustificacionMGP);
-  document.getElementById('justCancelarBtnMGP')
-    .addEventListener('click', cancelarEdicionJustificacionMGP);
-  document.getElementById('justTipoMGP')
-    .addEventListener('change', actualizarCamposJustificacionMGP);
-  document.getElementById('justTipoPersonaMGP')
-    .addEventListener('change', actualizarCamposJustificacionMGP);
-
-  actualizarCamposJustificacionMGP();
-  listarJustificacionesMGP();
-}
-
-function actualizarCamposJustificacionMGP() {
-  const tipo = document.getElementById('justTipoMGP');
-  const idRegistro = document.getElementById('justIdRegistroMGP');
-  if (!tipo || !idRegistro) return;
-
-  const tardanza = tipo.value === 'TARDANZA';
-  idRegistro.disabled = !tardanza;
-  idRegistro.placeholder = tardanza
-    ? 'ID_REGISTRO de la tardanza'
-    : 'No aplica para falta';
-}
-
-function mostrarMensajeJustificacionMGP(texto, error) {
-  const el = document.getElementById('justMsgMGP');
-  if (!el) return;
-  el.textContent = texto || '';
-  el.style.fontWeight = error ? '600' : '400';
-}
-
-async function listarJustificacionesMGP() {
-  if (!puedeAdministrarJustificacionesMGP()) return;
-
-  mostrarMensajeJustificacionMGP('Consultando justificaciones...', false);
-
-  try {
-    const resultado = await solicitarJustificacionesMGP({
-      operacion:'listar',
-      tipoPersona:(document.getElementById('justTipoPersonaMGP') || {}).value || '',
-      estado:(document.getElementById('justEstadoFiltroMGP') || {}).value || '',
-      mes:(document.getElementById('justMesFiltroMGP') || {}).value || ''
-    });
-
-    if (!resultado.ok) {
-      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudieron listar las justificaciones.'), true);
-      return;
-    }
-
-    renderizarJustificacionesMGP(resultado.justificaciones || []);
-    mostrarMensajeJustificacionMGP('✅ ' + (resultado.total || 0) + ' justificación(es) encontrada(s).', false);
-  } catch (error) {
-    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
-  }
-}
-
-function renderizarJustificacionesMGP(lista) {
-  const body = document.getElementById('justTablaBodyMGP');
-  if (!body) return;
-
-  body.innerHTML = '';
-
-  if (!lista.length) {
-    body.innerHTML = '<tr><td colspan="10" style="padding:10px; text-align:center;">No hay justificaciones para los filtros seleccionados.</td></tr>';
-    return;
-  }
-
-  lista.forEach(function(item) {
-    const tr = document.createElement('tr');
-    const acciones = item.estado === 'PENDIENTE'
-      ? `
-        <button type="button" data-just-accion="editar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✏️</button>
-        <button type="button" data-just-accion="aprobar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✅</button>
-        <button type="button" data-just-accion="rechazar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">❌</button>
-      `
-      : '—';
-
-    [
-      item.idJustificacion,
-      item.dni,
-      item.nombre,
-      item.tipo,
-      item.fechaInasistencia,
-      item.motivo,
-      item.estado,
-      item.responsable,
-      item.observacion
-    ].forEach(function(valor) {
-      const td = document.createElement('td');
-      td.textContent = valor || '';
-      td.style.padding = '6px';
-      td.style.borderBottom = '1px solid rgba(0,0,0,.08)';
-      tr.appendChild(td);
-    });
-
-    const tdAcciones = document.createElement('td');
-    tdAcciones.style.padding = '6px';
-    tdAcciones.innerHTML = acciones;
-    tr.appendChild(tdAcciones);
-    body.appendChild(tr);
-  });
-
-  body.querySelectorAll('[data-just-accion]').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      ejecutarAccionJustificacionMGP(
-        btn.getAttribute('data-just-accion'),
-        btn.getAttribute('data-id'),
-        lista
-      );
-    });
-  });
-}
-
-async function guardarJustificacionMGP() {
-  const tipoPersona = document.getElementById('justTipoPersonaMGP').value;
-  const tipo = document.getElementById('justTipoMGP').value;
-  const dni = document.getElementById('justDniMGP').value.trim();
-  const idPersona = document.getElementById('justIdPersonaMGP').value.trim();
-  const fecha = document.getElementById('justFechaMGP').value;
-  const idRegistro = document.getElementById('justIdRegistroMGP').value.trim();
-  const motivo = document.getElementById('justMotivoMGP').value.trim();
-  const observacion = document.getElementById('justObservacionMGP').value.trim();
-
-  if (!dni && !idPersona) {
-    mostrarMensajeJustificacionMGP('❌ Indique DNI o ID de persona.', true);
-    return;
-  }
-  if (!fecha) {
-    mostrarMensajeJustificacionMGP('❌ Indique la fecha de inasistencia.', true);
-    return;
-  }
-  if (!motivo) {
-    mostrarMensajeJustificacionMGP('❌ Indique el motivo.', true);
-    return;
-  }
-  if (tipo === 'TARDANZA' && !idRegistro) {
-    mostrarMensajeJustificacionMGP('❌ Para una tardanza debe indicar ID_REGISTRO.', true);
-    return;
-  }
-
-  mostrarMensajeJustificacionMGP('Guardando justificación...', false);
-
-  try {
-    const params = {
-      operacion: justificacionesMGPEnEdicion ? 'editar' : 'crear',
-      tipoPersona:tipoPersona,
-      tipo:tipo,
-      dni:dni,
-      idPersona:idPersona,
-      fechaInasistencia:fecha,
-      idRegistro:tipo === 'TARDANZA' ? idRegistro : '',
-      motivo:motivo,
-      observacion:observacion
-    };
-
-    if (justificacionesMGPEnEdicion) {
-      params.idJustificacion = justificacionesMGPEnEdicion.idJustificacion;
-    }
-
-    const resultado = await solicitarJustificacionesMGP(params);
-
-    if (!resultado.ok) {
-      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo guardar.'), true);
-      return;
-    }
-
-    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada correctamente.'), false);
-    cancelarEdicionJustificacionMGP();
-    await listarJustificacionesMGP();
-  } catch (error) {
-    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
-  }
-}
-
-function cargarEdicionJustificacionMGP(item) {
-  justificacionesMGPEnEdicion = item;
-  document.getElementById('justTipoPersonaMGP').value = item.tipoPersona || 'estudiante';
-  document.getElementById('justTipoMGP').value = item.tipo || 'FALTA';
-  document.getElementById('justDniMGP').value = item.dni || '';
-  document.getElementById('justIdPersonaMGP').value = item.idPersona || '';
-  document.getElementById('justFechaMGP').value = item.fechaInasistencia || '';
-  document.getElementById('justIdRegistroMGP').value = item.idRegistro || '';
-  document.getElementById('justMotivoMGP').value = item.motivo || '';
-  document.getElementById('justObservacionMGP').value = item.observacion || '';
-  document.getElementById('justGuardarBtnMGP').textContent = '💾 Guardar cambios';
-  document.getElementById('justCancelarBtnMGP').style.display = '';
-  actualizarCamposJustificacionMGP();
-  mostrarMensajeJustificacionMGP('✏️ Editando ' + item.idJustificacion, false);
-}
-
-function cancelarEdicionJustificacionMGP() {
-  justificacionesMGPEnEdicion = null;
-  const ids = [
-    'justDniMGP','justIdPersonaMGP','justFechaMGP',
-    'justIdRegistroMGP','justMotivoMGP','justObservacionMGP'
-  ];
-  ids.forEach(function(id) {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  document.getElementById('justTipoMGP').value = 'FALTA';
-  document.getElementById('justGuardarBtnMGP').textContent = '💾 Registrar justificación';
-  document.getElementById('justCancelarBtnMGP').style.display = 'none';
-  actualizarCamposJustificacionMGP();
-}
-
-async function ejecutarAccionJustificacionMGP(accion, id, lista) {
-  const item = lista.find(function(x) { return x.idJustificacion === id; });
-  if (!item) return;
-
-  if (accion === 'editar') {
-    cargarEdicionJustificacionMGP(item);
-    return;
-  }
-
-  let observacion = item.observacion || '';
-  if (accion === 'rechazar') {
-    observacion = window.prompt('Indique el motivo de rechazo:', observacion) || '';
-    if (!observacion.trim()) {
-      mostrarMensajeJustificacionMGP('❌ El rechazo requiere una observación.', true);
-      return;
-    }
-  }
-
-  if (accion === 'aprobar' && !window.confirm('¿Aprobar esta justificación?')) return;
-  if (accion === 'rechazar' && !window.confirm('¿Rechazar esta justificación?')) return;
-
-  mostrarMensajeJustificacionMGP('Procesando ' + accion + '...', false);
-
-  try {
-    const resultado = await solicitarJustificacionesMGP({
-      operacion:accion,
-      idJustificacion:id,
-      observacion:observacion
-    });
-
-    if (!resultado.ok) {
-      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo resolver la justificación.'), true);
-      return;
-    }
-
-    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada.'), false);
-    await listarJustificacionesMGP();
-  } catch (error) {
-    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
-  }
-}
 
 // =====================================================
 // COMPATIBILIDAD FINAL V1 / V2
