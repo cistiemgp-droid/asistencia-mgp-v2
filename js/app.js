@@ -1870,9 +1870,8 @@ if (entrarBtn) {
 
       }
 
-      // DEV29: impedir dobles peticiones LOGIN por doble clic.
-      // La misma solicitud conserva un loginRequestId durante los
-      // reintentos para que el servidor no cree una segunda sesión.
+      // DEV30: impedir dobles peticiones LOGIN por doble clic.
+      // Se genera un loginRequestId de trazabilidad para la solicitud.
       if (loginEnProceso) {
         return;
       }
@@ -1899,9 +1898,8 @@ if (entrarBtn) {
           Math.random().toString(36).slice(2, 12);
 
         let intentoActual = 0;
-        const MAX_INTENTOS = 2;
-        const TIMEOUT_POR_INTENTO_MS = 10000;
-        const ESPERA_REINTENTO_MS = 500;
+        const MAX_INTENTOS = 1;
+        const TIMEOUT_POR_INTENTO_MS = 30000;
 
         const resultado =
           await new Promise(function(resolve, reject) {
@@ -2050,7 +2048,7 @@ if (entrarBtn) {
                     if (intentoActual < MAX_INTENTOS) {
 
                       console.warn(
-                        'DEV29 LOGIN: fallo de red en intento ' +
+                        'DEV30 LOGIN: fallo de red en intento ' +
                         intentoActual +
                         '; reintentando la misma solicitud.'
                       );
@@ -2085,7 +2083,7 @@ if (entrarBtn) {
                     if (intentoActual < MAX_INTENTOS) {
 
                       console.warn(
-                        'DEV29 LOGIN: timeout en intento ' +
+                        'DEV30 LOGIN: timeout en intento ' +
                         intentoActual +
                         '; reintentando la misma solicitud.'
                       );
