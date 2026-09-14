@@ -1905,47 +1905,26 @@ if (entrarBtn) {
           await new Promise(function(resolve, reject) {
 
             /*
-             * DEV37 LOGIN - TRANSPORTE ROBUSTO
+             * DEV38 LOGIN - CANAL DIRECTO
              *
-             * Causa aislada del problema actual:
-             * DEV36 elimina el <script> cuando vence el timeout.
-             * Si Apps Script todavía estaba procesando la solicitud,
-             * se corta el canal JSONP y se fuerza una cadena de consultas
-             * de estado que también depende de transporte.
-             *
-             * DEV37 NO cancela una solicitud pendiente. Mantiene vivos
-             * los callbacks y, después de unos segundos, lanza una
-             * segunda solicitud con EL MISMO loginRequestId.
-             * El backend ya tiene idempotencia para ese requestId.
+             * La cadena de polling apiLoginEstado queda fuera del flujo
+             * principal. La solicitud usa apiLoginDirecto, que en backend
+             * no utiliza LockService ni CacheService.
+             * Si el transporte falla, se realiza UN solo respaldo con
+             * apiLogin, que conserva la idempotencia existente.
              */
-
             let terminado = false;
-            const scriptsPendientes = [];
-            const callbacksPendientes = [];
-            let temporizadorRespaldo = null;
-            let temporizadorEstado = null;
-            let consultasEstado = 0;
-            const MAX_CONSULTAS_ESTADO = 6;
-            const ESPERA_RESPALDO_MS = 6000;
-            const INTERVALO_ESTADO_MS = 1500;
+            let temporizador = null;
+            const scripts = [];
+            const callbacks = [];
 
-            const conservarCallback = function(nombre) {
-              if (!nombre) return;
-              callbacksPendientes.push(nombre);
-            };
-
-            const limpiarTodo = function() {
-              if (temporizadorRespaldo) {
-                clearTimeout(temporizadorRespaldo);
-                temporizadorRespaldo = null;
+            const limpiar = function() {
+              if (temporizador) {
+                clearTimeout(temporizador);
+                temporizador = null;
               }
 
-              if (temporizadorEstado) {
-                clearTimeout(temporizadorEstado);
-                temporizadorEstado = null;
-              }
-
-              scriptsPendientes.forEach(function(script) {
+              scripts.forEach(function(script) {
                 try {
                   if (script && script.parentNode) {
                     script.parentNode.removeChild(script);
@@ -1953,180 +1932,92 @@ if (entrarBtn) {
                 } catch (error) {}
               });
 
-              callbacksPendientes.forEach(function(nombre) {
+              callbacks.forEach(function(nombre) {
                 try { delete window[nombre]; }
                 catch (error) {}
               });
 
-              scriptsPendientes.length = 0;
-              callbacksPendientes.length = 0;
+              scripts.length = 0;
+              callbacks.length = 0;
               loginScript = null;
             };
 
             const finalizar = function(data) {
               if (terminado) return;
               terminado = true;
-              limpiarTodo();
+              limpiar();
               resolve(data);
             };
 
-            const finalizarError = function(mensajeError) {
+            const finalizarError = function() {
               if (terminado) return;
               terminado = true;
-              limpiarTodo();
-              reject(new Error(mensajeError));
+              limpiar();
+              reject(new Error(
+                'No se pudo comunicar con el servidor de acceso.'
+              ));
             };
 
-            const consultarEstado = function() {
+            const lanzar = function(action, esRespaldo) {
               if (terminado) return;
 
-              consultasEstado += 1;
-
-              const nombreCallback =
-                'estadoLoginMGP37_' +
-                Date.now() + '_' + consultasEstado;
+              const callback =
+                'respuestaLoginMGP38_' +
+                Date.now() + '_' +
+                Math.random().toString(36).slice(2, 8);
 
               const script = document.createElement('script');
-              conservarCallback(nombreCallback);
-              scriptsPendientes.push(script);
+              scripts.push(script);
+              callbacks.push(callback);
               loginScript = script;
 
-              window[nombreCallback] = function(data) {
+              window[callback] = function(data) {
                 if (terminado) return;
-
-                if (
-                  data &&
-                  data.codigo !== 'LOGIN_NO_LISTO' &&
-                  data.codigo !== 'LOGIN_EN_PROCESO'
-                ) {
-                  finalizar(data);
-                  return;
-                }
-
-                if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
-                  lanzarPeticionRespaldo();
-                  return;
-                }
-
-                temporizadorEstado = setTimeout(function() {
-                  temporizadorEstado = null;
-                  consultarEstado();
-                }, INTERVALO_ESTADO_MS);
-              };
-
-              script.onerror = function() {
-                if (terminado) return;
-
-                if (consultasEstado >= MAX_CONSULTAS_ESTADO) {
-                  lanzarPeticionRespaldo();
-                  return;
-                }
-
-                temporizadorEstado = setTimeout(function() {
-                  temporizadorEstado = null;
-                  consultarEstado();
-                }, INTERVALO_ESTADO_MS);
+                finalizar(data);
               };
 
               script.src =
                 CONFIG.API_URL +
-                '?action=apiLoginEstado' +
-                '&loginRequestId=' + encodeURIComponent(loginRequestId) +
-                '&callback=' + encodeURIComponent(nombreCallback);
+                '?action=' + encodeURIComponent(action) +
+                '&user=' + encodeURIComponent(usuario) +
+                '&pass=' + encodeURIComponent(password) +
+                '&callback=' + encodeURIComponent(callback);
 
               script.async = true;
-              document.head.appendChild(script);
-            };
-
-            const lanzarPeticion = function(esRespaldo) {
-              if (terminado) return;
-
-              const nombreCallback =
-                'respuestaLoginMGP37_' +
-                Date.now() + '_' +
-                Math.random().toString(36).slice(2, 7);
-
-              const script = document.createElement('script');
-              conservarCallback(nombreCallback);
-              scriptsPendientes.push(script);
-              loginScript = script;
-
-              window[nombreCallback] = function(data) {
-                if (terminado) return;
-
-                /*
-                 * Si el backend informa que la solicitud sigue en proceso,
-                 * NO se considera fallo: se consulta su estado.
-                 */
-                if (
-                  data &&
-                  (
-                    data.codigo === 'LOGIN_NO_LISTO' ||
-                    data.codigo === 'LOGIN_EN_PROCESO'
-                  )
-                ) {
-                  consultarEstado();
-                  return;
-                }
-
-                finalizar(data);
-              };
 
               script.onerror = function() {
                 if (terminado) return;
 
                 if (!esRespaldo) {
                   console.warn(
-                    'DEV37 LOGIN: fallo de transporte; se conserva la solicitud y se usa recuperación por requestId.'
+                    'DEV38 LOGIN: fallo en apiLoginDirecto; usando respaldo apiLogin.'
                   );
-                  consultarEstado();
+                  lanzar('apiLogin', true);
                   return;
                 }
 
-                finalizarError(
-                  'No se pudo comunicar con el servidor de acceso.'
-                );
+                finalizarError();
               };
 
-              script.src =
-                CONFIG.API_URL +
-                '?action=apiLogin' +
-                '&user=' + encodeURIComponent(usuario) +
-                '&pass=' + encodeURIComponent(password) +
-                '&loginRequestId=' + encodeURIComponent(loginRequestId) +
-                '&callback=' + encodeURIComponent(nombreCallback);
-
-              script.async = true;
               document.head.appendChild(script);
+
+              temporizador = setTimeout(function() {
+                temporizador = null;
+                if (terminado) return;
+
+                if (!esRespaldo) {
+                  console.warn(
+                    'DEV38 LOGIN: timeout en apiLoginDirecto; usando respaldo apiLogin.'
+                  );
+                  lanzar('apiLogin', true);
+                  return;
+                }
+
+                finalizarError();
+              }, 15000);
             };
 
-            const lanzarPeticionRespaldo = function() {
-              if (terminado) return;
-
-              if (temporizadorRespaldo) {
-                clearTimeout(temporizadorRespaldo);
-                temporizadorRespaldo = null;
-              }
-
-              console.warn(
-                'DEV37 LOGIN: reenviando LA MISMA solicitud para aprovechar idempotencia del servidor.'
-              );
-
-              lanzarPeticion(true);
-            };
-
-            /*
-             * Solicitud primaria. NO se cancela si tarda más de 8 s.
-             * El respaldo se lanza a los 6 s y usa el mismo requestId.
-             */
-            lanzarPeticion(false);
-
-            temporizadorRespaldo = setTimeout(function() {
-              temporizadorRespaldo = null;
-              if (!terminado) {
-                lanzarPeticionRespaldo();
-              }
-            }, ESPERA_RESPALDO_MS);
+            lanzar('apiLoginDirecto', false);
 
           });
 
