@@ -2006,6 +2006,8 @@ if (entrarBtn) {
 
         aplicarPermisosPanel();
 
+        inicializarModuloJustificacionesMGP();
+
         console.log(
           'Usuario autenticado V2:',
           state.usuario
@@ -7106,3 +7108,368 @@ document.getElementById('dniBtn')
 window.activarCamara = iniciarCamara;
 window.detenerCamara = detenerCamara;
 window.cambiarCamara = cambiarCamara;
+
+/* =========================================================
+   JUSTIFICACIONES V2 - DEV 01 FRONTEND
+   ---------------------------------------------------------
+   Integración visual y operativa con apiJustificaciones.
+   No modifica registro, QR, cámara, offline ni reportes.
+   ========================================================= */
+
+let justificacionesMGPInicializado = false;
+let justificacionesMGPCallbackId = 0;
+let justificacionesMGPEnEdicion = null;
+
+function escaparHtmlJustificacionesMGP(valor) {
+  return String(valor == null ? '' : valor)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function solicitarJustificacionesMGP(params) {
+  return new Promise(function(resolve, reject) {
+    const callbackName =
+      'mgpJustificacionesCallback_' +
+      (++justificacionesMGPCallbackId) + '_' + Date.now();
+
+    const script = document.createElement('script');
+    let terminado = false;
+    const timeout = setTimeout(function() {
+      if (terminado) return;
+      terminado = true;
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('Tiempo de espera agotado al consultar justificaciones.'));
+    }, 15000);
+
+    window[callbackName] = function(resultado) {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      resolve(resultado || {});
+    };
+
+    script.onerror = function() {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('No se pudo comunicar con el servidor de justificaciones.'));
+    };
+
+    const query = [];
+    Object.keys(params || {}).forEach(function(clave) {
+      const valor = params[clave];
+      if (valor === undefined || valor === null || valor === '') return;
+      query.push(encodeURIComponent(clave) + '=' + encodeURIComponent(String(valor)));
+    });
+    query.push('action=apiJustificaciones');
+    query.push('token=' + encodeURIComponent(state.token || ''));
+    query.push('callback=' + encodeURIComponent(callbackName));
+    query.push('_t=' + Date.now());
+
+    script.src = CONFIG.API_URL + '?' + query.join('&');
+    document.head.appendChild(script);
+  });
+}
+
+function puedeAdministrarJustificacionesMGP() {
+  return !!(
+    state.permisos &&
+    state.permisos.administrarJustificaciones === true
+  );
+}
+
+function inicializarModuloJustificacionesMGP() {
+  if (justificacionesMGPInicializado) return;
+
+  const bloque = document.getElementById('justificacionesMGP');
+  if (!bloque) return;
+
+  if (!puedeAdministrarJustificacionesMGP()) {
+    bloque.style.display = 'none';
+    return;
+  }
+
+  justificacionesMGPInicializado = true;
+
+  document.getElementById('justListarBtnMGP')
+    .addEventListener('click', listarJustificacionesMGP);
+  document.getElementById('justGuardarBtnMGP')
+    .addEventListener('click', guardarJustificacionMGP);
+  document.getElementById('justCancelarBtnMGP')
+    .addEventListener('click', cancelarEdicionJustificacionMGP);
+  document.getElementById('justTipoMGP')
+    .addEventListener('change', actualizarCamposJustificacionMGP);
+  document.getElementById('justTipoPersonaMGP')
+    .addEventListener('change', function() {
+      aplicarAlcanceJustificacionesMGP();
+      actualizarCamposJustificacionMGP();
+    });
+
+  aplicarAlcanceJustificacionesMGP();
+  actualizarCamposJustificacionMGP();
+  listarJustificacionesMGP();
+}
+
+function aplicarAlcanceJustificacionesMGP() {
+  const tipoPersona = document.getElementById('justTipoPersonaMGP');
+  if (!tipoPersona) return;
+
+  const rol = String(
+    (state.usuario && state.usuario.rol) || ''
+  ).trim().toUpperCase();
+
+  const opcionPersonal = tipoPersona.querySelector('option[value="personal"]');
+
+  // AUXILIAR: únicamente estudiantes.
+  // DIRECTOR y ADMIN: estudiantes y personal.
+  if (rol === 'AUXILIAR') {
+    if (opcionPersonal) opcionPersonal.hidden = true;
+    tipoPersona.value = 'estudiante';
+  } else {
+    if (opcionPersonal) opcionPersonal.hidden = false;
+  }
+}
+
+function actualizarCamposJustificacionMGP() {
+  const tipo = document.getElementById('justTipoMGP');
+  const idRegistro = document.getElementById('justIdRegistroMGP');
+  if (!tipo || !idRegistro) return;
+
+  const tardanza = tipo.value === 'TARDANZA';
+  idRegistro.disabled = !tardanza;
+  idRegistro.placeholder = tardanza
+    ? 'ID_REGISTRO de la tardanza'
+    : 'No aplica para falta';
+}
+
+function mostrarMensajeJustificacionMGP(texto, error) {
+  const el = document.getElementById('justMsgMGP');
+  if (!el) return;
+  el.textContent = texto || '';
+  el.style.fontWeight = error ? '600' : '400';
+}
+
+async function listarJustificacionesMGP() {
+  if (!puedeAdministrarJustificacionesMGP()) return;
+
+  mostrarMensajeJustificacionMGP('Consultando justificaciones...', false);
+
+  try {
+    const resultado = await solicitarJustificacionesMGP({
+      operacion:'listar',
+      tipoPersona:(document.getElementById('justTipoPersonaMGP') || {}).value || '',
+      estado:(document.getElementById('justEstadoFiltroMGP') || {}).value || '',
+      mes:(document.getElementById('justMesFiltroMGP') || {}).value || ''
+    });
+
+    if (!resultado.ok) {
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudieron listar las justificaciones.'), true);
+      return;
+    }
+
+    renderizarJustificacionesMGP(resultado.justificaciones || []);
+    mostrarMensajeJustificacionMGP('✅ ' + (resultado.total || 0) + ' justificación(es) encontrada(s).', false);
+  } catch (error) {
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+  }
+}
+
+function renderizarJustificacionesMGP(lista) {
+  const body = document.getElementById('justTablaBodyMGP');
+  if (!body) return;
+
+  body.innerHTML = '';
+
+  if (!lista.length) {
+    body.innerHTML = '<tr><td colspan="10" style="padding:10px; text-align:center;">No hay justificaciones para los filtros seleccionados.</td></tr>';
+    return;
+  }
+
+  lista.forEach(function(item) {
+    const tr = document.createElement('tr');
+    const acciones = item.estado === 'PENDIENTE'
+      ? `
+        <button type="button" data-just-accion="editar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✏️</button>
+        <button type="button" data-just-accion="aprobar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✅</button>
+        <button type="button" data-just-accion="rechazar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">❌</button>
+      `
+      : '—';
+
+    [
+      item.idJustificacion,
+      item.dni,
+      item.nombre,
+      item.tipo,
+      item.fechaInasistencia,
+      item.motivo,
+      item.estado,
+      item.responsable,
+      item.observacion
+    ].forEach(function(valor) {
+      const td = document.createElement('td');
+      td.textContent = valor || '';
+      td.style.padding = '6px';
+      td.style.borderBottom = '1px solid rgba(0,0,0,.08)';
+      tr.appendChild(td);
+    });
+
+    const tdAcciones = document.createElement('td');
+    tdAcciones.style.padding = '6px';
+    tdAcciones.innerHTML = acciones;
+    tr.appendChild(tdAcciones);
+    body.appendChild(tr);
+  });
+
+  body.querySelectorAll('[data-just-accion]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      ejecutarAccionJustificacionMGP(
+        btn.getAttribute('data-just-accion'),
+        btn.getAttribute('data-id'),
+        lista
+      );
+    });
+  });
+}
+
+async function guardarJustificacionMGP() {
+  const tipoPersona = document.getElementById('justTipoPersonaMGP').value;
+  const tipo = document.getElementById('justTipoMGP').value;
+  const dni = document.getElementById('justDniMGP').value.trim();
+  const idPersona = document.getElementById('justIdPersonaMGP').value.trim();
+  const fecha = document.getElementById('justFechaMGP').value;
+  const idRegistro = document.getElementById('justIdRegistroMGP').value.trim();
+  const motivo = document.getElementById('justMotivoMGP').value.trim();
+  const observacion = document.getElementById('justObservacionMGP').value.trim();
+
+  if (!dni && !idPersona) {
+    mostrarMensajeJustificacionMGP('❌ Indique DNI o ID de persona.', true);
+    return;
+  }
+  if (!fecha) {
+    mostrarMensajeJustificacionMGP('❌ Indique la fecha de inasistencia.', true);
+    return;
+  }
+  if (!motivo) {
+    mostrarMensajeJustificacionMGP('❌ Indique el motivo.', true);
+    return;
+  }
+  if (tipo === 'TARDANZA' && !idRegistro) {
+    mostrarMensajeJustificacionMGP('❌ Para una tardanza debe indicar ID_REGISTRO.', true);
+    return;
+  }
+
+  mostrarMensajeJustificacionMGP('Guardando justificación...', false);
+
+  try {
+    const params = {
+      operacion: justificacionesMGPEnEdicion ? 'editar' : 'crear',
+      tipoPersona:tipoPersona,
+      tipo:tipo,
+      dni:dni,
+      idPersona:idPersona,
+      fechaInasistencia:fecha,
+      idRegistro:tipo === 'TARDANZA' ? idRegistro : '',
+      motivo:motivo,
+      observacion:observacion
+    };
+
+    if (justificacionesMGPEnEdicion) {
+      params.idJustificacion = justificacionesMGPEnEdicion.idJustificacion;
+    }
+
+    const resultado = await solicitarJustificacionesMGP(params);
+
+    if (!resultado.ok) {
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo guardar.'), true);
+      return;
+    }
+
+    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada correctamente.'), false);
+    cancelarEdicionJustificacionMGP();
+    await listarJustificacionesMGP();
+  } catch (error) {
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+  }
+}
+
+function cargarEdicionJustificacionMGP(item) {
+  justificacionesMGPEnEdicion = item;
+  document.getElementById('justTipoPersonaMGP').value = item.tipoPersona || 'estudiante';
+  document.getElementById('justTipoMGP').value = item.tipo || 'FALTA';
+  document.getElementById('justDniMGP').value = item.dni || '';
+  document.getElementById('justIdPersonaMGP').value = item.idPersona || '';
+  document.getElementById('justFechaMGP').value = item.fechaInasistencia || '';
+  document.getElementById('justIdRegistroMGP').value = item.idRegistro || '';
+  document.getElementById('justMotivoMGP').value = item.motivo || '';
+  document.getElementById('justObservacionMGP').value = item.observacion || '';
+  document.getElementById('justGuardarBtnMGP').textContent = '💾 Guardar cambios';
+  document.getElementById('justCancelarBtnMGP').style.display = '';
+  actualizarCamposJustificacionMGP();
+  mostrarMensajeJustificacionMGP('✏️ Editando ' + item.idJustificacion, false);
+}
+
+function cancelarEdicionJustificacionMGP() {
+  justificacionesMGPEnEdicion = null;
+  const ids = [
+    'justDniMGP','justIdPersonaMGP','justFechaMGP',
+    'justIdRegistroMGP','justMotivoMGP','justObservacionMGP'
+  ];
+  ids.forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('justTipoMGP').value = 'FALTA';
+  document.getElementById('justGuardarBtnMGP').textContent = '💾 Registrar justificación';
+  document.getElementById('justCancelarBtnMGP').style.display = 'none';
+  actualizarCamposJustificacionMGP();
+}
+
+async function ejecutarAccionJustificacionMGP(accion, id, lista) {
+  const item = lista.find(function(x) { return x.idJustificacion === id; });
+  if (!item) return;
+
+  if (accion === 'editar') {
+    cargarEdicionJustificacionMGP(item);
+    return;
+  }
+
+  let observacion = item.observacion || '';
+  if (accion === 'rechazar') {
+    observacion = window.prompt('Indique el motivo de rechazo:', observacion) || '';
+    if (!observacion.trim()) {
+      mostrarMensajeJustificacionMGP('❌ El rechazo requiere una observación.', true);
+      return;
+    }
+  }
+
+  if (accion === 'aprobar' && !window.confirm('¿Aprobar esta justificación?')) return;
+  if (accion === 'rechazar' && !window.confirm('¿Rechazar esta justificación?')) return;
+
+  mostrarMensajeJustificacionMGP('Procesando ' + accion + '...', false);
+
+  try {
+    const resultado = await solicitarJustificacionesMGP({
+      operacion:accion,
+      idJustificacion:id,
+      observacion:observacion
+    });
+
+    if (!resultado.ok) {
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo resolver la justificación.'), true);
+      return;
+    }
+
+    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada.'), false);
+    await listarJustificacionesMGP();
+  } catch (error) {
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+  }
+}
