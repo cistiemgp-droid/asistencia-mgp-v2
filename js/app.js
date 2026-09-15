@@ -2077,23 +2077,23 @@ function aplicarPermisosPanel() {
       '[data-v="' + control.vista + '"]'
     );
 
-    // AUXILIAR y DIRECTOR solo muestran Registro y Reportes.
-    // ADMIN conserva acceso a los módulos administrativos
-    // según los permisos entregados por el backend.
+    // El backend determina el alcance real de cada rol.
+    // AUXILIAR y DIRECTOR también pueden acceder a Administración
+    // cuando el backend les entrega administrarJustificaciones.
+    // ADMIN conserva sus permisos administrativos completos.
     let permitidoPorRol = true;
 
-    if (
-      rol === 'AUXILIAR' ||
-      rol === 'DIRECTOR'
-    ) {
+    if (control.vista === 'admin') {
       permitidoPorRol =
-        control.vista === 'registro' ||
-        control.vista === 'reportes';
+        permisos.administrarPersonas === true ||
+        permisos.administrarJustificaciones === true;
     }
 
     const permitido =
       permitidoPorRol &&
-      permisos[control.permiso] === true;
+      (permisos[control.permiso] === true ||
+       (control.vista === 'admin' &&
+        permisos.administrarJustificaciones === true));
 
     botones.forEach(function(boton) {
 
@@ -7093,95 +7093,3 @@ document.getElementById('dniBtn')
 window.activarCamara = iniciarCamara;
 window.detenerCamara = detenerCamara;
 window.cambiarCamara = cambiarCamara;
-
-// =====================================================
-// RECTIFICACIÓN DE ASISTENCIA V2 — BÚSQUEDA ETAPA 2
-// =====================================================
-(function () {
-  const boton = document.getElementById('rectificacionAsistenciaBtn');
-  const panel = document.getElementById('rectificacionAsistenciaPanel');
-  const buscar = document.getElementById('buscarRectificacionBtn');
-  const dni = document.getElementById('rectificacionDni');
-  const fecha = document.getElementById('rectificacionFecha');
-  const msg = document.getElementById('rectificacionBusquedaMsg');
-  const resultado = document.getElementById('rectificacionResultado');
-
-  if (!boton || !panel || !buscar) return;
-
-  boton.addEventListener('click', function () {
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  });
-
-  buscar.addEventListener('click', function () {
-    const dniValor = String(dni.value || '').trim();
-    const fechaValor = String(fecha.value || '').trim();
-
-    if (!dniValor || !fechaValor) {
-      msg.textContent = 'Ingrese DNI y fecha.';
-      return;
-    }
-
-    if (!state || !state.token) {
-      msg.textContent = 'La sesión institucional no está disponible.';
-      return;
-    }
-
-    msg.textContent = '🔄 Buscando registro real de asistencia...';
-    resultado.style.display = 'none';
-    resultado.innerHTML = '';
-
-    const callback = 'respuestaRectificacionMGP_' + Date.now();
-    const script = document.createElement('script');
-
-    window[callback] = function (respuesta) {
-      try {
-        if (!respuesta || !respuesta.ok) {
-          msg.textContent = '❌ ' + ((respuesta && respuesta.mensaje) || 'No se pudo realizar la búsqueda.');
-          return;
-        }
-
-        if (!respuesta.registros || respuesta.registros.length === 0) {
-          msg.textContent = 'No se encontró un registro de asistencia para ese DNI y fecha.';
-          return;
-        }
-
-        resultado.innerHTML = respuesta.registros.map(function (r) {
-          return '<div class="alert">' +
-            '<strong>Registro encontrado</strong><br>' +
-            'DNI: ' + String(r.dni || '') + '<br>' +
-            'Fecha: ' + String(r.fecha || '') + '<br>' +
-            'Hora: ' + String(r.hora || '') + '<br>' +
-            'Estado: ' + String(r.estado || '') + '<br>' +
-            'Puntualidad: ' + String(r.puntualidad || '') + '<br>' +
-            'ID_REGISTRO: ' + String(r.idRegistro || '') +
-            '</div>';
-        }).join('');
-
-        resultado.style.display = 'block';
-        msg.textContent = '✅ Registro localizado. La rectificación todavía NO se ejecuta.';
-      } finally {
-        try { delete window[callback]; } catch (e) {}
-        if (script.parentNode) script.parentNode.removeChild(script);
-      }
-    };
-
-    script.onerror = function () {
-      msg.textContent = '❌ No se pudo comunicar con el servidor.';
-      try { delete window[callback]; } catch (e) {}
-      if (script.parentNode) script.parentNode.removeChild(script);
-    };
-
-    const parametros = new URLSearchParams({
-      action: 'apiRectificarAsistencia',
-      operacion: 'buscar',
-      dni: dniValor,
-      fecha: fechaValor,
-      token: state.token,
-      callback: callback
-    });
-
-    script.src = CONFIG.API_URL + '?' + parametros.toString();
-    script.async = true;
-    document.head.appendChild(script);
-  });
-})();
