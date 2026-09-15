@@ -1528,9 +1528,15 @@ document
             rolActual === 'AUXILIAR' ||
             rolActual === 'DIRECTOR'
           ) {
+            const accesoAdminJustificaciones =
+              destino === 'admin' &&
+              state.permisos &&
+              state.permisos.administrarJustificaciones === true;
+
             if (
               destino !== 'registro' &&
-              destino !== 'reportes'
+              destino !== 'reportes' &&
+              !accesoAdminJustificaciones
             ) {
               return;
             }
