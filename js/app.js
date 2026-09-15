@@ -1519,39 +1519,26 @@ document
 
           const permiso = mapaPermisos[destino];
 
-          const permisoAlternativo =
-            destino === 'admin'
-              ? 'administrarJustificaciones'
-              : null;
-
           const rolActual =
             String(
               (state.usuario && state.usuario.rol) || ''
             ).trim().toUpperCase();
 
           if (
-            (rolActual === 'AUXILIAR' ||
-             rolActual === 'DIRECTOR') &&
-            destino !== 'registro' &&
-            destino !== 'reportes' &&
-            destino !== 'panel' &&
-            !(
-              destino === 'admin' &&
-              state.permisos &&
-              state.permisos.administrarJustificaciones === true
-            )
+            rolActual === 'AUXILIAR' ||
+            rolActual === 'DIRECTOR'
           ) {
-            return;
+            if (
+              destino !== 'registro' &&
+              destino !== 'reportes'
+            ) {
+              return;
+            }
           }
 
           if (
             permiso &&
-            (!state.permisos || state.permisos[permiso] !== true) &&
-            !(
-              permisoAlternativo &&
-              state.permisos &&
-              state.permisos[permisoAlternativo] === true
-            )
+            (!state.permisos || state.permisos[permiso] !== true)
           ) {
             return;
           }
@@ -1626,9 +1613,6 @@ document.addEventListener(
     const reportes =
       document.getElementById('reportes');
 
-    const admin =
-      document.getElementById('admin');
-
     const enRegistro =
       registro &&
       registro.classList.contains('active');
@@ -1637,11 +1621,7 @@ document.addEventListener(
       reportes &&
       reportes.classList.contains('active');
 
-    const enAdmin =
-      admin &&
-      admin.classList.contains('active');
-
-    if (!enRegistro && !enReportes && !enAdmin) {
+    if (!enRegistro && !enReportes) {
       return;
     }
 
@@ -1822,36 +1802,16 @@ if (salirBtn) {
 // =====================================================
 // LOGIN V2
 // =====================================================
-//
-// CORRECCIÓN CONTROLADA:
-// - LOGIN exclusivamente mediante JSONP.
-// - No usa fetch().
-// - Un solo loginScript.
-// - Callback único por intento.
-// - Limpieza segura del script/callback.
-// - Conserva token, expiraSesion y permisos V2.
-// - No modifica API.gs, Codigo.gs ni otros módulos.
-// =====================================================
 
 const entrarBtn =
   document.getElementById('entrar') ||
   document.getElementById('entrarBtn');
 
-let loginScript = null;
-
-function eliminarLoginScriptMGP() {
-  if (loginScript && loginScript.parentNode) {
-    loginScript.parentNode.removeChild(loginScript);
-  }
-
-  loginScript = null;
-}
-
 if (entrarBtn) {
 
   entrarBtn.addEventListener(
     'click',
-    function() {
+    async function() {
 
       const usuarioElemento =
         document.getElementById('usuario');
@@ -1875,246 +1835,206 @@ if (entrarBtn) {
       if (!usuario || !password) {
 
         if (mensaje) {
+
           mensaje.textContent =
             'Ingrese usuario y contraseña.';
+
         }
 
         return;
-      }
 
-      if (entrarBtn.disabled) {
-        return;
       }
-
-      eliminarLoginScriptMGP();
 
       if (mensaje) {
+
         mensaje.textContent =
           '🔄 Verificando acceso...';
+
       }
 
-      entrarBtn.disabled = true;
+      try {
 
-      const nombreCallback =
-        'respuestaLoginMGP_' + Date.now();
+        const nombreCallback =
+          'respuestaLoginMGP_' + Date.now();
 
-      let terminado = false;
-      let temporizador = null;
+        let terminado = false;
 
-      function limpiarLogin() {
-
-        if (temporizador) {
-          clearTimeout(temporizador);
-          temporizador = null;
-        }
-
-        eliminarLoginScriptMGP();
-
-        try {
-          delete window[nombreCallback];
-        }
-        catch (error) {
-          console.warn(
-            'No fue posible eliminar callback LOGIN:',
-            error
-          );
-        }
-      }
-
-      window[nombreCallback] =
-        function(resultado) {
-
-          if (terminado) {
-            return;
-          }
-
-          terminado = true;
-
-          limpiarLogin();
-
-          try {
-
-            console.log(
-              'Respuesta LOGIN V2:',
-              resultado
-            );
-
-            if (!resultado) {
-
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ El servidor no devolvió respuesta.';
-              }
-
-              return;
-            }
-
-            if (!resultado.ok) {
-
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ ' +
-                  (
-                    resultado.mensaje ||
-                    'Usuario o contraseña incorrectos.'
-                  );
-              }
-
-              return;
-            }
-
-            if (
-              !resultado.usuario ||
-              !resultado.usuario.rol ||
-              !resultado.usuario.permisos
-            ) {
-
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ El servidor no devolvió los permisos del usuario.';
-              }
-
-              return;
-            }
-
-            state.usuario =
-              resultado.usuario;
-
-            state.permisos =
-              resultado.usuario.permisos;
-
-            state.token =
-              resultado.usuario.token || null;
-
-            state.expiraSesion =
-              resultado.usuario.expiraSesion || null;
-
-            if (!state.token) {
-
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ El servidor no devolvió una sesión institucional válida.';
-              }
-
-              console.error(
-                'LOGIN V2 sin token de sesión.'
-              );
-
-              return;
-            }
-
-            aplicarPermisosPanel();
-
-            inicializarModuloJustificacionesMGP();
-
-            console.log(
-              'Usuario autenticado V2:',
-              state.usuario
-            );
-
-            console.log(
-              'Permisos V2:',
-              state.permisos
-            );
-
-            if (mensaje) {
-              mensaje.textContent =
-                '✅ Acceso autorizado.';
-            }
-
-            mostrarVista('panel');
-
-          }
-          catch (error) {
-
-            console.error(
-              'Error procesando LOGIN V2:',
-              error
-            );
-
-            if (mensaje) {
-              mensaje.textContent =
-                '❌ Error procesando la respuesta del servidor.';
-            }
-
-          }
-          finally {
-
-            entrarBtn.disabled = false;
-
-          }
-
-        };
-
-      loginScript =
-        document.createElement('script');
-
-      const parametros =
-        new URLSearchParams({
-          action: 'apiLogin',
-          user: usuario,
-          pass: password,
-          callback: nombreCallback
-        });
-
-      loginScript.src =
-        CONFIG.API_URL +
-        '?' +
-        parametros.toString();
-
-      loginScript.async = true;
-
-      loginScript.onerror =
-        function() {
-
-          if (terminado) {
-            return;
-          }
-
-          terminado = true;
-
-          limpiarLogin();
-
-          if (mensaje) {
-            mensaje.textContent =
-              '❌ No se pudo comunicar con el servidor.';
-          }
-
-          entrarBtn.disabled = false;
-
-        };
-
-      document.head.appendChild(
-        loginScript
-      );
-
-      temporizador =
-        setTimeout(
+        const limpiar =
           function() {
 
-            if (terminado) {
-              return;
+            if (
+              loginScript &&
+              loginScript.parentNode
+            ) {
+              loginScript.parentNode.removeChild(loginScript);
             }
 
-            terminado = true;
+            loginScript = null;
 
-            limpiarLogin();
-
-            if (mensaje) {
-              mensaje.textContent =
-                '❌ Tiempo de espera agotado al conectar con el servidor.';
+            try {
+              delete window[nombreCallback];
+            }
+            catch (error) {
+              console.warn(
+                'No fue posible eliminar callback LOGIN:',
+                error
+              );
             }
 
-            entrarBtn.disabled = false;
+          };
 
-          },
-          30000
+        const resultado =
+          await new Promise(function(resolve, reject) {
+
+            loginScript =
+              document.createElement('script');
+
+            window[nombreCallback] =
+              function(data) {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+                resolve(data);
+
+              };
+
+            loginScript.src =
+              CONFIG.API_URL +
+              '?action=apiLogin' +
+              '&user=' + encodeURIComponent(usuario) +
+              '&pass=' + encodeURIComponent(password) +
+              '&callback=' + encodeURIComponent(nombreCallback);
+
+            loginScript.async = true;
+
+            loginScript.onerror =
+              function() {
+
+                if (terminado) {
+                  return;
+                }
+
+                terminado = true;
+                limpiar();
+
+                reject(
+                  new Error(
+                    'No se pudo comunicar con el servidor.'
+                  )
+                );
+
+              };
+
+            document.head.appendChild(
+              loginScript
+            );
+
+          });
+
+        console.log(
+          'Respuesta LOGIN V2:',
+          resultado
         );
+
+        if (!resultado.ok) {
+
+          if (mensaje) {
+
+            mensaje.textContent =
+              '❌ ' +
+              (
+                resultado.mensaje ||
+                'Usuario o contraseña incorrectos.'
+              );
+
+          }
+
+          return;
+
+        }
+
+        state.usuario =
+          resultado.usuario || null;
+
+        state.permisos =
+          (
+            resultado.usuario &&
+            resultado.usuario.permisos
+          ) || null;
+
+        state.token =
+          (
+            resultado.usuario &&
+            resultado.usuario.token
+          ) || null;
+
+        state.expiraSesion =
+          (
+            resultado.usuario &&
+            resultado.usuario.expiraSesion
+          ) || null;
+
+        if (!state.token) {
+          if (mensaje) {
+            mensaje.textContent =
+              '❌ El servidor no devolvió una sesión institucional válida.';
+          }
+
+          console.error(
+            'LOGIN V2 sin token de sesión.'
+          );
+
+          return;
+        }
+
+        aplicarPermisosPanel();
+
+        console.log(
+          'Usuario autenticado V2:',
+          state.usuario
+        );
+
+        console.log(
+          'Permisos V2:',
+          state.permisos
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '✅ Acceso autorizado.';
+
+        }
+
+        mostrarVista('panel');
+
+      }
+      catch (error) {
+
+        console.error(
+          'Error en LOGIN V2:',
+          error
+        );
+
+        if (mensaje) {
+
+          mensaje.textContent =
+            '❌ No se pudo comunicar con el servidor: ' +
+            error.message;
+
+        }
+
+      }
 
     }
   );
 
 }
+
 
 // =====================================================
 // PERMISOS V2 - PANEL INSTITUCIONAL
@@ -2146,8 +2066,7 @@ function aplicarPermisosPanel() {
     },
     {
       vista: 'admin',
-      permiso: 'administrarPersonas',
-      permisoAlternativo: 'administrarJustificaciones'
+      permiso: 'administrarPersonas'
     }
   ];
 
@@ -2158,27 +2077,23 @@ function aplicarPermisosPanel() {
       '[data-v="' + control.vista + '"]'
     );
 
-    // El acceso a cada vista depende del permiso entregado por el backend.
-    // Administración puede abrirse también para gestionar Justificaciones,
-    // sin conceder por ello permisos sobre personas, usuarios, QR o configuración.
-    let permitido =
+    // AUXILIAR y DIRECTOR solo muestran Registro y Reportes.
+    // ADMIN conserva acceso a los módulos administrativos
+    // según los permisos entregados por el backend.
+    let permitidoPorRol = true;
+
+    if (
+      rol === 'AUXILIAR' ||
+      rol === 'DIRECTOR'
+    ) {
+      permitidoPorRol =
+        control.vista === 'registro' ||
+        control.vista === 'reportes';
+    }
+
+    const permitido =
+      permitidoPorRol &&
       permisos[control.permiso] === true;
-
-    if (
-      control.permisoAlternativo &&
-      permisos[control.permisoAlternativo] === true
-    ) {
-      permitido = true;
-    }
-
-    if (
-      (rol === 'AUXILIAR' || rol === 'DIRECTOR') &&
-      control.vista !== 'registro' &&
-      control.vista !== 'reportes' &&
-      control.vista !== 'admin'
-    ) {
-      permitido = false;
-    }
 
     botones.forEach(function(boton) {
 
@@ -4295,8 +4210,7 @@ if (verMatrizMensualBtn) {
     'click',
     function() {
       if (!ultimoReporteMGP ||
-          (ultimoReporteMGP.tipoReporte !== 'mensual' &&
-           ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
+          ultimoReporteMGP.tipoReporte !== 'mensual') {
         return;
       }
 
@@ -4328,11 +4242,6 @@ const reporteFecha =
     'reporteFecha'
   );
 
-const reporteGrado =
-  document.getElementById(
-    'reporteGrado'
-  );
-
 const reporteMes =
   document.getElementById(
     'reporteMes'
@@ -4342,29 +4251,6 @@ const reporteMensualFiltros =
   document.getElementById(
     'reporteMensualFiltros'
   );
-
-// DEV 03: habilitar reporte diario de PERSONAL sin modificar index.html.
-if (reporteTipo) {
-  const existePersonal = Array.from(reporteTipo.options).some(function(opcion) {
-    return String(opcion.value || '').toLowerCase() === 'personal';
-  });
-  if (!existePersonal) {
-    const opcionPersonal = document.createElement('option');
-    opcionPersonal.value = 'personal';
-    opcionPersonal.textContent = 'Diario — Personal';
-    reporteTipo.appendChild(opcionPersonal);
-  }
-
-  const existeMensualPersonal = Array.from(reporteTipo.options).some(function(opcion) {
-    return String(opcion.value || '').toLowerCase() === 'mensual_personal';
-  });
-  if (!existeMensualPersonal) {
-    const opcionMensualPersonal = document.createElement('option');
-    opcionMensualPersonal.value = 'mensual_personal';
-    opcionMensualPersonal.textContent = 'Mensual — Personal';
-    reporteTipo.appendChild(opcionMensualPersonal);
-  }
-}
 
 
 function actualizarFiltroReporte() {
@@ -4382,25 +4268,11 @@ function actualizarFiltroReporte() {
   const esMensual =
     tipo === 'mensual';
 
-  const esMensualPersonal =
-    tipo === 'mensual_personal';
-
   const esAlertas =
     tipo === 'alertas';
 
-  const esPersonal =
-    tipo === 'personal';
-
   const usaFiltroMensual =
-    esMensual || esMensualPersonal || esAlertas;
-
-  const grupoGrado = reporteGrado
-    ? reporteGrado.closest('.grupo')
-    : null;
-
-  if (grupoGrado) {
-    grupoGrado.style.display = (esPersonal || esMensualPersonal) ? 'none' : '';
-  }
+    esMensual || esAlertas;
 
 
   if (reporteFecha) {
@@ -4505,19 +4377,12 @@ async function consultarReporte() {
       tablaReporteBase.style.width = 'max-content';
       tablaReporteBase.style.maxWidth = 'none';
       tablaReporteBase.style.minWidth =
-        (tipoReporte === 'mensual' || tipoReporte === 'mensual_personal')
+        tipoReporte === 'mensual'
           ? '1050px'
           : '720px';
       tablaReporteBase.style.tableLayout = 'auto';
       tablaReporteBase.style.borderCollapse = 'collapse';
       tablaReporteBase.style.fontSize = '12px';
-
-      // SOLO mensual de personal: ancho funcional para PC y celular.
-      if (tipoReporte === 'mensual_personal') {
-        tablaReporteBase.style.minWidth = '1050px';
-        tablaReporteBase.style.width = 'max-content';
-        tablaReporteBase.style.maxWidth = 'none';
-      }
     }
 
     const contenedorTablaReporte =
@@ -4547,14 +4412,11 @@ const mes =
 const esMensual =
   tipoReporte === 'mensual';
 
-const esMensualPersonal =
-  tipoReporte === 'mensual_personal';
-
 const esAlertas =
   tipoReporte === 'alertas';
 
 const usaFiltroMensual =
-  esMensual || esMensualPersonal || esAlertas;
+  esMensual || esAlertas;
 
   // -------------------------------------------------
   // VALIDACIONES
@@ -4867,150 +4729,6 @@ const usaFiltroMensual =
 
 
     // -------------------------------------------------
-    // DEV 03 — REPORTE DIARIO DE PERSONAL
-    // Rama independiente del reporte de estudiantes.
-    // -------------------------------------------------
-
-    if (tipoReporte === 'personal') {
-
-      const personal =
-        Array.isArray(resultado.personal)
-          ? resultado.personal
-          : [];
-
-      const datosResumenPersonal =
-        resultado.resumen || {};
-
-      const totalElemento = document.getElementById('reporteTotal');
-      const presentesElemento = document.getElementById('reportePresentes');
-      const puntualesElemento = document.getElementById('reportePuntuales');
-      const tardanzasElemento = document.getElementById('reporteTardanzas');
-      const faltasElemento = document.getElementById('reporteFaltas');
-
-      if (totalElemento) totalElemento.textContent = datosResumenPersonal.total || 0;
-      if (presentesElemento) presentesElemento.textContent = datosResumenPersonal.presentes || 0;
-      if (puntualesElemento) puntualesElemento.textContent = datosResumenPersonal.puntuales || 0;
-      if (tardanzasElemento) tardanzasElemento.textContent = datosResumenPersonal.tardanzas || 0;
-      if (faltasElemento) faltasElemento.textContent = datosResumenPersonal.ausentes || 0;
-
-      if (resumen) resumen.style.display = 'block';
-
-      const tablaElemento = tabla ? tabla.closest('table') : null;
-      const cabeceraPersonal = tablaElemento ? tablaElemento.querySelector('thead') : null;
-
-      if (cabeceraPersonal) {
-        cabeceraPersonal.innerHTML =
-          '<tr>' +
-          '<th>DNI</th>' +
-          '<th>Personal</th>' +
-          '<th>Cargo</th>' +
-          '<th>Área</th>' +
-          '<th>Estado</th>' +
-          '<th>Ingreso</th>' +
-          '<th>Salida</th>' +
-          '<th>Puntualidad</th>' +
-          '<th>Método</th>' +
-          '<th>Usuario</th>' +
-          '<th>Observación</th>' +
-          '</tr>';
-      }
-
-      if (tabla) {
-        // Asegurar que el cuerpo de la tabla sea visible.
-        // Algunas reglas de estilo del reporte pueden dejar el tbody
-        // con display:none después de cambiar entre tipos de reporte.
-        tabla.style.display = 'table-row-group';
-        tabla.hidden = false;
-        tabla.innerHTML = '';
-
-        if (!personal.length) {
-          const filaVacia = document.createElement('tr');
-          filaVacia.style.display = 'table-row';
-          const celdaVacia = document.createElement('td');
-          celdaVacia.colSpan = 11;
-          celdaVacia.textContent = 'No hay registros de personal para el mes seleccionado.';
-          celdaVacia.style.display = 'table-cell';
-          filaVacia.appendChild(celdaVacia);
-          tabla.appendChild(filaVacia);
-        }
-
-        personal.forEach(function(persona) {
-          const fila = document.createElement('tr');
-          fila.style.display = 'table-row';
-          const valores = [
-            persona.dni || '',
-            persona.nombre || '',
-            persona.cargo || '',
-            persona.area || '',
-            persona.estado || '',
-            persona.horaIngreso || '',
-            persona.horaSalida || '',
-            persona.puntualidad || '',
-            persona.metodo || '',
-            persona.usuarioRegistro || '',
-            persona.observacion || ''
-          ];
-
-          valores.forEach(function(valor) {
-            const celda = document.createElement('td');
-            celda.style.display = 'table-cell';
-            celda.textContent = String(valor);
-            fila.appendChild(celda);
-          });
-
-          tabla.appendChild(fila);
-        });
-      }
-
-      if (resultados) {
-        resultados.style.display = 'block';
-        resultados.style.height = 'auto';
-        resultados.style.maxHeight = 'none';
-        resultados.style.overflow = 'visible';
-      }
-
-      const contenedorTablaFinalMGP = tabla
-        ? tabla.closest('table')
-          ? tabla.closest('table').parentElement
-          : null
-        : null;
-
-      if (contenedorTablaFinalMGP) {
-        contenedorTablaFinalMGP.style.height = 'auto';
-        contenedorTablaFinalMGP.style.maxHeight = 'none';
-        contenedorTablaFinalMGP.style.overflowX = 'auto';
-        contenedorTablaFinalMGP.style.overflowY = 'visible';
-      }
-
-      if (tabla) {
-        tabla.style.display = 'table-row-group';
-        tabla.style.height = 'auto';
-        tabla.style.maxHeight = 'none';
-        tabla.style.overflow = 'visible';
-      }
-
-      ultimoReporteMGP = {
-        tipoReporte: 'personal',
-        fecha: fecha,
-        mes: '',
-        grado: '',
-        resumen: datosResumenPersonal,
-        personal: personal
-      };
-
-      actualizarBotonesDescargaReporte();
-      renderizarMatrizMensualMGP();
-
-      if (mensaje) {
-        mensaje.textContent =
-          '✅ Reporte diario de personal generado: ' +
-          personal.length + ' registro(s).';
-      }
-
-      return;
-    }
-
-    // -------------------------------------------------
     // GUARDAR REPORTE ACTUAL PARA EXPORTACIÓN
     // -------------------------------------------------
 
@@ -5022,9 +4740,6 @@ const usaFiltroMensual =
       resumen: resultado.resumen || {},
       alumnos: Array.isArray(resultado.alumnos)
         ? resultado.alumnos
-        : [],
-      personal: Array.isArray(resultado.personal)
-        ? resultado.personal
         : []
     };
 
@@ -5691,13 +5406,9 @@ const usaFiltroMensual =
     // -------------------------------------------------
 
     const alumnos =
-      esMensualPersonal
-        ? (Array.isArray(resultado.personal)
-            ? resultado.personal
-            : [])
-        : (Array.isArray(resultado.alumnos)
-            ? resultado.alumnos
-            : []);
+      Array.isArray(resultado.alumnos)
+        ? resultado.alumnos
+        : [];
 
 
     if (tabla) {
@@ -5715,25 +5426,7 @@ const usaFiltroMensual =
 
       if (cabecera) {
 
-        if (esMensualPersonal) {
-
-          cabecera.innerHTML =
-            '<tr>' +
-            '<th>DNI</th>' +
-            '<th>Personal</th>' +
-            '<th>Cargo</th>' +
-            '<th>Área</th>' +
-            '<th>Días evaluados</th>' +
-            '<th>Asistencias</th>' +
-            '<th>Faltas</th>' +
-            '<th>Puntuales</th>' +
-            '<th>Tardanzas</th>' +
-            '<th>% Asistencia</th>' +
-            '<th>Salidas</th>' +
-            '<th>Detalle</th>' +
-            '</tr>';
-
-        } else if (esMensual) {
+        if (esMensual) {
 
           cabecera.innerHTML =
             '<tr>' +
@@ -5766,56 +5459,6 @@ const usaFiltroMensual =
 
         }
 
-      }
-
-      // Mensual de personal: mantener visibles DNI y Personal
-      // al desplazar horizontalmente la tabla, también en celular.
-      if (esMensualPersonal && cabecera) {
-        const encabezadosPersonal = cabecera.querySelectorAll('th');
-        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-        if (encabezadosPersonal.length >= 2) {
-          encabezadosPersonal[0].style.position = 'sticky';
-          encabezadosPersonal[0].style.left = '0';
-          encabezadosPersonal[0].style.zIndex = '3';
-          encabezadosPersonal[0].style.background = '#fff';
-          encabezadosPersonal[0].style.minWidth = '95px';
-          encabezadosPersonal[0].style.width = '95px';
-
-          if (!esCelularMGP) {
-            encabezadosPersonal[1].style.position = 'sticky';
-            encabezadosPersonal[1].style.left = '95px';
-            encabezadosPersonal[1].style.zIndex = '3';
-            encabezadosPersonal[1].style.background = '#fff';
-            encabezadosPersonal[1].style.minWidth = '180px';
-            encabezadosPersonal[1].style.width = '180px';
-          }
-        }
-      }
-
-      // ESTUDIANTES: en PC fijar DNI y Estudiante.
-      // En celular fijar solamente DNI para conservar espacio visible.
-      if (!esMensualPersonal && cabecera) {
-        const encabezadosEstudiante = cabecera.querySelectorAll('th');
-        const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-        if (encabezadosEstudiante.length >= 2) {
-          encabezadosEstudiante[0].style.position = 'sticky';
-          encabezadosEstudiante[0].style.left = '0';
-          encabezadosEstudiante[0].style.zIndex = '3';
-          encabezadosEstudiante[0].style.background = '#fff';
-          encabezadosEstudiante[0].style.minWidth = '95px';
-          encabezadosEstudiante[0].style.width = '95px';
-
-          if (!esCelularMGP) {
-            encabezadosEstudiante[1].style.position = 'sticky';
-            encabezadosEstudiante[1].style.left = '95px';
-            encabezadosEstudiante[1].style.zIndex = '3';
-            encabezadosEstudiante[1].style.background = '#fff';
-            encabezadosEstudiante[1].style.minWidth = '180px';
-            encabezadosEstudiante[1].style.width = '180px';
-          }
-        }
       }
 
 
@@ -5854,144 +5497,6 @@ const usaFiltroMensual =
           celdaGrado.textContent =
             alumno.gradoSeccion || '';
 
-
-          if (esMensualPersonal) {
-
-            // Fijar DNI y Personal al desplazarse horizontalmente.
-            celdaDni.style.position = 'sticky';
-            celdaDni.style.left = '0';
-            celdaDni.style.zIndex = '2';
-            celdaDni.style.background = '#fff';
-            celdaDni.style.minWidth = '95px';
-            celdaDni.style.width = '95px';
-
-            const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-            if (!esCelularMGP) {
-              celdaNombre.style.position = 'sticky';
-              celdaNombre.style.left = '95px';
-              celdaNombre.style.zIndex = '2';
-              celdaNombre.style.background = '#fff';
-              celdaNombre.style.minWidth = '180px';
-              celdaNombre.style.width = '180px';
-            }
-
-            fila.appendChild(celdaDni);
-            fila.appendChild(celdaNombre);
-
-            [
-              alumno.cargo || '',
-              alumno.area || '',
-              alumno.diasEvaluados || 0,
-              alumno.presentes || 0,
-              alumno.faltas || 0,
-              alumno.puntuales || 0,
-              alumno.tardanzas || 0,
-              (alumno.porcentajeAsistencia || 0) + '%',
-              alumno.conSalida || 0
-            ].forEach(function(valor) {
-              const celda = document.createElement('td');
-              celda.textContent = String(valor);
-              fila.appendChild(celda);
-            });
-
-            const celdaDetallePersonal = document.createElement('td');
-            const botonDetallePersonal = document.createElement('button');
-            botonDetallePersonal.type = 'button';
-            botonDetallePersonal.textContent = 'Ver detalle';
-            botonDetallePersonal.style.cursor = 'pointer';
-            botonDetallePersonal.style.padding = '4px 8px';
-            botonDetallePersonal.style.borderRadius = '4px';
-            botonDetallePersonal.style.border = '1px solid #ccc';
-            botonDetallePersonal.style.background = '#f5f5f5';
-
-            botonDetallePersonal.addEventListener('click', function() {
-              const siguiente = fila.nextElementSibling;
-              if (siguiente && siguiente.dataset && siguiente.dataset.detallePersonal === '1') {
-                siguiente.remove();
-                botonDetallePersonal.textContent = 'Ver detalle';
-                return;
-              }
-
-              const filaDetalle = document.createElement('tr');
-              filaDetalle.dataset.detallePersonal = '1';
-              const celdaCompleta = document.createElement('td');
-              celdaCompleta.colSpan = 12;
-              celdaCompleta.style.padding = '10px';
-
-              const titulo = document.createElement('strong');
-              titulo.textContent = 'Detalle diario de ' + (alumno.nombre || 'personal');
-              celdaCompleta.appendChild(titulo);
-
-              const tablaDetalle = document.createElement('table');
-              tablaDetalle.style.width = '100%';
-              tablaDetalle.style.marginTop = '8px';
-              tablaDetalle.style.borderCollapse = 'collapse';
-
-              const filaCabecera = document.createElement('tr');
-              ['Fecha','Estado','Puntualidad','Ingreso','Salida','Método','Usuario','Observación'].forEach(function(texto) {
-                const th = document.createElement('th');
-                th.textContent = texto;
-                th.style.textAlign = 'left';
-                th.style.padding = '4px';
-                th.style.borderBottom = '1px solid #ddd';
-                filaCabecera.appendChild(th);
-              });
-              tablaDetalle.appendChild(filaCabecera);
-
-              const detalleDias = Array.isArray(alumno.detalleDias) ? alumno.detalleDias : [];
-              if (!detalleDias.length) {
-                const filaVacia = document.createElement('tr');
-                const celdaVacia = document.createElement('td');
-                celdaVacia.colSpan = 8;
-                celdaVacia.textContent = 'No hay detalle diario disponible.';
-                celdaVacia.style.padding = '6px';
-                filaVacia.appendChild(celdaVacia);
-                tablaDetalle.appendChild(filaVacia);
-              } else {
-                detalleDias.forEach(function(dia) {
-                  const filaDia = document.createElement('tr');
-                  [dia.fecha || '', dia.estado || '', dia.puntualidad || '', dia.horaIngreso || '', dia.horaSalida || '', dia.metodo || '', dia.usuarioRegistro || '', dia.observacion || ''].forEach(function(valor) {
-                    const td = document.createElement('td');
-                    td.textContent = String(valor);
-                    td.style.padding = '4px';
-                    td.style.borderBottom = '1px solid #eee';
-                    filaDia.appendChild(td);
-                  });
-                  tablaDetalle.appendChild(filaDia);
-                });
-              }
-
-              celdaCompleta.appendChild(tablaDetalle);
-              filaDetalle.appendChild(celdaCompleta);
-              fila.parentNode.insertBefore(filaDetalle, fila.nextSibling);
-              botonDetallePersonal.textContent = 'Ocultar detalle';
-            });
-
-            celdaDetallePersonal.appendChild(botonDetallePersonal);
-            fila.appendChild(celdaDetallePersonal);
-
-          } else {
-
-          // ESTUDIANTES: en PC fijar DNI y Estudiante.
-          // En celular fijar solamente DNI para conservar espacio visible.
-          const esCelularMGP = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-
-          celdaDni.style.position = 'sticky';
-          celdaDni.style.left = '0';
-          celdaDni.style.zIndex = '2';
-          celdaDni.style.background = '#fff';
-          celdaDni.style.minWidth = '95px';
-          celdaDni.style.width = '95px';
-
-          if (!esCelularMGP) {
-            celdaNombre.style.position = 'sticky';
-            celdaNombre.style.left = '95px';
-            celdaNombre.style.zIndex = '2';
-            celdaNombre.style.background = '#fff';
-            celdaNombre.style.minWidth = '180px';
-            celdaNombre.style.width = '180px';
-          }
 
           fila.appendChild(
             celdaDni
@@ -6390,8 +5895,6 @@ const usaFiltroMensual =
 
           }
 
-          }
-
 
           tabla.appendChild(
             fila
@@ -6487,239 +5990,6 @@ const usaFiltroMensual =
 // No modifica datos ni crea nuevos registros.
 // =====================================================
 
-function renderizarMatrizMensualPersonalMGP(
-  contenedorMatriz,
-  contenedorIncidencias,
-  contenedorPrincipal
-) {
-
-  const reporte = ultimoReporteMGP;
-  const mes = String(reporte.mes || '').trim();
-  const partesMes = mes.split('-');
-  const anio = Number(partesMes[0]);
-  const numeroMes = Number(partesMes[1]);
-  const ultimoDia =
-    anio && numeroMes
-      ? new Date(anio, numeroMes, 0).getDate()
-      : 0;
-
-  if (!anio || !numeroMes || !ultimoDia) {
-    contenedorPrincipal.style.display = 'block';
-    contenedorMatriz.textContent =
-      'No fue posible determinar el mes del reporte.';
-    contenedorIncidencias.textContent = '';
-    return;
-  }
-
-  const personal =
-    Array.isArray(reporte.personal)
-      ? reporte.personal
-      : [];
-
-  if (!personal.length) {
-    contenedorPrincipal.style.display = 'block';
-    contenedorMatriz.textContent =
-      'No hay personal para mostrar.';
-    contenedorIncidencias.textContent =
-      'No hay incidencias para mostrar.';
-    return;
-  }
-
-  const diasEvaluados = new Set();
-  const datosPorPersona = [];
-  const incidencias = [];
-
-  personal.forEach(function(persona, indicePersona) {
-    const porFecha = {};
-    const detalleDias =
-      Array.isArray(persona.detalleDias)
-        ? persona.detalleDias
-        : [];
-
-    detalleDias.forEach(function(dia) {
-      const fecha = String(dia.fecha || '').trim();
-      const partesFecha = fecha.split('/');
-      if (partesFecha.length !== 3) return;
-
-      const diaNumero = Number(partesFecha[0]);
-      if (diaNumero < 1 || diaNumero > ultimoDia) return;
-
-      diasEvaluados.add(diaNumero);
-
-      const estado =
-        String(dia.estado || '').trim().toUpperCase();
-      const puntualidad =
-        String(dia.puntualidad || '').trim().toUpperCase();
-
-      let codigo = 'F';
-      if (estado === 'PRESENTE') {
-        codigo = puntualidad === 'TARDE' ? 'T' : 'A';
-      }
-
-      porFecha[diaNumero] = {
-        codigo: codigo,
-        fecha: fecha
-      };
-    });
-
-    datosPorPersona.push({
-      numero: indicePersona + 1,
-      dni: persona.dni || '',
-      nombre: persona.nombre || '',
-      porFecha: porFecha
-    });
-  });
-
-  const tablaMatriz =
-    document.createElement('table');
-
-  tablaMatriz.style.borderCollapse = 'collapse';
-  tablaMatriz.style.minWidth = '1100px';
-  tablaMatriz.style.width = '100%';
-  tablaMatriz.style.tableLayout = 'auto';
-  tablaMatriz.style.fontSize = '10px';
-
-  const thead =
-    document.createElement('thead');
-  const filaCabecera =
-    document.createElement('tr');
-
-  ['N.º', 'DNI', 'PERSONAL'].forEach(function(texto) {
-    const th = document.createElement('th');
-    th.textContent = texto;
-    th.style.padding = '3px';
-    th.style.border = '1px solid #ccc';
-    th.style.whiteSpace = 'normal';
-    th.style.wordBreak = 'break-word';
-    filaCabecera.appendChild(th);
-  });
-
-  for (let dia = 1; dia <= ultimoDia; dia++) {
-    const th = document.createElement('th');
-    th.textContent = String(dia);
-    th.style.padding = '3px';
-    th.style.border = '1px solid #ccc';
-    th.style.textAlign = 'center';
-    th.style.width = '2.2%';
-    filaCabecera.appendChild(th);
-  }
-
-  thead.appendChild(filaCabecera);
-  tablaMatriz.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-
-  datosPorPersona.forEach(function(item) {
-    const fila = document.createElement('tr');
-
-    [
-      item.numero,
-      item.dni,
-      item.nombre
-    ].forEach(function(valor) {
-      const td = document.createElement('td');
-      td.textContent = valor;
-      td.style.padding = '3px';
-      td.style.border = '1px solid #ccc';
-      td.style.whiteSpace = 'normal';
-      td.style.wordBreak = 'break-word';
-      fila.appendChild(td);
-    });
-
-    for (let dia = 1; dia <= ultimoDia; dia++) {
-      const td = document.createElement('td');
-      const registro = item.porFecha[dia];
-      let codigo = '';
-
-      if (registro) {
-        codigo = registro.codigo || '';
-      } else if (diasEvaluados.has(dia)) {
-        codigo = 'F';
-      } else {
-        codigo = 'D';
-      }
-
-      td.textContent = codigo;
-      td.style.padding = '3px';
-      td.style.border = '1px solid #ccc';
-      td.style.textAlign = 'center';
-      td.style.fontWeight = 'bold';
-      td.style.width = '2.2%';
-      fila.appendChild(td);
-
-      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
-        incidencias.push({
-          numero: item.numero,
-          nombre: item.nombre,
-          dni: item.dni,
-          dia: dia,
-          fecha: registro.fecha || '',
-          codigo: codigo
-        });
-      }
-    }
-
-    tbody.appendChild(fila);
-  });
-
-  tablaMatriz.appendChild(tbody);
-
-  contenedorMatriz.style.maxWidth = '100%';
-  contenedorMatriz.style.overflowX = 'auto';
-  contenedorMatriz.style.overflowY = 'visible';
-  contenedorMatriz.style.webkitOverflowScrolling = 'touch';
-  contenedorMatriz.appendChild(tablaMatriz);
-
-  const leyenda = document.createElement('div');
-  leyenda.style.marginTop = '12px';
-  leyenda.style.padding = '10px';
-  leyenda.style.border = '1px solid #ccc';
-  leyenda.style.background = '#f8f8f8';
-
-  const tituloLeyenda = document.createElement('strong');
-  tituloLeyenda.textContent = 'Leyenda de códigos';
-  leyenda.appendChild(tituloLeyenda);
-
-  const tablaLeyenda = document.createElement('table');
-  tablaLeyenda.style.borderCollapse = 'collapse';
-  tablaLeyenda.style.marginTop = '7px';
-
-  [
-    ['A', 'Asistió'],
-    ['T', 'Tardanza'],
-    ['F', 'Falta'],
-    ['D', 'Día no evaluable']
-  ].forEach(function(item) {
-    const fila = document.createElement('tr');
-    item.forEach(function(valor, indice) {
-      const td = document.createElement('td');
-      td.textContent = valor;
-      td.style.padding = '4px 10px';
-      td.style.border = '1px solid #ccc';
-      if (indice === 0) {
-        td.style.fontWeight = 'bold';
-        td.style.textAlign = 'center';
-      }
-      fila.appendChild(td);
-    });
-    tablaLeyenda.appendChild(fila);
-  });
-
-  leyenda.appendChild(tablaLeyenda);
-  contenedorMatriz.appendChild(leyenda);
-
-  // PERSONAL: no muestra ni genera la sección de incidencias estudiantiles.
-  // Esa sección pertenece exclusivamente a la matriz de estudiantes.
-  contenedorIncidencias.innerHTML = '';
-
-  contenedorPrincipal.style.display = 'block';
-  contenedorPrincipal.style.border = '1px solid #2563eb';
-  contenedorPrincipal.style.borderRadius = '8px';
-  contenedorPrincipal.style.padding = '10px';
-  contenedorPrincipal.style.background = '#ffffff';
-  contenedorPrincipal.style.boxSizing = 'border-box';
-}
-
 function renderizarMatrizMensualMGP() {
 
   const contenedorMatriz =
@@ -6748,21 +6018,8 @@ function renderizarMatrizMensualMGP() {
 
   if (!matrizMensualVisibleMGP ||
       !ultimoReporteMGP ||
-      (ultimoReporteMGP.tipoReporte !== 'mensual' &&
-       ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
+      ultimoReporteMGP.tipoReporte !== 'mensual') {
     contenedorPrincipal.style.display = 'none';
-    return;
-  }
-
-  // MATRIZ MENSUAL DE PERSONAL: usa exactamente la misma
-  // estructura visual de la matriz mensual de estudiantes,
-  // pero trabaja exclusivamente con ultimoReporteMGP.personal.
-  if (ultimoReporteMGP.tipoReporte === 'mensual_personal') {
-    renderizarMatrizMensualPersonalMGP(
-      contenedorMatriz,
-      contenedorIncidencias,
-      contenedorPrincipal
-    );
     return;
   }
 
@@ -7119,8 +6376,7 @@ function actualizarBotonesDescargaReporte() {
 
   const habilitado =
     !!ultimoReporteMGP &&
-    (Array.isArray(ultimoReporteMGP.alumnos) ||
-     Array.isArray(ultimoReporteMGP.personal));
+    Array.isArray(ultimoReporteMGP.alumnos);
 
   if (descargarReporteExcelBtn) {
     descargarReporteExcelBtn.disabled = !habilitado;
@@ -7132,8 +6388,7 @@ function actualizarBotonesDescargaReporte() {
 
   const esMensual =
     habilitado &&
-    (ultimoReporteMGP.tipoReporte === 'mensual' ||
-     ultimoReporteMGP.tipoReporte === 'mensual_personal');
+    ultimoReporteMGP.tipoReporte === 'mensual';
 
   if (verMatrizMensualBtn) {
     verMatrizMensualBtn.disabled = !esMensual;
@@ -7161,77 +6416,12 @@ function obtenerDatosExportacionReporte() {
 
   const reporte = ultimoReporteMGP;
   const esMensual =
-    reporte.tipoReporte === 'mensual' ||
-    reporte.tipoReporte === 'mensual_personal';
+    reporte.tipoReporte === 'mensual';
 
   let encabezados = [];
   let filas = [];
 
-  if (reporte.tipoReporte === 'personal') {
-
-    encabezados = [
-      'DNI',
-      'Personal',
-      'Cargo',
-      'Área',
-      'Estado',
-      'Ingreso',
-      'Salida',
-      'Puntualidad',
-      'Método',
-      'Usuario',
-      'Observación'
-    ];
-
-    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
-      return [
-        persona.dni || '',
-        persona.nombre || '',
-        persona.cargo || '',
-        persona.area || '',
-        persona.estado || '',
-        persona.horaIngreso || '',
-        persona.horaSalida || '',
-        persona.puntualidad || '',
-        persona.metodo || '',
-        persona.usuarioRegistro || '',
-        persona.observacion || ''
-      ];
-    });
-
-  } else if (reporte.tipoReporte === 'mensual_personal') {
-
-    encabezados = [
-      'DNI',
-      'Personal',
-      'Cargo',
-      'Área',
-      'Días evaluados',
-      'Asistencias',
-      'Faltas',
-      'Puntuales',
-      'Tardanzas',
-      '% Asistencia',
-      'Salidas'
-    ];
-
-    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
-      return [
-        persona.dni || '',
-        persona.nombre || '',
-        persona.cargo || '',
-        persona.area || '',
-        persona.diasEvaluados || 0,
-        persona.presentes || 0,
-        persona.faltas || 0,
-        persona.puntuales || 0,
-        persona.tardanzas || 0,
-        (persona.porcentajeAsistencia || 0) + '%',
-        persona.conSalida || 0
-      ];
-    });
-
-  } else if (esMensual) {
+  if (esMensual) {
 
     encabezados = [
       'DNI',
@@ -7307,11 +6497,9 @@ function obtenerTituloReporteMGP(datos) {
 
   const nombres = {
     asistencia: 'REPORTE DE ASISTENCIA',
-    personal: 'REPORTE DIARIO DE PERSONAL',
     faltas: 'REPORTE DE FALTAS',
     tardanzas: 'REPORTE DE TARDANZAS',
-    mensual: 'REPORTE MENSUAL DE ASISTENCIA',
-    mensual_personal: 'REPORTE MENSUAL DE PERSONAL'
+    mensual: 'REPORTE MENSUAL DE ASISTENCIA'
   };
 
   return nombres[datos.reporte.tipoReporte] ||
@@ -7342,139 +6530,25 @@ function obtenerSubtituloReporteMGP(datos) {
     }
   }
 
-  if (reporte.tipoReporte !== 'personal') {
-    partes.push(
-      'Grado / Sección: ' +
-      (reporte.grado || 'Todos')
-    );
-  }
+  partes.push(
+    'Grado / Sección: ' +
+    (reporte.grado || 'Todos')
+  );
 
   return partes.join('   |   ');
 }
 
 
-function obtenerDatosMatrizMensualPersonalMGP(reporte) {
-
-  const mes = String(reporte.mes || '').trim();
-  const partesMes = mes.split('-');
-  const anio = Number(partesMes[0]);
-  const numeroMes = Number(partesMes[1]);
-  const ultimoDia =
-    anio && numeroMes
-      ? new Date(anio, numeroMes, 0).getDate()
-      : 0;
-
-  if (!ultimoDia) {
-    return {
-      encabezados: [],
-      filas: [],
-      incidencias: []
-    };
-  }
-
-  const diasEvaluados = new Set();
-  const datosPorPersona = [];
-  const incidencias = [];
-
-  (Array.isArray(reporte.personal) ? reporte.personal : []).forEach(function(persona, indicePersona) {
-    const porFecha = {};
-    const detalleDias = Array.isArray(persona.detalleDias)
-      ? persona.detalleDias
-      : [];
-
-    detalleDias.forEach(function(dia) {
-      const fecha = String(dia.fecha || '').trim();
-      const partesFecha = fecha.split('/');
-      if (partesFecha.length !== 3) return;
-
-      const diaNumero = Number(partesFecha[0]);
-      if (diaNumero < 1 || diaNumero > ultimoDia) return;
-
-      diasEvaluados.add(diaNumero);
-
-      const estado = String(dia.estado || '').trim().toUpperCase();
-      const puntualidad = String(dia.puntualidad || '').trim().toUpperCase();
-      const codigo =
-        estado === 'PRESENTE'
-          ? (puntualidad === 'TARDE' ? 'T' : 'A')
-          : 'F';
-
-      porFecha[diaNumero] = {
-        codigo: codigo,
-        fecha: fecha
-      };
-    });
-
-    datosPorPersona.push({
-      numero: indicePersona + 1,
-      dni: persona.dni || '',
-      nombre: persona.nombre || '',
-      porFecha: porFecha
-    });
-  });
-
-  const encabezados = ['N.º', 'DNI', 'PERSONAL'];
-  for (let dia = 1; dia <= ultimoDia; dia++) {
-    encabezados.push(String(dia));
-  }
-
-  const filas = [];
-
-  datosPorPersona.forEach(function(item) {
-    const fila = [item.numero, item.dni, item.nombre];
-
-    for (let dia = 1; dia <= ultimoDia; dia++) {
-      const registro = item.porFecha[dia];
-      let codigo = '';
-
-      if (registro) {
-        codigo = registro.codigo || '';
-      } else if (diasEvaluados.has(dia)) {
-        codigo = 'F';
-      } else {
-        codigo = 'D';
-      }
-
-      fila.push(codigo);
-
-      if (registro && ['T', 'F'].indexOf(codigo) !== -1) {
-        incidencias.push([
-          item.numero,
-          item.dni,
-          item.nombre,
-          dia,
-          registro.fecha || '',
-          codigo
-        ]);
-      }
-    }
-
-    filas.push(fila);
-  });
-
-  return {
-    encabezados: encabezados,
-    filas: filas,
-    incidencias: incidencias
-  };
-}
-
 function obtenerDatosMatrizMensualMGP() {
 
   const reporte = ultimoReporteMGP;
 
-  if (!reporte ||
-      (reporte.tipoReporte !== 'mensual' &&
-       reporte.tipoReporte !== 'mensual_personal')) {
+  if (!reporte || reporte.tipoReporte !== 'mensual') {
     return {
       encabezados: [],
       filas: [],
       incidencias: []
     };
-  }
-
-  if (reporte.tipoReporte === 'mensual_personal') {
-    return obtenerDatosMatrizMensualPersonalMGP(reporte);
   }
 
   const mes = String(reporte.mes || '').trim();
@@ -7631,30 +6705,19 @@ function descargarReporteExcel() {
       const matriz = obtenerDatosMatrizMensualMGP();
       const filasMatriz = [
         ['IE JEC MANUEL GONZALES PRADA'],
-        [ultimoReporteMGP.tipoReporte === 'mensual_personal'
-          ? 'MATRIZ MENSUAL DE PERSONAL'
-          : 'MATRIZ MENSUAL DE ASISTENCIA'],
+        ['MATRIZ MENSUAL DE ASISTENCIA'],
         [subtitulo],
         [],
         matriz.encabezados,
         ...matriz.filas,
         [],
         ['LEYENDA DE CÓDIGOS'],
-        ...(ultimoReporteMGP.tipoReporte === 'mensual_personal'
-          ? [
-              ['A', 'Asistió'],
-              ['T', 'Tardanza'],
-              ['F', 'Falta'],
-              ['D', 'Día no evaluable']
-            ]
-          : [
-              ['A', 'Asistió'],
-              ['T', 'Tardanza'],
-              ['U', 'Tardanza justificada'],
-              ['F', 'Falta'],
-              ['J', 'Falta justificada'],
-              ['D', 'Día no evaluable']
-            ])
+        ['A', 'Asistió'],
+        ['T', 'Tardanza'],
+        ['U', 'Tardanza justificada'],
+        ['F', 'Falta'],
+        ['J', 'Falta justificada'],
+        ['D', 'Día no evaluable']
       ];
 
       const hojaMatriz = XLSX.utils.aoa_to_sheet(filasMatriz);
@@ -7669,39 +6732,36 @@ function descargarReporteExcel() {
         'Matriz Mensual'
       );
 
-      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
-      if (ultimoReporteMGP.tipoReporte === 'mensual') {
-        const filasIncidencias = [
-          ['IE JEC MANUEL GONZALES PRADA'],
-          ['INCIDENCIAS PARA SIAGIE'],
-          [subtitulo],
-          [],
-          ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
-          ...matriz.incidencias,
-          [],
-          ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
-          ['T', 'Tardanza'],
-          ['U', 'Tardanza justificada'],
-          ['F', 'Falta'],
-          ['J', 'Falta justificada']
-        ];
+      const filasIncidencias = [
+        ['IE JEC MANUEL GONZALES PRADA'],
+        ['INCIDENCIAS PARA SIAGIE'],
+        [subtitulo],
+        [],
+        ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'],
+        ...matriz.incidencias,
+        [],
+        ['CÓDIGOS CONSIDERADOS COMO INCIDENCIA'],
+        ['T', 'Tardanza'],
+        ['U', 'Tardanza justificada'],
+        ['F', 'Falta'],
+        ['J', 'Falta justificada']
+      ];
 
-        const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
-        hojaIncidencias['!cols'] = [
-          { wch: 7 },
-          { wch: 14 },
-          { wch: 36 },
-          { wch: 8 },
-          { wch: 14 },
-          { wch: 10 }
-        ];
+      const hojaIncidencias = XLSX.utils.aoa_to_sheet(filasIncidencias);
+      hojaIncidencias['!cols'] = [
+        { wch: 7 },
+        { wch: 14 },
+        { wch: 36 },
+        { wch: 8 },
+        { wch: 14 },
+        { wch: 10 }
+      ];
 
-        XLSX.utils.book_append_sheet(
-          libro,
-          hojaIncidencias,
-          'Incidencias SIAGIE'
-        );
-      }
+      XLSX.utils.book_append_sheet(
+        libro,
+        hojaIncidencias,
+        'Incidencias SIAGIE'
+      );
     }
 
     const fechaArchivo =
@@ -7827,13 +6887,7 @@ function descargarReportePDF() {
       let siguienteY = doc.lastAutoTable.finalY + 8;
 
       doc.setFontSize(11);
-      doc.text(
-        ultimoReporteMGP.tipoReporte === 'mensual_personal'
-          ? 'MATRIZ MENSUAL DE PERSONAL'
-          : 'MATRIZ MENSUAL DE ASISTENCIA',
-        10,
-        siguienteY
-      );
+      doc.text('MATRIZ MENSUAL DE ASISTENCIA', 10, siguienteY);
       siguienteY += 4;
 
       doc.autoTable({
@@ -7883,29 +6937,26 @@ function descargarReportePDF() {
         }
       });
 
-      // Las incidencias para SIAGIE son exclusivas del reporte mensual de estudiantes.
-      if (ultimoReporteMGP.tipoReporte === 'mensual') {
-        siguienteY = doc.lastAutoTable.finalY + 6;
-        doc.setFontSize(10);
-        doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
-        siguienteY += 2;
+      siguienteY = doc.lastAutoTable.finalY + 6;
+      doc.setFontSize(10);
+      doc.text('INCIDENCIAS PARA SIAGIE', 10, siguienteY);
+      siguienteY += 2;
 
-        doc.autoTable({
-          head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
-          body: matriz.incidencias,
-          startY: siguienteY,
-          theme: 'grid',
-          styles: {
-            fontSize: 7,
-            cellPadding: 1.5,
-            overflow: 'linebreak'
-          },
-          margin: {
-            left: 10,
-            right: 10
-          }
-        });
-      }
+      doc.autoTable({
+        head: [['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO']],
+        body: matriz.incidencias,
+        startY: siguienteY,
+        theme: 'grid',
+        styles: {
+          fontSize: 7,
+          cellPadding: 1.5,
+          overflow: 'linebreak'
+        },
+        margin: {
+          left: 10,
+          right: 10
+        }
+      });
     }
 
     const fechaArchivo =
@@ -8033,358 +7084,6 @@ document.getElementById('dniBtn')
 
   });
 
-
-
-/* =========================================================
-   JUSTIFICACIONES V2 - DEV 01 FRONTEND
-   ---------------------------------------------------------
-   Integración visual y operativa con apiJustificaciones.
-   No modifica registro, QR, cámara, offline ni reportes.
-   ========================================================= */
-
-let justificacionesMGPInicializado = false;
-let justificacionesMGPCallbackId = 0;
-let justificacionesMGPEnEdicion = null;
-
-function escaparHtmlJustificacionesMGP(valor) {
-  return String(valor == null ? '' : valor)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function solicitarJustificacionesMGP(params) {
-  return new Promise(function(resolve, reject) {
-    const callbackName =
-      'mgpJustificacionesCallback_' +
-      (++justificacionesMGPCallbackId) + '_' + Date.now();
-
-    const script = document.createElement('script');
-    let terminado = false;
-    const timeout = setTimeout(function() {
-      if (terminado) return;
-      terminado = true;
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-      reject(new Error('Tiempo de espera agotado al consultar justificaciones.'));
-    }, 15000);
-
-    window[callbackName] = function(resultado) {
-      if (terminado) return;
-      terminado = true;
-      clearTimeout(timeout);
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-      resolve(resultado || {});
-    };
-
-    script.onerror = function() {
-      if (terminado) return;
-      terminado = true;
-      clearTimeout(timeout);
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-      reject(new Error('No se pudo comunicar con el servidor de justificaciones.'));
-    };
-
-    const query = [];
-    Object.keys(params || {}).forEach(function(clave) {
-      const valor = params[clave];
-      if (valor === undefined || valor === null || valor === '') return;
-      query.push(encodeURIComponent(clave) + '=' + encodeURIComponent(String(valor)));
-    });
-    query.push('action=apiJustificaciones');
-    query.push('token=' + encodeURIComponent(state.token || ''));
-    query.push('callback=' + encodeURIComponent(callbackName));
-    query.push('_t=' + Date.now());
-
-    script.src = CONFIG.API_URL + '?' + query.join('&');
-    document.head.appendChild(script);
-  });
-}
-
-function puedeAdministrarJustificacionesMGP() {
-  return !!(
-    state.permisos &&
-    state.permisos.administrarJustificaciones === true
-  );
-}
-
-function inicializarModuloJustificacionesMGP() {
-  if (justificacionesMGPInicializado) return;
-
-  const admin = document.getElementById('admin');
-  if (!admin) return;
-
-  if (!puedeAdministrarJustificacionesMGP()) return;
-
-  const card = admin.querySelector('.card');
-  if (!card) return;
-
-  const bloque = document.createElement('div');
-  bloque.id = 'justificacionesMGP';
-  bloque.style.marginTop = '18px';
-  bloque.style.borderTop = '1px solid rgba(0,0,0,.12)';
-  bloque.style.paddingTop = '16px';
-
-  bloque.innerHTML = "\n    <h3 style=\"margin:0 0 10px;\">📄 Justificaciones</h3>\n    <p style=\"margin:0 0 14px; font-size:.92rem;\">\n      Registro, edición y resolución de justificaciones de asistencia.\n    </p>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoPersonaMGP\">\n        <option value=\"estudiante\">Estudiante</option>\n        <option value=\"personal\">Personal</option>\n      </select>\n      <select id=\"justEstadoFiltroMGP\">\n        <option value=\"\">Todos los estados</option>\n        <option value=\"PENDIENTE\">Pendientes</option>\n        <option value=\"APROBADA\">Aprobadas</option>\n        <option value=\"RECHAZADA\">Rechazadas</option>\n      </select>\n      <input id=\"justMesFiltroMGP\" type=\"month\" title=\"Mes de la inasistencia\">\n      <button id=\"justListarBtnMGP\" type=\"button\">🔄 Actualizar</button>\n    </div>\n\n    <div style=\"display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoMGP\">\n        <option value=\"FALTA\">FALTA</option>\n        <option value=\"TARDANZA\">TARDANZA</option>\n      </select>\n      <input id=\"justDniMGP\" type=\"text\" inputmode=\"numeric\" maxlength=\"12\" placeholder=\"DNI\">\n      <input id=\"justIdPersonaMGP\" type=\"text\" placeholder=\"ID persona (opcional)\">\n      <input id=\"justFechaMGP\" type=\"date\">\n      <input id=\"justIdRegistroMGP\" type=\"text\" placeholder=\"ID_REGISTRO (solo tardanza)\">\n      <input id=\"justMotivoMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Motivo de la justificación\">\n      <input id=\"justObservacionMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Observación (opcional)\">\n    </div>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <button id=\"justGuardarBtnMGP\" type=\"button\">💾 Registrar justificación</button>\n      <button id=\"justCancelarBtnMGP\" type=\"button\" style=\"display:none;\">✖ Cancelar edición</button>\n    </div>\n\n    <div id=\"justMsgMGP\" style=\"margin-bottom:10px; min-height:20px;\"></div>\n    <div style=\"overflow:auto; max-width:100%;\">\n      <table id=\"justTablaMGP\" style=\"width:100%; min-width:1100px; border-collapse:collapse;\">\n        <thead>\n          <tr>\n            <th>ID</th><th>DNI</th><th>Persona</th><th>Tipo</th><th>Fecha</th>\n            <th>Motivo</th><th>Estado</th><th>Responsable</th><th>Observación</th><th>Acciones</th>\n          </tr>\n        </thead>\n        <tbody id=\"justTablaBodyMGP\"></tbody>\n      </table>\n    </div>\n  ";
-
-  card.appendChild(bloque);
-  justificacionesMGPInicializado = true;
-
-  document.getElementById('justListarBtnMGP')
-    .addEventListener('click', listarJustificacionesMGP);
-  document.getElementById('justGuardarBtnMGP')
-    .addEventListener('click', guardarJustificacionMGP);
-  document.getElementById('justCancelarBtnMGP')
-    .addEventListener('click', cancelarEdicionJustificacionMGP);
-  document.getElementById('justTipoMGP')
-    .addEventListener('change', actualizarCamposJustificacionMGP);
-  document.getElementById('justTipoPersonaMGP')
-    .addEventListener('change', actualizarCamposJustificacionMGP);
-
-  actualizarCamposJustificacionMGP();
-  listarJustificacionesMGP();
-}
-
-function actualizarCamposJustificacionMGP() {
-  const tipo = document.getElementById('justTipoMGP');
-  const idRegistro = document.getElementById('justIdRegistroMGP');
-  if (!tipo || !idRegistro) return;
-
-  const tardanza = tipo.value === 'TARDANZA';
-  idRegistro.disabled = !tardanza;
-  idRegistro.placeholder = tardanza
-    ? 'ID_REGISTRO de la tardanza'
-    : 'No aplica para falta';
-}
-
-function mostrarMensajeJustificacionMGP(texto, error) {
-  const el = document.getElementById('justMsgMGP');
-  if (!el) return;
-  el.textContent = texto || '';
-  el.style.fontWeight = error ? '600' : '400';
-}
-
-async function listarJustificacionesMGP() {
-  if (!puedeAdministrarJustificacionesMGP()) return;
-
-  mostrarMensajeJustificacionMGP('Consultando justificaciones...', false);
-
-  try {
-    const resultado = await solicitarJustificacionesMGP({
-      operacion:'listar',
-      tipoPersona:(document.getElementById('justTipoPersonaMGP') || {}).value || '',
-      estado:(document.getElementById('justEstadoFiltroMGP') || {}).value || '',
-      mes:(document.getElementById('justMesFiltroMGP') || {}).value || ''
-    });
-
-    if (!resultado.ok) {
-      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudieron listar las justificaciones.'), true);
-      return;
-    }
-
-    renderizarJustificacionesMGP(resultado.justificaciones || []);
-    mostrarMensajeJustificacionMGP('✅ ' + (resultado.total || 0) + ' justificación(es) encontrada(s).', false);
-  } catch (error) {
-    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
-  }
-}
-
-function renderizarJustificacionesMGP(lista) {
-  const body = document.getElementById('justTablaBodyMGP');
-  if (!body) return;
-
-  body.innerHTML = '';
-
-  if (!lista.length) {
-    body.innerHTML = '<tr><td colspan="10" style="padding:10px; text-align:center;">No hay justificaciones para los filtros seleccionados.</td></tr>';
-    return;
-  }
-
-  lista.forEach(function(item) {
-    const tr = document.createElement('tr');
-    const acciones = item.estado === 'PENDIENTE'
-      ? `
-        <button type="button" data-just-accion="editar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✏️</button>
-        <button type="button" data-just-accion="aprobar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">✅</button>
-        <button type="button" data-just-accion="rechazar" data-id="${escaparHtmlJustificacionesMGP(item.idJustificacion)}">❌</button>
-      `
-      : '—';
-
-    [
-      item.idJustificacion,
-      item.dni,
-      item.nombre,
-      item.tipo,
-      item.fechaInasistencia,
-      item.motivo,
-      item.estado,
-      item.responsable,
-      item.observacion
-    ].forEach(function(valor) {
-      const td = document.createElement('td');
-      td.textContent = valor || '';
-      td.style.padding = '6px';
-      td.style.borderBottom = '1px solid rgba(0,0,0,.08)';
-      tr.appendChild(td);
-    });
-
-    const tdAcciones = document.createElement('td');
-    tdAcciones.style.padding = '6px';
-    tdAcciones.innerHTML = acciones;
-    tr.appendChild(tdAcciones);
-    body.appendChild(tr);
-  });
-
-  body.querySelectorAll('[data-just-accion]').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      ejecutarAccionJustificacionMGP(
-        btn.getAttribute('data-just-accion'),
-        btn.getAttribute('data-id'),
-        lista
-      );
-    });
-  });
-}
-
-async function guardarJustificacionMGP() {
-  const tipoPersona = document.getElementById('justTipoPersonaMGP').value;
-  const tipo = document.getElementById('justTipoMGP').value;
-  const dni = document.getElementById('justDniMGP').value.trim();
-  const idPersona = document.getElementById('justIdPersonaMGP').value.trim();
-  const fecha = document.getElementById('justFechaMGP').value;
-  const idRegistro = document.getElementById('justIdRegistroMGP').value.trim();
-  const motivo = document.getElementById('justMotivoMGP').value.trim();
-  const observacion = document.getElementById('justObservacionMGP').value.trim();
-
-  if (!dni && !idPersona) {
-    mostrarMensajeJustificacionMGP('❌ Indique DNI o ID de persona.', true);
-    return;
-  }
-  if (!fecha) {
-    mostrarMensajeJustificacionMGP('❌ Indique la fecha de inasistencia.', true);
-    return;
-  }
-  if (!motivo) {
-    mostrarMensajeJustificacionMGP('❌ Indique el motivo.', true);
-    return;
-  }
-  if (tipo === 'TARDANZA' && !idRegistro) {
-    mostrarMensajeJustificacionMGP('❌ Para una tardanza debe indicar ID_REGISTRO.', true);
-    return;
-  }
-
-  mostrarMensajeJustificacionMGP('Guardando justificación...', false);
-
-  try {
-    const params = {
-      operacion: justificacionesMGPEnEdicion ? 'editar' : 'crear',
-      tipoPersona:tipoPersona,
-      tipo:tipo,
-      dni:dni,
-      idPersona:idPersona,
-      fechaInasistencia:fecha,
-      idRegistro:tipo === 'TARDANZA' ? idRegistro : '',
-      motivo:motivo,
-      observacion:observacion
-    };
-
-    if (justificacionesMGPEnEdicion) {
-      params.idJustificacion = justificacionesMGPEnEdicion.idJustificacion;
-    }
-
-    const resultado = await solicitarJustificacionesMGP(params);
-
-    if (!resultado.ok) {
-      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo guardar.'), true);
-      return;
-    }
-
-    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada correctamente.'), false);
-    cancelarEdicionJustificacionMGP();
-    await listarJustificacionesMGP();
-  } catch (error) {
-    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
-  }
-}
-
-function cargarEdicionJustificacionMGP(item) {
-  justificacionesMGPEnEdicion = item;
-  document.getElementById('justTipoPersonaMGP').value = item.tipoPersona || 'estudiante';
-  document.getElementById('justTipoMGP').value = item.tipo || 'FALTA';
-  document.getElementById('justDniMGP').value = item.dni || '';
-  document.getElementById('justIdPersonaMGP').value = item.idPersona || '';
-  document.getElementById('justFechaMGP').value = item.fechaInasistencia || '';
-  document.getElementById('justIdRegistroMGP').value = item.idRegistro || '';
-  document.getElementById('justMotivoMGP').value = item.motivo || '';
-  document.getElementById('justObservacionMGP').value = item.observacion || '';
-  document.getElementById('justGuardarBtnMGP').textContent = '💾 Guardar cambios';
-  document.getElementById('justCancelarBtnMGP').style.display = '';
-  actualizarCamposJustificacionMGP();
-  mostrarMensajeJustificacionMGP('✏️ Editando ' + item.idJustificacion, false);
-}
-
-function cancelarEdicionJustificacionMGP() {
-  justificacionesMGPEnEdicion = null;
-  const ids = [
-    'justDniMGP','justIdPersonaMGP','justFechaMGP',
-    'justIdRegistroMGP','justMotivoMGP','justObservacionMGP'
-  ];
-  ids.forEach(function(id) {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  document.getElementById('justTipoMGP').value = 'FALTA';
-  document.getElementById('justGuardarBtnMGP').textContent = '💾 Registrar justificación';
-  document.getElementById('justCancelarBtnMGP').style.display = 'none';
-  actualizarCamposJustificacionMGP();
-}
-
-async function ejecutarAccionJustificacionMGP(accion, id, lista) {
-  const item = lista.find(function(x) { return x.idJustificacion === id; });
-  if (!item) return;
-
-  if (accion === 'editar') {
-    cargarEdicionJustificacionMGP(item);
-    return;
-  }
-
-  let observacion = item.observacion || '';
-  if (accion === 'rechazar') {
-    observacion = window.prompt('Indique el motivo de rechazo:', observacion) || '';
-    if (!observacion.trim()) {
-      mostrarMensajeJustificacionMGP('❌ El rechazo requiere una observación.', true);
-      return;
-    }
-  }
-
-  if (accion === 'aprobar' && !window.confirm('¿Aprobar esta justificación?')) return;
-  if (accion === 'rechazar' && !window.confirm('¿Rechazar esta justificación?')) return;
-
-  mostrarMensajeJustificacionMGP('Procesando ' + accion + '...', false);
-
-  try {
-    const resultado = await solicitarJustificacionesMGP({
-      operacion:accion,
-      idJustificacion:id,
-      observacion:observacion
-    });
-
-    if (!resultado.ok) {
-      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo resolver la justificación.'), true);
-      return;
-    }
-
-    mostrarMensajeJustificacionMGP('✅ ' + (resultado.mensaje || 'Operación realizada.'), false);
-    await listarJustificacionesMGP();
-  } catch (error) {
-    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
-  }
-}
-
 // =====================================================
 // COMPATIBILIDAD FINAL V1 / V2
 // =====================================================
@@ -8394,3 +7093,95 @@ async function ejecutarAccionJustificacionMGP(accion, id, lista) {
 window.activarCamara = iniciarCamara;
 window.detenerCamara = detenerCamara;
 window.cambiarCamara = cambiarCamara;
+
+// =====================================================
+// RECTIFICACIÓN DE ASISTENCIA V2 — BÚSQUEDA ETAPA 2
+// =====================================================
+(function () {
+  const boton = document.getElementById('rectificacionAsistenciaBtn');
+  const panel = document.getElementById('rectificacionAsistenciaPanel');
+  const buscar = document.getElementById('buscarRectificacionBtn');
+  const dni = document.getElementById('rectificacionDni');
+  const fecha = document.getElementById('rectificacionFecha');
+  const msg = document.getElementById('rectificacionBusquedaMsg');
+  const resultado = document.getElementById('rectificacionResultado');
+
+  if (!boton || !panel || !buscar) return;
+
+  boton.addEventListener('click', function () {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
+
+  buscar.addEventListener('click', function () {
+    const dniValor = String(dni.value || '').trim();
+    const fechaValor = String(fecha.value || '').trim();
+
+    if (!dniValor || !fechaValor) {
+      msg.textContent = 'Ingrese DNI y fecha.';
+      return;
+    }
+
+    if (!state || !state.token) {
+      msg.textContent = 'La sesión institucional no está disponible.';
+      return;
+    }
+
+    msg.textContent = '🔄 Buscando registro real de asistencia...';
+    resultado.style.display = 'none';
+    resultado.innerHTML = '';
+
+    const callback = 'respuestaRectificacionMGP_' + Date.now();
+    const script = document.createElement('script');
+
+    window[callback] = function (respuesta) {
+      try {
+        if (!respuesta || !respuesta.ok) {
+          msg.textContent = '❌ ' + ((respuesta && respuesta.mensaje) || 'No se pudo realizar la búsqueda.');
+          return;
+        }
+
+        if (!respuesta.registros || respuesta.registros.length === 0) {
+          msg.textContent = 'No se encontró un registro de asistencia para ese DNI y fecha.';
+          return;
+        }
+
+        resultado.innerHTML = respuesta.registros.map(function (r) {
+          return '<div class="alert">' +
+            '<strong>Registro encontrado</strong><br>' +
+            'DNI: ' + String(r.dni || '') + '<br>' +
+            'Fecha: ' + String(r.fecha || '') + '<br>' +
+            'Hora: ' + String(r.hora || '') + '<br>' +
+            'Estado: ' + String(r.estado || '') + '<br>' +
+            'Puntualidad: ' + String(r.puntualidad || '') + '<br>' +
+            'ID_REGISTRO: ' + String(r.idRegistro || '') +
+            '</div>';
+        }).join('');
+
+        resultado.style.display = 'block';
+        msg.textContent = '✅ Registro localizado. La rectificación todavía NO se ejecuta.';
+      } finally {
+        try { delete window[callback]; } catch (e) {}
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+    };
+
+    script.onerror = function () {
+      msg.textContent = '❌ No se pudo comunicar con el servidor.';
+      try { delete window[callback]; } catch (e) {}
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+
+    const parametros = new URLSearchParams({
+      action: 'apiRectificarAsistencia',
+      operacion: 'buscar',
+      dni: dniValor,
+      fecha: fechaValor,
+      token: state.token,
+      callback: callback
+    });
+
+    script.src = CONFIG.API_URL + '?' + parametros.toString();
+    script.async = true;
+    document.head.appendChild(script);
+  });
+})();
