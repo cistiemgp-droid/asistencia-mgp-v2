@@ -973,6 +973,93 @@
 
       </div>
 
+      <!-- =====================================================
+           JUSTIFICACIONES
+           ===================================================== -->
+      <div
+        id="justificacionesMGP"
+        class="card"
+        style="margin-top:18px;"
+      >
+
+        <h3 style="margin:0 0 10px;">📄 Justificaciones</h3>
+
+        <p style="margin:0 0 14px; font-size:.92rem;">
+          Registro, edición y resolución de justificaciones de asistencia.
+        </p>
+
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+          <select id="justTipoPersonaMGP">
+            <option value="estudiante">Estudiante</option>
+            <option value="personal">Personal</option>
+          </select>
+
+          <select id="justEstadoFiltroMGP">
+            <option value="">Todos los estados</option>
+            <option value="PENDIENTE">Pendientes</option>
+            <option value="APROBADA">Aprobadas</option>
+            <option value="RECHAZADA">Rechazadas</option>
+          </select>
+
+          <input
+            id="justMesFiltroMGP"
+            type="month"
+            title="Mes de la inasistencia"
+          >
+
+          <button id="justListarBtnMGP" type="button">
+            🔄 Actualizar
+          </button>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:12px;">
+          <select id="justTipoMGP">
+            <option value="FALTA">FALTA</option>
+            <option value="TARDANZA">TARDANZA</option>
+          </select>
+
+          <input id="justDniMGP" type="text" inputmode="numeric" maxlength="12" placeholder="DNI">
+          <input id="justIdPersonaMGP" type="text" placeholder="ID persona (opcional)">
+          <input id="justFechaMGP" type="date">
+          <input id="justIdRegistroMGP" type="text" placeholder="ID_REGISTRO (solo tardanza)">
+          <input id="justMotivoMGP" type="text" maxlength="500" placeholder="Motivo de la justificación">
+          <input id="justObservacionMGP" type="text" maxlength="500" placeholder="Observación (opcional)">
+        </div>
+
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+          <button id="justGuardarBtnMGP" type="button">
+            💾 Registrar justificación
+          </button>
+
+          <button id="justCancelarBtnMGP" type="button" style="display:none;">
+            ✖ Cancelar edición
+          </button>
+        </div>
+
+        <div id="justMsgMGP" style="margin-bottom:10px; min-height:20px;"></div>
+
+        <div style="overflow:auto; max-width:100%;">
+          <table id="justTablaMGP" style="width:100%; min-width:1100px; border-collapse:collapse;">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>DNI</th>
+                <th>Persona</th>
+                <th>Tipo</th>
+                <th>Fecha</th>
+                <th>Motivo</th>
+                <th>Estado</th>
+                <th>Responsable</th>
+                <th>Observación</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="justTablaBodyMGP"></tbody>
+          </table>
+        </div>
+
+      </div>
+
       <button
         id="asignacionesDocentesBtn"
         class="module"
