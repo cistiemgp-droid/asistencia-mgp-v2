@@ -1542,7 +1542,14 @@ document
             }
           }
 
+          const accesoAdmin =
+            destino === 'admin' &&
+            state.permisos &&
+            (state.permisos.administrarPersonas === true ||
+             state.permisos.administrarJustificaciones === true);
+
           if (
+            !accesoAdmin &&
             permiso &&
             (!state.permisos || state.permisos[permiso] !== true)
           ) {
