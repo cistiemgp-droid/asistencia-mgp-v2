@@ -8105,6 +8105,115 @@ function solicitarJustificacionesMGP(params) {
   });
 }
 
+function solicitarBusquedaTardanzaMGP(params) {
+  return new Promise(function(resolve, reject) {
+    const callbackName =
+      'mgpBuscarTardanzaCallback_' +
+      Date.now() + '_' + Math.floor(Math.random() * 100000);
+
+    const script = document.createElement('script');
+    let terminado = false;
+
+    const timeout = setTimeout(function() {
+      if (terminado) return;
+      terminado = true;
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('Tiempo de espera agotado al buscar la tardanza.'));
+    }, 15000);
+
+    window[callbackName] = function(resultado) {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      resolve(resultado || {});
+    };
+
+    script.onerror = function() {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('No se pudo comunicar con el servidor para buscar la tardanza.'));
+    };
+
+    const query = [];
+    Object.keys(params || {}).forEach(function(clave) {
+      const valor = params[clave];
+      if (valor === undefined || valor === null || valor === '') return;
+      query.push(encodeURIComponent(clave) + '=' + encodeURIComponent(String(valor)));
+    });
+
+    query.push('action=apiBuscarTardanza');
+    query.push('token=' + encodeURIComponent(state.token || ''));
+    query.push('callback=' + encodeURIComponent(callbackName));
+    query.push('_t=' + Date.now());
+
+    script.src = CONFIG.API_URL + '?' + query.join('&');
+    document.head.appendChild(script);
+  });
+}
+
+async function buscarTardanzaJustificacionMGP() {
+  const tipo = document.getElementById('justTipoMGP').value;
+  const dni = document.getElementById('justDniMGP').value.trim();
+  const idPersona = document.getElementById('justIdPersonaMGP').value.trim();
+  const fecha = document.getElementById('justFechaMGP').value;
+  const idRegistro = document.getElementById('justIdRegistroMGP');
+
+  if (tipo !== 'TARDANZA') return;
+  if (!dni && !idPersona) {
+    mostrarMensajeJustificacionMGP('❌ Indique DNI o ID de persona.', true);
+    return;
+  }
+  if (!fecha) {
+    mostrarMensajeJustificacionMGP('❌ Indique la fecha de la tardanza.', true);
+    return;
+  }
+
+  mostrarMensajeJustificacionMGP('🔎 Buscando tardanza...', false);
+  idRegistro.value = '';
+
+  try {
+    const resultado = await solicitarBusquedaTardanzaMGP({
+      dni:dni,
+      idPersona:idPersona,
+      fecha:fecha
+    });
+
+    if (!resultado.ok) {
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo buscar la tardanza.'), true);
+      return;
+    }
+
+    const tardanzas = resultado.tardanzas || [];
+
+    if (tardanzas.length === 0) {
+      mostrarMensajeJustificacionMGP('❌ No se encontró una tardanza para esa persona y fecha.', true);
+      return;
+    }
+
+    if (tardanzas.length > 1) {
+      mostrarMensajeJustificacionMGP('❌ Se encontraron varias tardanzas. No se seleccionará ninguna automáticamente.', true);
+      return;
+    }
+
+    idRegistro.value = tardanzas[0].idRegistro || '';
+
+    mostrarMensajeJustificacionMGP(
+      '✅ Tardanza encontrada: ' +
+      (tardanzas[0].hora || '') +
+      ' — ID_REGISTRO asignado automáticamente.',
+      false
+    );
+  } catch (error) {
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+  }
+}
+
 function puedeAdministrarJustificacionesMGP() {
   return !!(
     state.permisos &&
@@ -8129,7 +8238,7 @@ function inicializarModuloJustificacionesMGP() {
   bloque.style.borderTop = '1px solid rgba(0,0,0,.12)';
   bloque.style.paddingTop = '16px';
 
-  bloque.innerHTML = "\n    <h3 style=\"margin:0 0 10px;\">📄 Justificaciones</h3>\n    <p style=\"margin:0 0 14px; font-size:.92rem;\">\n      Registro, edición y resolución de justificaciones de asistencia.\n    </p>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoPersonaMGP\">\n        <option value=\"estudiante\">Estudiante</option>\n        <option value=\"personal\">Personal</option>\n      </select>\n      <select id=\"justEstadoFiltroMGP\">\n        <option value=\"\">Todos los estados</option>\n        <option value=\"PENDIENTE\">Pendientes</option>\n        <option value=\"APROBADA\">Aprobadas</option>\n        <option value=\"RECHAZADA\">Rechazadas</option>\n      </select>\n      <input id=\"justMesFiltroMGP\" type=\"month\" title=\"Mes de la inasistencia\">\n      <button id=\"justListarBtnMGP\" type=\"button\">🔄 Actualizar</button>\n    </div>\n\n    <div style=\"display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoMGP\">\n        <option value=\"FALTA\">FALTA</option>\n        <option value=\"TARDANZA\">TARDANZA</option>\n      </select>\n      <input id=\"justDniMGP\" type=\"text\" inputmode=\"numeric\" maxlength=\"12\" placeholder=\"DNI\">\n      <input id=\"justIdPersonaMGP\" type=\"text\" placeholder=\"ID persona (opcional)\">\n      <input id=\"justFechaMGP\" type=\"date\">\n      <input id=\"justIdRegistroMGP\" type=\"text\" placeholder=\"ID_REGISTRO (solo tardanza)\">\n      <input id=\"justMotivoMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Motivo de la justificación\">\n      <input id=\"justObservacionMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Observación (opcional)\">\n    </div>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <button id=\"justGuardarBtnMGP\" type=\"button\">💾 Registrar justificación</button>\n      <button id=\"justCancelarBtnMGP\" type=\"button\" style=\"display:none;\">✖ Cancelar edición</button>\n    </div>\n\n    <div id=\"justMsgMGP\" style=\"margin-bottom:10px; min-height:20px;\"></div>\n    <div style=\"overflow:auto; max-width:100%;\">\n      <table id=\"justTablaMGP\" style=\"width:100%; min-width:1100px; border-collapse:collapse;\">\n        <thead>\n          <tr>\n            <th>ID</th><th>DNI</th><th>Persona</th><th>Tipo</th><th>Fecha</th>\n            <th>Motivo</th><th>Estado</th><th>Responsable</th><th>Observación</th><th>Acciones</th>\n          </tr>\n        </thead>\n        <tbody id=\"justTablaBodyMGP\"></tbody>\n      </table>\n    </div>\n  ";
+  bloque.innerHTML = "\n    <h3 style=\"margin:0 0 10px;\">📄 Justificaciones</h3>\n    <p style=\"margin:0 0 14px; font-size:.92rem;\">\n      Registro, edición y resolución de justificaciones de asistencia.\n    </p>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoPersonaMGP\">\n        <option value=\"estudiante\">Estudiante</option>\n        <option value=\"personal\">Personal</option>\n      </select>\n      <select id=\"justEstadoFiltroMGP\">\n        <option value=\"\">Todos los estados</option>\n        <option value=\"PENDIENTE\">Pendientes</option>\n        <option value=\"APROBADA\">Aprobadas</option>\n        <option value=\"RECHAZADA\">Rechazadas</option>\n      </select>\n      <input id=\"justMesFiltroMGP\" type=\"month\" title=\"Mes de la inasistencia\">\n      <button id=\"justListarBtnMGP\" type=\"button\">🔄 Actualizar</button>\n    </div>\n\n    <div style=\"display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:12px;\">\n      <select id=\"justTipoMGP\">\n        <option value=\"FALTA\">FALTA</option>\n        <option value=\"TARDANZA\">TARDANZA</option>\n      </select>\n      <input id=\"justDniMGP\" type=\"text\" inputmode=\"numeric\" maxlength=\"12\" placeholder=\"DNI\">\n      <input id=\"justIdPersonaMGP\" type=\"text\" placeholder=\"ID persona (opcional)\">\n      <input id=\"justFechaMGP\" type=\"date\">\n      <div style=\"display:flex; gap:6px; align-items:center; flex-wrap:wrap;\">\n        <input id=\"justIdRegistroMGP\" type=\"text\" placeholder=\"ID_REGISTRO (automático)\" readonly>\n        <button id=\"justBuscarTardanzaBtnMGP\" type=\"button\" style=\"display:none;\">🔎 Buscar tardanza</button>\n      </div>\n      <input id=\"justMotivoMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Motivo de la justificación\">\n      <input id=\"justObservacionMGP\" type=\"text\" maxlength=\"500\" placeholder=\"Observación (opcional)\">\n    </div>\n\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;\">\n      <button id=\"justGuardarBtnMGP\" type=\"button\">💾 Registrar justificación</button>\n      <button id=\"justCancelarBtnMGP\" type=\"button\" style=\"display:none;\">✖ Cancelar edición</button>\n    </div>\n\n    <div id=\"justMsgMGP\" style=\"margin-bottom:10px; min-height:20px;\"></div>\n    <div style=\"overflow:auto; max-width:100%;\">\n      <table id=\"justTablaMGP\" style=\"width:100%; min-width:1100px; border-collapse:collapse;\">\n        <thead>\n          <tr>\n            <th>ID</th><th>DNI</th><th>Persona</th><th>Tipo</th><th>Fecha</th>\n            <th>Motivo</th><th>Estado</th><th>Responsable</th><th>Observación</th><th>Acciones</th>\n          </tr>\n        </thead>\n        <tbody id=\"justTablaBodyMGP\"></tbody>\n      </table>\n    </div>\n  ";
 
   card.appendChild(bloque);
   justificacionesMGPInicializado = true;
@@ -8144,6 +8253,12 @@ function inicializarModuloJustificacionesMGP() {
     .addEventListener('change', actualizarCamposJustificacionMGP);
   document.getElementById('justTipoPersonaMGP')
     .addEventListener('change', actualizarCamposJustificacionMGP);
+  document.getElementById('justBuscarTardanzaBtnMGP')
+    .addEventListener('click', buscarTardanzaJustificacionMGP);
+  document.getElementById('justDniMGP')
+    .addEventListener('input', limpiarIdRegistroTardanzaMGP);
+  document.getElementById('justFechaMGP')
+    .addEventListener('change', limpiarIdRegistroTardanzaMGP);
 
   actualizarCamposJustificacionMGP();
   listarJustificacionesMGP();
@@ -8152,13 +8267,28 @@ function inicializarModuloJustificacionesMGP() {
 function actualizarCamposJustificacionMGP() {
   const tipo = document.getElementById('justTipoMGP');
   const idRegistro = document.getElementById('justIdRegistroMGP');
-  if (!tipo || !idRegistro) return;
+  const buscarBtn = document.getElementById('justBuscarTardanzaBtnMGP');
+  if (!tipo || !idRegistro || !buscarBtn) return;
 
   const tardanza = tipo.value === 'TARDANZA';
   idRegistro.disabled = !tardanza;
   idRegistro.placeholder = tardanza
-    ? 'ID_REGISTRO de la tardanza'
+    ? 'ID_REGISTRO (automático)'
     : 'No aplica para falta';
+  buscarBtn.style.display = tardanza ? '' : 'none';
+
+  if (!tardanza) {
+    idRegistro.value = '';
+  }
+}
+
+function limpiarIdRegistroTardanzaMGP() {
+  const tipo = document.getElementById('justTipoMGP');
+  const idRegistro = document.getElementById('justIdRegistroMGP');
+  if (!tipo || !idRegistro) return;
+  if (tipo.value === 'TARDANZA') {
+    idRegistro.value = '';
+  }
 }
 
 function mostrarMensajeJustificacionMGP(texto, error) {
@@ -8273,7 +8403,7 @@ async function guardarJustificacionMGP() {
     return;
   }
   if (tipo === 'TARDANZA' && !idRegistro) {
-    mostrarMensajeJustificacionMGP('❌ Para una tardanza debe indicar ID_REGISTRO.', true);
+    mostrarMensajeJustificacionMGP('❌ Primero busque la tardanza para obtener el ID_REGISTRO automáticamente.', true);
     return;
   }
 
