@@ -974,6 +974,21 @@
       </div>
 
       <!-- =====================================================
+           USUARIOS — SOLO LECTURA
+           ===================================================== -->
+      <div
+        id="usuariosMGP"
+        class="card"
+        style="margin-top:18px; display:none;"
+      >
+        <h3 style="margin:0 0 10px;">👤 Usuarios del sistema</h3>
+        <p>Consulta de usuarios registrados. No permite modificar cuentas ni contraseñas.</p>
+        <button id="listarUsuariosBtn" class="module" type="button">🔎 Ver usuarios</button>
+        <div id="usuariosMsg" style="margin-top:12px;"></div>
+        <div id="usuariosResultado" style="display:none; margin-top:14px; overflow-x:auto;"></div>
+      </div>
+
+      <!-- =====================================================
            JUSTIFICACIONES
            ===================================================== -->
       <div
@@ -1109,6 +1124,52 @@
 
 <script
   src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js">
+</script>
+
+<script>
+(function(){
+  function initUsuariosMGP(){
+    var panel=document.getElementById('usuariosMGP');
+    var btn=document.getElementById('listarUsuariosBtn');
+    var msg=document.getElementById('usuariosMsg');
+    var out=document.getElementById('usuariosResultado');
+    if(!panel||!btn||!msg||!out) return;
+
+    function permisos(){
+      return window.state && window.state.usuario && window.state.usuario.permisos;
+    }
+    function actualizarVisibilidad(){
+      var p=permisos();
+      panel.style.display=(p && p.administrarUsuarios===true)?'block':'none';
+    }
+    window.actualizarUsuariosMGP=actualizarVisibilidad;
+    actualizarVisibilidad();
+
+    btn.addEventListener('click',function(){
+      var p=permisos();
+      if(!p || p.administrarUsuarios!==true){ msg.textContent='Acceso no autorizado.'; return; }
+      var token=window.state && window.state.token;
+      if(!token){ msg.textContent='Sesión no disponible.'; return; }
+      msg.textContent='Consultando usuarios...'; out.style.display='none'; out.innerHTML='';
+      var cb='mgpUsuarios_'+Date.now();
+      window[cb]=function(r){
+        try{
+          if(!r || r.ok!==true){ msg.textContent=(r&&r.mensaje)?r.mensaje:'No se pudo consultar usuarios.'; return; }
+          var rows=r.usuarios||[];
+          if(!rows.length){ msg.textContent='No hay usuarios registrados.'; return; }
+          var h='<table><thead><tr><th>ID</th><th>Usuario</th><th>Nombre</th><th>Rol</th><th>ID Personal</th><th>Estado</th><th>Registro</th><th>Último acceso</th><th>ID Apoderado</th></tr></thead><tbody>';
+          rows.forEach(function(u){ h+='<tr>'+['idUsuario','usuario','nombre','rol','idPersonal','estado','fechaRegistro','ultimoAcceso','idApoderado'].map(function(k){return '<td>'+String(u[k]||'') .replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];})+'</td>';}).join('')+'</tr>'; });
+          h+='</tbody></table>'; out.innerHTML=h; out.style.display='block'; msg.textContent='Usuarios consultados: '+rows.length+'.';
+        } finally { try{delete window[cb];}catch(e){} }
+      };
+      var sc=document.createElement('script');
+      sc.src=CONFIG.API_URL+'?action=apiUsuarios&operacion=listar&token='+encodeURIComponent(token)+'&callback='+cb;
+      sc.onerror=function(){ msg.textContent='Error de conexión con el servidor.'; try{delete window[cb];}catch(e){} };
+      document.body.appendChild(sc);
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initUsuariosMGP); else initUsuariosMGP();
+})();
 </script>
 
 <script src="js/app.js"></script>
