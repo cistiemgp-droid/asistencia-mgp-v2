@@ -913,6 +913,234 @@ function cambiarErroresOfflineAPendienteMGP() {
 
 }
 
+function cerrarVisorErroresOfflineMGP() {
+
+  const visor =
+    document.getElementById('visorErroresOfflineMGP');
+
+  if (visor) {
+    visor.remove();
+  }
+
+}
+
+function formatearFechaOfflineMGP(valor) {
+
+  if (!valor) {
+    return 'Sin fecha';
+  }
+
+  const fecha = new Date(valor);
+
+  if (Number.isNaN(fecha.getTime())) {
+    return String(valor);
+  }
+
+  try {
+    return fecha.toLocaleString('es-PE', {
+      dateStyle: 'short',
+      timeStyle: 'medium'
+    });
+  }
+  catch (error) {
+    return fecha.toLocaleString('es-PE');
+  }
+
+}
+
+async function visualizarErroresOfflineMGP() {
+
+  if (sincronizacionOfflineEnCursoMGP) {
+    const mensaje = document.getElementById('regMsg');
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>⏳ SINCRONIZACIÓN EN CURSO</strong><br>' +
+        'Espera a que termine antes de revisar los errores.';
+    }
+    return;
+  }
+
+  cerrarVisorErroresOfflineMGP();
+
+  let errores = [];
+
+  try {
+    errores = await obtenerRegistrosOfflineErrorMGP();
+  }
+  catch (error) {
+    const mensaje = document.getElementById('regMsg');
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>❌ NO SE PUDIERON LEER LOS ERRORES</strong><br>' +
+        String(error.message || error);
+    }
+    return;
+  }
+
+  if (!errores.length) {
+    await actualizarContadorOfflineMGP();
+    const mensaje = document.getElementById('regMsg');
+    if (mensaje) {
+      mensaje.innerHTML =
+        '<strong>✅ SIN ERRORES</strong><br>' +
+        'No hay registros con error guardados en este equipo.';
+    }
+    return;
+  }
+
+  const visor = document.createElement('div');
+  visor.id = 'visorErroresOfflineMGP';
+  visor.style.cssText =
+    'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.72);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+
+  const panel = document.createElement('div');
+  panel.style.cssText =
+    'width:min(980px,100%);max-height:90vh;overflow:hidden;background:#fff;' +
+    'border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.30);display:flex;flex-direction:column;';
+
+  const cabecera = document.createElement('div');
+  cabecera.style.cssText =
+    'padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;' +
+    'align-items:center;justify-content:space-between;gap:12px;';
+
+  const titulo = document.createElement('div');
+  titulo.innerHTML =
+    '<strong style="font-size:17px;color:#0f172a;">⚠️ REGISTROS OFFLINE CON ERROR</strong>' +
+    '<div style="font-size:12px;color:#64748b;margin-top:3px;">' +
+    errores.length + ' registro(s) guardado(s) en este equipo</div>';
+
+  const cerrar = document.createElement('button');
+  cerrar.type = 'button';
+  cerrar.textContent = '✕ CERRAR';
+  cerrar.style.cssText =
+    'border:0;border-radius:9px;padding:8px 11px;background:#475569;color:#fff;' +
+    'font-weight:800;cursor:pointer;';
+  cerrar.addEventListener('click', cerrarVisorErroresOfflineMGP);
+
+  cabecera.appendChild(titulo);
+  cabecera.appendChild(cerrar);
+
+  const aviso = document.createElement('div');
+  aviso.style.cssText =
+    'margin:12px 16px 0;padding:10px 12px;border-radius:10px;' +
+    'background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;';
+  aviso.textContent =
+    'Estos registros siguen almacenados localmente. No se eliminarán al cerrar esta ventana.';
+
+  const lista = document.createElement('div');
+  lista.style.cssText =
+    'overflow:auto;padding:12px 16px 16px;display:flex;flex-direction:column;gap:8px;';
+
+  errores.forEach(function(registro, indice) {
+
+    const fila = document.createElement('div');
+    fila.style.cssText =
+      'border:1px solid #e2e8f0;border-radius:11px;padding:10px 12px;' +
+      'display:flex;align-items:center;justify-content:space-between;gap:12px;';
+
+    const datos = document.createElement('div');
+    datos.style.cssText = 'min-width:0;flex:1;';
+
+    const fecha =
+      formatearFechaOfflineMGP(registro.fechaHoraCliente);
+
+    datos.innerHTML =
+      '<div style="font-weight:800;color:#0f172a;">' +
+      (indice + 1) + '. DNI: ' +
+      String(registro.id || '') +
+      ' · ' + String(registro.estado || 'INGRESO') + '</div>' +
+      '<div style="font-size:12px;color:#475569;margin-top:3px;">' +
+      'Fecha/hora: ' + fecha + '</div>' +
+      '<div style="font-size:12px;color:#b91c1c;margin-top:3px;word-break:break-word;">' +
+      'Error: ' + String(registro.errorSincronizacion || 'Error desconocido') +
+      '</div>';
+
+    const eliminar = document.createElement('button');
+    eliminar.type = 'button';
+    eliminar.textContent = '🗑 ELIMINAR';
+    eliminar.title = 'Eliminar únicamente este registro del almacenamiento local.';
+    eliminar.style.cssText =
+      'flex:0 0 auto;border:0;border-radius:9px;padding:8px 10px;' +
+      'background:#dc2626;color:#fff;font-size:11px;font-weight:800;cursor:pointer;';
+
+    eliminar.addEventListener('click', async function() {
+
+      if (sincronizacionOfflineEnCursoMGP) {
+        return;
+      }
+
+      const confirmado = window.confirm(
+        'Se eliminará DEFINITIVAMENTE este registro del almacenamiento local.\n\n' +
+        'DNI: ' + String(registro.id || '') + '\n' +
+        'Estado: ' + String(registro.estado || 'INGRESO') + '\n' +
+        'Fecha/hora: ' + fecha + '\n\n' +
+        'Esta acción NO borra ningún registro de Google Sheets.\n\n¿Continuar?'
+      );
+
+      if (!confirmado) {
+        return;
+      }
+
+      eliminar.disabled = true;
+      eliminar.textContent = '⏳ ELIMINANDO...';
+
+      try {
+        const eliminado =
+          await eliminarRegistroOfflineMGP(registro.idOffline);
+
+        if (!eliminado) {
+          throw new Error('No se encontró el registro para eliminar.');
+        }
+
+        fila.remove();
+        await actualizarContadorOfflineMGP();
+
+        const restantes =
+          await obtenerRegistrosOfflineErrorMGP();
+
+        if (!restantes.length) {
+          cerrarVisorErroresOfflineMGP();
+          const mensaje = document.getElementById('regMsg');
+          if (mensaje) {
+            mensaje.innerHTML =
+              '<strong>✅ SIN ERRORES</strong><br>' +
+              'Ya no quedan registros con error en este equipo.';
+          }
+        }
+      }
+      catch (error) {
+        eliminar.disabled = false;
+        eliminar.textContent = '🗑 ELIMINAR';
+        window.alert(
+          'No se pudo eliminar el registro.\n\n' +
+          String(error.message || error)
+        );
+      }
+
+    });
+
+    fila.appendChild(datos);
+    fila.appendChild(eliminar);
+    lista.appendChild(fila);
+
+  });
+
+  panel.appendChild(cabecera);
+  panel.appendChild(aviso);
+  panel.appendChild(lista);
+  visor.appendChild(panel);
+
+  visor.addEventListener('click', function(evento) {
+    if (evento.target === visor) {
+      cerrarVisorErroresOfflineMGP();
+    }
+  });
+
+  document.body.appendChild(visor);
+
+}
+
 async function reintentarErroresOfflineMGP() {
 
   if (sincronizacionOfflineEnCursoMGP) {
@@ -985,7 +1213,7 @@ async function eliminarErroresOfflineMGP() {
 
   let detalle = '';
 
-  errores.slice(0, 5).forEach(function(registro, indice) {
+  errores.forEach(function(registro, indice) {
     detalle +=
       '\n' + (indice + 1) + '. DNI ' +
       String(registro.id || '') +
@@ -994,10 +1222,6 @@ async function eliminarErroresOfflineMGP() {
       ' — ' +
       String(registro.errorSincronizacion || 'Error desconocido');
   });
-
-  if (errores.length > 5) {
-    detalle += '\n... y ' + (errores.length - 5) + ' más.';
-  }
 
   const confirmado = window.confirm(
     'Se eliminarán DEFINITIVAMENTE ' + errores.length +
@@ -1131,6 +1355,9 @@ function actualizarControlesErroresOfflineMGP() {
   const eliminarBtn =
     document.getElementById('eliminarErroresOfflineBtnMGP');
 
+  const visualizarBtn =
+    document.getElementById('visualizarErroresOfflineBtnMGP');
+
   const cantidadErrores =
     Number(state.registrosOfflineError || 0);
 
@@ -1148,6 +1375,11 @@ function actualizarControlesErroresOfflineMGP() {
       state.registroModo === 'OFFLINE'
         ? 'not-allowed'
         : 'pointer';
+  }
+
+  if (visualizarBtn) {
+    visualizarBtn.style.display =
+      cantidadErrores > 0 ? 'inline-block' : 'none';
   }
 
   if (eliminarBtn) {
@@ -1376,6 +1608,26 @@ function crearControlModoRegistroMGP() {
     }
   );
 
+  const visualizarBtn =
+    document.createElement('button');
+
+  visualizarBtn.type = 'button';
+  visualizarBtn.id = 'visualizarErroresOfflineBtnMGP';
+  visualizarBtn.textContent = '👁 VER ERRORES';
+  visualizarBtn.title =
+    'Visualizar todos los registros offline rechazados por el servidor.';
+  visualizarBtn.style.cssText =
+    'display:none;border:0;border-radius:999px;padding:7px 10px;' +
+    'font-size:11px;font-weight:800;color:#fff;cursor:pointer;' +
+    'background:#0f766e;box-shadow:0 1px 4px rgba(0,0,0,.12);';
+
+  visualizarBtn.addEventListener(
+    'click',
+    function() {
+      visualizarErroresOfflineMGP();
+    }
+  );
+
   const eliminarBtn =
     document.createElement('button');
 
@@ -1408,6 +1660,7 @@ function crearControlModoRegistroMGP() {
   grupoLocal.appendChild(etiquetaLocal);
   grupoLocal.appendChild(sincronizarBtn);
   grupoLocal.appendChild(reintentarBtn);
+  grupoLocal.appendChild(visualizarBtn);
   grupoLocal.appendChild(eliminarBtn);
   grupoLocal.appendChild(contador);
 
