@@ -3011,9 +3011,15 @@ async function identificarQRBackend(
 
     // Guardamos la identidad confirmada ONLINE para poder validar
     // posteriormente el tipo de persona cuando el equipo esté OFFLINE.
-    if (resultado.dni) {
+    const dniIdentificadoOffline =
+      resultado.dni ||
+      (resultado.estudiante && resultado.estudiante.dni) ||
+      (resultado.personal && resultado.personal.dni) ||
+      '';
+
+    if (dniIdentificadoOffline) {
       guardarIdentidadOfflineMGP(
-        resultado.dni,
+        dniIdentificadoOffline,
         state.tipo,
         resultado
       );
@@ -3445,10 +3451,10 @@ function registrarAsistenciaBackend(id) {
 
           const datos = data.datos || {};
 
-          // Guardamos también la identidad cuando el registro ONLINE
-          // por DNI fue aceptado correctamente. Así, si después el
-          // equipo queda OFFLINE, podremos comprobar que el mismo DNI
-          // pertenece al tipo de persona con el que fue validado.
+          // Guardar la identidad SOLO después de que el servidor
+          // haya aceptado el registro ONLINE. Esto permite validar
+          // correctamente el tipo ESTUDIANTE/PERSONAL cuando luego
+          // el equipo quede OFFLINE.
           guardarIdentidadOfflineMGP(
             idLimpio,
             tipo,
