@@ -2347,6 +2347,8 @@ if (entrarBtn) {
 
         inicializarModuloJustificacionesMGP();
 
+        inicializarModuloAdministracionUsuariosMGP();
+
         console.log(
           'Usuario autenticado V2:',
           state.usuario
@@ -7532,6 +7534,138 @@ document.getElementById('dniBtn')
 window.activarCamara = iniciarCamara;
 window.detenerCamara = detenerCamara;
 window.cambiarCamara = cambiarCamara;
+
+/* =========================================================
+   ADMINISTRACIÓN DE USUARIOS V2 - DEV 01 FRONTEND
+   ---------------------------------------------------------
+   Solo lectura. Requiere administrarUsuarios. No expone CLAVE_HASH.
+   ========================================================= */
+
+let adminUsuariosMGPInicializado = false;
+let adminUsuariosMGPCallbackId = 0;
+
+function escaparHtmlAdminUsuariosMGP(valor) {
+  return String(valor == null ? '' : valor)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function puedeAdministrarUsuariosMGP() {
+  return !!(state.permisos && state.permisos.administrarUsuarios === true);
+}
+
+function solicitarUsuariosMGP() {
+  return new Promise(function(resolve, reject) {
+    const callbackName = 'mgpUsuariosCallback_' + (++adminUsuariosMGPCallbackId) + '_' + Date.now();
+    const script = document.createElement('script');
+    let terminado = false;
+    const timeout = setTimeout(function() {
+      if (terminado) return;
+      terminado = true;
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('Tiempo de espera agotado al consultar usuarios.'));
+    }, 15000);
+    window[callbackName] = function(resultado) {
+      if (terminado) return;
+      terminado = true; clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName]; resolve(resultado || {});
+    };
+    script.onerror = function() {
+      if (terminado) return;
+      terminado = true; clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('No se pudo comunicar con el servidor de usuarios.'));
+    };
+    const query = [
+      'action=apiUsuarios',
+      'operacion=listar',
+      'token=' + encodeURIComponent(state.token || ''),
+      'callback=' + encodeURIComponent(callbackName),
+      '_t=' + Date.now()
+    ];
+    script.src = CONFIG.API_URL + '?' + query.join('&');
+    document.head.appendChild(script);
+  });
+}
+
+function crearModuloAdministracionUsuariosMGP() {
+  const admin = document.getElementById('admin');
+  if (!admin) return null;
+  let bloque = document.getElementById('adminUsuariosMGP');
+  if (bloque) return bloque;
+  bloque = document.createElement('section');
+  bloque.id = 'adminUsuariosMGP';
+  bloque.style.cssText = 'margin:18px 0;padding:16px;border:1px solid #dbe3ea;border-radius:12px;background:#fff;';
+  bloque.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
+      '<div><h3 style="margin:0 0 4px;">Administración de Usuarios</h3>' +
+      '<div id="adminUsuariosMsgMGP" style="font-size:13px;color:#64748b;">Solo lectura.</div></div>' +
+      '<button type="button" id="adminUsuariosListarBtnMGP">Actualizar usuarios</button>' +
+    '</div>' +
+    '<div style="overflow:auto;margin-top:14px;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:850px;">' +
+      '<thead><tr>' +
+      '<th>ID</th><th>Usuario</th><th>Nombre</th><th>Rol</th><th>ID Personal</th><th>Estado</th><th>Fecha registro</th><th>Último acceso</th><th>ID Apoderado</th>' +
+      '</tr></thead><tbody id="adminUsuariosBodyMGP"></tbody></table></div>';
+  admin.insertBefore(bloque, admin.firstChild);
+  return bloque;
+}
+
+function renderizarUsuariosMGP(usuarios) {
+  const cuerpo = document.getElementById('adminUsuariosBodyMGP');
+  if (!cuerpo) return;
+  const lista = Array.isArray(usuarios) ? usuarios : [];
+  if (!lista.length) {
+    cuerpo.innerHTML = '<tr><td colspan="9" style="padding:14px;text-align:center;">No hay usuarios registrados.</td></tr>';
+    return;
+  }
+  cuerpo.innerHTML = lista.map(function(item) {
+    return '<tr>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.idUsuario) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.usuario) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.nombre) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.rol) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.idPersonal) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.estado) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.fechaRegistro) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.ultimoAcceso) + '</td>' +
+      '<td>' + escaparHtmlAdminUsuariosMGP(item.idApoderado) + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function listarUsuariosMGP() {
+  const mensaje = document.getElementById('adminUsuariosMsgMGP');
+  const boton = document.getElementById('adminUsuariosListarBtnMGP');
+  if (!puedeAdministrarUsuariosMGP()) { if (mensaje) mensaje.textContent = 'Acceso no autorizado.'; return; }
+  if (!state.token) { if (mensaje) mensaje.textContent = 'Sesión no disponible.'; return; }
+  if (boton) boton.disabled = true;
+  if (mensaje) mensaje.textContent = 'Consultando usuarios...';
+  try {
+    const resultado = await solicitarUsuariosMGP();
+    if (!resultado.ok || resultado.exito === false) throw new Error(resultado.mensaje || 'No se pudo obtener la lista de usuarios.');
+    renderizarUsuariosMGP(resultado.usuarios || []);
+    if (mensaje) mensaje.textContent = 'Usuarios cargados: ' + (Array.isArray(resultado.usuarios) ? resultado.usuarios.length : 0);
+  } catch (error) {
+    console.error('Error en Administración de Usuarios V2:', error);
+    if (mensaje) mensaje.textContent = '❌ ' + error.message;
+  } finally { if (boton) boton.disabled = false; }
+}
+
+function inicializarModuloAdministracionUsuariosMGP() {
+  const bloque = crearModuloAdministracionUsuariosMGP();
+  if (!bloque) return;
+  if (!puedeAdministrarUsuariosMGP()) { bloque.style.display = 'none'; return; }
+  bloque.style.display = '';
+  if (adminUsuariosMGPInicializado) return;
+  adminUsuariosMGPInicializado = true;
+  const boton = document.getElementById('adminUsuariosListarBtnMGP');
+  if (boton) boton.addEventListener('click', listarUsuariosMGP);
+  listarUsuariosMGP();
+}
 
 /* =========================================================
    JUSTIFICACIONES V2 - DEV 01 FRONTEND
