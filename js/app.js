@@ -3445,6 +3445,16 @@ function registrarAsistenciaBackend(id) {
 
           const datos = data.datos || {};
 
+          // Guardamos también la identidad cuando el registro ONLINE
+          // por DNI fue aceptado correctamente. Así, si después el
+          // equipo queda OFFLINE, podremos comprobar que el mismo DNI
+          // pertenece al tipo de persona con el que fue validado.
+          guardarIdentidadOfflineMGP(
+            idLimpio,
+            tipo,
+            { datos: datos }
+          );
+
           const nombre =
             datos.nombre ||
             (state.persona && state.persona.estudiante
