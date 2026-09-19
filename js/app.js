@@ -7539,9 +7539,10 @@ window.detenerCamara = detenerCamara;
 window.cambiarCamara = cambiarCamara;
 
 /* =========================================================
-   HORARIO DOCENTES V2 - DEV 01 FRONTEND
+   HORARIO DOCENTES V2 - DEV 02 FRONTEND
    ---------------------------------------------------------
-   Consulta de lectura del horario institucional.
+   Consulta del horario institucional completo por docente,
+   sección y día.
    Requiere consultarHorario.
    No modifica HORARIO ni ninguna otra hoja.
    ========================================================= */
@@ -7633,14 +7634,24 @@ function crearModuloHorarioDocentesMGP() {
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">' +
       '<div>' +
         '<h2 style="margin:0 0 4px;">Horario</h2>' +
-        '<div style="font-size:13px;color:#64748b;">Consulta del horario actual por docente o sección.</div>' +
+        '<div style="font-size:13px;color:#64748b;">Consulta el horario completo por docente, sección o día.</div>' +
       '</div>' +
       '<button type="button" id="horarioVolverPanelMGP">← Panel</button>' +
     '</div>' +
     '<div style="padding:16px;border:1px solid #dbe3ea;border-radius:12px;background:#fff;margin-bottom:16px;">' +
-      '<div style="display:grid;grid-template-columns:1fr 220px auto auto;gap:10px;align-items:end;">' +
+      '<div style="display:grid;grid-template-columns:1fr 170px 220px auto auto;gap:10px;align-items:end;">' +
         '<label style="font-size:13px;">Docente<br>' +
           '<input id="horarioDocenteFiltroMGP" type="text" placeholder="Nombre del docente" style="width:100%;box-sizing:border-box;padding:9px;margin-top:5px;">' +
+        '</label>' +
+        '<label style="font-size:13px;">Día<br>' +
+          '<select id="horarioDiaFiltroMGP" style="width:100%;box-sizing:border-box;padding:9px;margin-top:5px;">' +
+            '<option value="">Todos</option>' +
+            '<option value="LUNES">Lunes</option>' +
+            '<option value="MARTES">Martes</option>' +
+            '<option value="MIÉRCOLES">Miércoles</option>' +
+            '<option value="JUEVES">Jueves</option>' +
+            '<option value="VIERNES">Viernes</option>' +
+          '</select>' +
         '</label>' +
         '<label style="font-size:13px;">Sección<br>' +
           '<select id="horarioSeccionFiltroMGP" style="width:100%;box-sizing:border-box;padding:9px;margin-top:5px;">' +
@@ -7687,6 +7698,7 @@ function crearModuloHorarioDocentesMGP() {
   document.getElementById('horarioLimpiarBtnMGP')
     .addEventListener('click', function() {
       document.getElementById('horarioDocenteFiltroMGP').value = '';
+      document.getElementById('horarioDiaFiltroMGP').value = '';
       document.getElementById('horarioSeccionFiltroMGP').value = '';
       document.getElementById('horarioResultadoMGP').innerHTML = '';
       document.getElementById('horarioMsgMGP').textContent = '';
@@ -7706,10 +7718,9 @@ function renderizarHorarioDocentesMGP(resultado) {
   if (!clases.length) {
     contenedor.innerHTML =
       '<div style="padding:18px;border:1px solid #dbe3ea;border-radius:12px;background:#fff;text-align:center;">' +
-        '<strong>No hay clases para la consulta actual.</strong><br>' +
+        '<strong>No se encontraron clases con los filtros seleccionados.</strong><br>' +
         '<span style="font-size:13px;color:#64748b;">' +
-        escaparHtmlHorarioDocentesMGP(resultado.dia || '') +
-        ' · ' + escaparHtmlHorarioDocentesMGP(resultado.hora || '') +
+        escaparHtmlHorarioDocentesMGP(resultado.dia || 'TODOS') +
         '</span>' +
       '</div>';
     return;
@@ -7750,6 +7761,7 @@ async function consultarHorarioDocentesMGP() {
   const mensaje = document.getElementById('horarioMsgMGP');
   const boton = document.getElementById('horarioConsultarBtnMGP');
   const docente = document.getElementById('horarioDocenteFiltroMGP');
+  const dia = document.getElementById('horarioDiaFiltroMGP');
   const seccion = document.getElementById('horarioSeccionFiltroMGP');
 
   if (!state.token) {
@@ -7763,6 +7775,7 @@ async function consultarHorarioDocentesMGP() {
   try {
     const resultado = await solicitarHorarioDocentesMGP({
       docente: docente ? docente.value.trim() : '',
+      dia: dia ? dia.value.trim() : '',
       seccion: seccion ? seccion.value.trim() : ''
     });
 
@@ -7774,9 +7787,8 @@ async function consultarHorarioDocentesMGP() {
 
     if (mensaje) {
       mensaje.textContent =
-        'Consulta: ' +
-        String(resultado.dia || '') +
-        ' · ' + String(resultado.hora || '') +
+        'Horario: ' +
+        String(resultado.dia || 'TODOS') +
         ' · Clases encontradas: ' +
         String(resultado.total || 0);
     }
