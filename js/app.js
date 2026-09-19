@@ -1794,7 +1794,8 @@ const vistas = [
   'registro',
   'reportes',
   'carnets',
-  'admin'
+  'admin',
+  'horario'
 
 ];
 
@@ -2348,6 +2349,8 @@ if (entrarBtn) {
         inicializarModuloJustificacionesMGP();
 
         inicializarModuloAdministracionUsuariosMGP();
+
+        inicializarModuloHorarioDocentesMGP();
 
         console.log(
           'Usuario autenticado V2:',
@@ -7534,6 +7537,279 @@ document.getElementById('dniBtn')
 window.activarCamara = iniciarCamara;
 window.detenerCamara = detenerCamara;
 window.cambiarCamara = cambiarCamara;
+
+/* =========================================================
+   HORARIO DOCENTES V2 - DEV 01 FRONTEND
+   ---------------------------------------------------------
+   Consulta de lectura del horario institucional.
+   Requiere consultarHorario.
+   No modifica HORARIO ni ninguna otra hoja.
+   ========================================================= */
+
+let horarioDocentesMGPInicializado = false;
+let horarioDocentesMGPCallbackId = 0;
+
+function puedeConsultarHorarioDocentesMGP() {
+  return !!(
+    state.permisos &&
+    state.permisos.consultarHorario === true
+  );
+}
+
+function escaparHtmlHorarioDocentesMGP(valor) {
+  return String(valor == null ? '' : valor)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function solicitarHorarioDocentesMGP(params) {
+  return new Promise(function(resolve, reject) {
+    const callbackName =
+      'mgpHorarioCallback_' +
+      (++horarioDocentesMGPCallbackId) + '_' + Date.now();
+
+    const script = document.createElement('script');
+    let terminado = false;
+
+    const timeout = setTimeout(function() {
+      if (terminado) return;
+      terminado = true;
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('Tiempo de espera agotado al consultar el horario.'));
+    }, 15000);
+
+    window[callbackName] = function(resultado) {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      resolve(resultado || {});
+    };
+
+    script.onerror = function() {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      reject(new Error('No se pudo comunicar con el servidor de horario.'));
+    };
+
+    const query = [];
+    Object.keys(params || {}).forEach(function(clave) {
+      const valor = params[clave];
+      if (valor === undefined || valor === null || valor === '') return;
+      query.push(
+        encodeURIComponent(clave) + '=' +
+        encodeURIComponent(String(valor))
+      );
+    });
+
+    query.push('action=apiHorarioDocentes');
+    query.push('token=' + encodeURIComponent(state.token || ''));
+    query.push('callback=' + encodeURIComponent(callbackName));
+    query.push('_t=' + Date.now());
+
+    script.src = CONFIG.API_URL + '?' + query.join('&');
+    document.head.appendChild(script);
+  });
+}
+
+function crearModuloHorarioDocentesMGP() {
+  let vista = document.getElementById('horario');
+  if (vista) return vista;
+
+  vista = document.createElement('section');
+  vista.id = 'horario';
+  vista.className = 'view';
+  vista.style.cssText = 'padding:20px;max-width:1200px;margin:0 auto;';
+
+  vista.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">' +
+      '<div>' +
+        '<h2 style="margin:0 0 4px;">Horario</h2>' +
+        '<div style="font-size:13px;color:#64748b;">Consulta del horario actual por docente o sección.</div>' +
+      '</div>' +
+      '<button type="button" id="horarioVolverPanelMGP">← Panel</button>' +
+    '</div>' +
+    '<div style="padding:16px;border:1px solid #dbe3ea;border-radius:12px;background:#fff;margin-bottom:16px;">' +
+      '<div style="display:grid;grid-template-columns:1fr 220px auto auto;gap:10px;align-items:end;">' +
+        '<label style="font-size:13px;">Docente<br>' +
+          '<input id="horarioDocenteFiltroMGP" type="text" placeholder="Nombre del docente" style="width:100%;box-sizing:border-box;padding:9px;margin-top:5px;">' +
+        '</label>' +
+        '<label style="font-size:13px;">Sección<br>' +
+          '<select id="horarioSeccionFiltroMGP" style="width:100%;box-sizing:border-box;padding:9px;margin-top:5px;">' +
+            '<option value="">Todas</option>' +
+            '<option>PRIMERO A</option><option>PRIMERO B</option>' +
+            '<option>SEGUNDO A</option><option>SEGUNDO B</option>' +
+            '<option>TERCERO A</option><option>TERCERO B</option>' +
+            '<option>CUARTO A</option><option>CUARTO B</option><option>CUARTO C</option>' +
+            '<option>QUINTO A</option><option>QUINTO B</option>' +
+          '</select>' +
+        '</label>' +
+        '<button type="button" id="horarioConsultarBtnMGP">Consultar</button>' +
+        '<button type="button" id="horarioLimpiarBtnMGP">Limpiar</button>' +
+      '</div>' +
+      '<div id="horarioMsgMGP" style="margin-top:12px;font-size:13px;color:#64748b;"></div>' +
+    '</div>' +
+    '<div id="horarioResultadoMGP"></div>';
+
+  document.body.appendChild(vista);
+
+  const botonPanel = document.createElement('button');
+  botonPanel.type = 'button';
+  botonPanel.id = 'horarioAccesoPanelMGP';
+  botonPanel.textContent = 'Horario';
+  botonPanel.style.cssText = 'margin:8px 0;';
+  botonPanel.addEventListener('click', function() {
+    mostrarVista('horario');
+    consultarHorarioDocentesMGP();
+  });
+
+  const panel = document.getElementById('panel');
+  if (panel) {
+    panel.insertBefore(botonPanel, panel.firstChild);
+  }
+
+  document.getElementById('horarioVolverPanelMGP')
+    .addEventListener('click', function() {
+      mostrarVista('panel');
+    });
+
+  document.getElementById('horarioConsultarBtnMGP')
+    .addEventListener('click', consultarHorarioDocentesMGP);
+
+  document.getElementById('horarioLimpiarBtnMGP')
+    .addEventListener('click', function() {
+      document.getElementById('horarioDocenteFiltroMGP').value = '';
+      document.getElementById('horarioSeccionFiltroMGP').value = '';
+      document.getElementById('horarioResultadoMGP').innerHTML = '';
+      document.getElementById('horarioMsgMGP').textContent = '';
+    });
+
+  return vista;
+}
+
+function renderizarHorarioDocentesMGP(resultado) {
+  const contenedor = document.getElementById('horarioResultadoMGP');
+  if (!contenedor) return;
+
+  const clases = Array.isArray(resultado.clases)
+    ? resultado.clases
+    : [];
+
+  if (!clases.length) {
+    contenedor.innerHTML =
+      '<div style="padding:18px;border:1px solid #dbe3ea;border-radius:12px;background:#fff;text-align:center;">' +
+        '<strong>No hay clases para la consulta actual.</strong><br>' +
+        '<span style="font-size:13px;color:#64748b;">' +
+        escaparHtmlHorarioDocentesMGP(resultado.dia || '') +
+        ' · ' + escaparHtmlHorarioDocentesMGP(resultado.hora || '') +
+        '</span>' +
+      '</div>';
+    return;
+  }
+
+  contenedor.innerHTML =
+    '<div style="overflow:auto;border:1px solid #dbe3ea;border-radius:12px;background:#fff;">' +
+      '<table style="width:100%;border-collapse:collapse;min-width:760px;font-size:13px;">' +
+        '<thead><tr>' +
+          '<th style="padding:10px;text-align:left;">Día</th>' +
+          '<th style="padding:10px;text-align:left;">Hora</th>' +
+          '<th style="padding:10px;text-align:left;">Sección</th>' +
+          '<th style="padding:10px;text-align:left;">Área</th>' +
+          '<th style="padding:10px;text-align:left;">Docente</th>' +
+          '<th style="padding:10px;text-align:left;">Aula</th>' +
+        '</tr></thead>' +
+        '<tbody>' +
+          clases.map(function(item) {
+            return '<tr>' +
+              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.dia) + '</td>' +
+              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.hora) + '</td>' +
+              '<td style="padding:10px;"><strong>' + escaparHtmlHorarioDocentesMGP(item.seccion) + '</strong></td>' +
+              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.area) + '</td>' +
+              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.docente) + '</td>' +
+              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.aula) + '</td>' +
+            '</tr>';
+          }).join('') +
+        '</tbody>' +
+      '</table>' +
+    '</div>';
+}
+
+async function consultarHorarioDocentesMGP() {
+  if (!puedeConsultarHorarioDocentesMGP()) {
+    return;
+  }
+
+  const mensaje = document.getElementById('horarioMsgMGP');
+  const boton = document.getElementById('horarioConsultarBtnMGP');
+  const docente = document.getElementById('horarioDocenteFiltroMGP');
+  const seccion = document.getElementById('horarioSeccionFiltroMGP');
+
+  if (!state.token) {
+    if (mensaje) mensaje.textContent = 'Sesión no disponible.';
+    return;
+  }
+
+  if (boton) boton.disabled = true;
+  if (mensaje) mensaje.textContent = 'Consultando horario...';
+
+  try {
+    const resultado = await solicitarHorarioDocentesMGP({
+      docente: docente ? docente.value.trim() : '',
+      seccion: seccion ? seccion.value.trim() : ''
+    });
+
+    if (!resultado.ok || resultado.exito === false) {
+      throw new Error(resultado.mensaje || 'No se pudo obtener el horario.');
+    }
+
+    renderizarHorarioDocentesMGP(resultado);
+
+    if (mensaje) {
+      mensaje.textContent =
+        'Consulta: ' +
+        String(resultado.dia || '') +
+        ' · ' + String(resultado.hora || '') +
+        ' · Clases encontradas: ' +
+        String(resultado.total || 0);
+    }
+  }
+  catch (error) {
+    console.error('Error en Horario Docentes V2:', error);
+    if (mensaje) mensaje.textContent = '❌ ' + error.message;
+    const contenedor = document.getElementById('horarioResultadoMGP');
+    if (contenedor) contenedor.innerHTML = '';
+  }
+  finally {
+    if (boton) boton.disabled = false;
+  }
+}
+
+function inicializarModuloHorarioDocentesMGP() {
+  const vista = crearModuloHorarioDocentesMGP();
+  if (!vista) return;
+
+  const boton = document.getElementById('horarioAccesoPanelMGP');
+
+  if (!puedeConsultarHorarioDocentesMGP()) {
+    vista.style.display = 'none';
+    if (boton) boton.style.display = 'none';
+    return;
+  }
+
+  vista.style.display = '';
+
+  if (horarioDocentesMGPInicializado) return;
+  horarioDocentesMGPInicializado = true;
+}
+
 
 /* =========================================================
    ADMINISTRACIÓN DE USUARIOS V2 - DEV 01 FRONTEND
