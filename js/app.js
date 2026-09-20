@@ -7678,7 +7678,7 @@ function crearModuloHorarioDocentesMGP() {
   vista = document.createElement('section');
   vista.id = 'horario';
   vista.className = 'view';
-  vista.style.cssText = 'padding:20px;max-width:1200px;margin:0 auto;';
+  vista.style.cssText = 'padding:20px;max-width:1200px;margin:0 auto;box-sizing:border-box;';
 
   vista.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">' +
@@ -7689,7 +7689,7 @@ function crearModuloHorarioDocentesMGP() {
       '<button type="button" id="horarioVolverPanelMGP">← Panel</button>' +
     '</div>' +
     '<div style="padding:16px;border:1px solid #dbe3ea;border-radius:12px;background:#fff;margin-bottom:16px;">' +
-      '<div style="display:grid;grid-template-columns:1fr 170px 220px auto auto;gap:10px;align-items:end;">' +
+      '<div class="mgp-horario-filtros" style="display:grid;grid-template-columns:1fr 170px 220px auto auto;gap:10px;align-items:end;">' +
         '<label style="font-size:13px;">Docente<br>' +
           '<input id="horarioDocenteFiltroMGP" type="text" placeholder="Nombre del docente" style="width:100%;box-sizing:border-box;padding:9px;margin-top:5px;">' +
         '</label>' +
@@ -7776,9 +7776,62 @@ function renderizarHorarioDocentesMGP(resultado) {
     return;
   }
 
+  const filasTabla = clases.map(function(item) {
+    return '<tr>' +
+      '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.dia) + '</td>' +
+      '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.hora) + '</td>' +
+      '<td style="padding:10px;"><strong>' + escaparHtmlHorarioDocentesMGP(item.seccion) + '</strong></td>' +
+      '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.area) + '</td>' +
+      '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.docente) + '</td>' +
+      '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.aula) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  const tarjetasMovil = clases.map(function(item) {
+    return '<article class="mgp-horario-tarjeta-movil">' +
+      '<div class="mgp-horario-tarjeta-cabecera">' +
+        '<strong>' + escaparHtmlHorarioDocentesMGP(item.dia) + '</strong>' +
+        '<span>' + escaparHtmlHorarioDocentesMGP(item.hora) + '</span>' +
+      '</div>' +
+      '<div class="mgp-horario-tarjeta-seccion">' +
+        escaparHtmlHorarioDocentesMGP(item.seccion) +
+      '</div>' +
+      '<div class="mgp-horario-campo-movil"><span>Área</span><strong>' +
+        escaparHtmlHorarioDocentesMGP(item.area) +
+      '</strong></div>' +
+      '<div class="mgp-horario-campo-movil"><span>Docente</span><strong>' +
+        escaparHtmlHorarioDocentesMGP(item.docente) +
+      '</strong></div>' +
+      '<div class="mgp-horario-campo-movil"><span>Aula</span><strong>' +
+        escaparHtmlHorarioDocentesMGP(item.aula) +
+      '</strong></div>' +
+    '</article>';
+  }).join('');
+
   contenedor.innerHTML =
-    '<div style="overflow:auto;border:1px solid #dbe3ea;border-radius:12px;background:#fff;">' +
-      '<table style="width:100%;border-collapse:collapse;min-width:760px;font-size:13px;">' +
+    '<style id="mgpHorarioResponsiveStyle">' +
+      '.mgp-horario-tabla-contenedor{overflow-x:auto;border:1px solid #dbe3ea;border-radius:12px;background:#fff;}' +
+      '.mgp-horario-tabla{width:100%;border-collapse:collapse;min-width:760px;font-size:13px;}' +
+      '.mgp-horario-movil{display:none;}' +
+      '.mgp-horario-tarjeta-movil{border:1px solid #dbe3ea;border-radius:12px;background:#fff;padding:13px;box-sizing:border-box;}' +
+      '.mgp-horario-tarjeta-cabecera{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:9px;}' +
+      '.mgp-horario-tarjeta-cabecera span{font-weight:600;white-space:nowrap;}' +
+      '.mgp-horario-tarjeta-seccion{font-size:16px;font-weight:700;margin-bottom:10px;}' +
+      '.mgp-horario-campo-movil{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;padding:5px 0;font-size:13px;}' +
+      '.mgp-horario-campo-movil span{color:#64748b;}' +
+      '.mgp-horario-campo-movil strong{min-width:0;overflow-wrap:anywhere;}' +
+      '@media (max-width:700px){' +
+        '#horario{padding:12px !important;box-sizing:border-box;max-width:100% !important;overflow-x:hidden;}' +
+        '#horario .mgp-horario-filtros{grid-template-columns:1fr !important;}' +
+        '#horario .mgp-horario-filtros label{width:100%;}' +
+        '#horario .mgp-horario-filtros button{width:100%;min-height:42px;}' +
+        '#horario .mgp-horario-filtros input,#horario .mgp-horario-filtros select{font-size:16px;}' +
+        '#horario .mgp-horario-tabla-contenedor{display:none;}' +
+        '#horario .mgp-horario-movil{display:grid;grid-template-columns:1fr;gap:10px;}' +
+      '}' +
+    '</style>' +
+    '<div class="mgp-horario-tabla-contenedor">' +
+      '<table class="mgp-horario-tabla">' +
         '<thead><tr>' +
           '<th style="padding:10px;text-align:left;">Día</th>' +
           '<th style="padding:10px;text-align:left;">Hora</th>' +
@@ -7787,19 +7840,11 @@ function renderizarHorarioDocentesMGP(resultado) {
           '<th style="padding:10px;text-align:left;">Docente</th>' +
           '<th style="padding:10px;text-align:left;">Aula</th>' +
         '</tr></thead>' +
-        '<tbody>' +
-          clases.map(function(item) {
-            return '<tr>' +
-              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.dia) + '</td>' +
-              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.hora) + '</td>' +
-              '<td style="padding:10px;"><strong>' + escaparHtmlHorarioDocentesMGP(item.seccion) + '</strong></td>' +
-              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.area) + '</td>' +
-              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.docente) + '</td>' +
-              '<td style="padding:10px;">' + escaparHtmlHorarioDocentesMGP(item.aula) + '</td>' +
-            '</tr>';
-          }).join('') +
-        '</tbody>' +
+        '<tbody>' + filasTabla + '</tbody>' +
       '</table>' +
+    '</div>' +
+    '<div class="mgp-horario-movil">' +
+      tarjetasMovil +
     '</div>';
 }
 
