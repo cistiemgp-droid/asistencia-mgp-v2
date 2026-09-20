@@ -291,17 +291,8 @@ function guardarRegistroOfflineMGP(id) {
     const tipo =
       String(state.tipo || 'estudiante').trim();
 
-    const estadoSeleccionado =
-      String(state.estado || 'INGRESO').trim().toUpperCase();
-
-    // PERSONAL ONLINE usa el nuevo motor automático del servidor.
-    // ESTUDIANTE y el modo OFFLINE conservan su comportamiento actual.
-    const esPersonalAuto =
-      String(tipo || '').trim().toLowerCase() === 'personal' &&
-      state.registroModo !== 'OFFLINE';
-
     const estado =
-      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
+      String(state.estado || 'INGRESO').trim().toUpperCase();
 
     if (!idLimpio) {
       reject(new Error('No se obtuvo el DNI para registrar.'));
@@ -2507,24 +2498,6 @@ document
           boton.dataset.tipo ||
           'estudiante';
 
-        // PERSONAL ONLINE funciona en modo automático.
-        // No mostramos INGRESO/SALIDA para evitar que el usuario
-        // intente seleccionar manualmente una operación que decide
-        // el servidor. El modo OFFLINE conserva sus controles.
-        const esPersonal =
-          String(state.tipo).trim().toLowerCase() === 'personal';
-
-        const estadoBotones =
-          document.querySelectorAll('[data-e], [data-estado]');
-
-        estadoBotones.forEach(function(estadoBoton) {
-          if (esPersonal && state.registroModo !== 'OFFLINE') {
-            estadoBoton.style.display = 'none';
-          } else {
-            estadoBoton.style.display = '';
-          }
-        });
-
       }
     );
 
@@ -3084,46 +3057,31 @@ async function identificarQRBackend(
 
       if (mensaje) {
 
-        const esPersonalIdentificado =
-          String(state.tipo || 'estudiante').trim().toLowerCase() === 'personal';
+        mensaje.innerHTML =
 
-        const etiquetaIdentificacion =
-          esPersonalIdentificado
-            ? 'PERSONAL IDENTIFICADO'
-            : 'ESTUDIANTE IDENTIFICADO';
+          '<strong>✅ ESTUDIANTE IDENTIFICADO</strong><br>' +
 
-        const nombreIdentificado =
-          esPersonalIdentificado
-            ? (resultado.datos && resultado.datos.nombre) ||
-              (estudiante.apellidoPaterno || '')
-            : (
-                (estudiante.apellidoPaterno || '') + ' ' +
-                (estudiante.apellidoMaterno || '') + ' ' +
-                (estudiante.nombres || '')
-              ).trim();
+          'DNI: ' +
+          estudiante.dni +
+          '<br>' +
 
-        const detalleIdentificado =
-          esPersonalIdentificado
-            ? ((resultado.datos && resultado.datos.perfil) || 'PERSONAL')
-            : (
-                ((estudiante.grado || '') + ' ' +
-                 (estudiante.seccion || '')).trim()
-              );
+          estudiante.apellidoPaterno +
+          ' ' +
 
-        if (esPersonalIdentificado) {
-          mensaje.innerHTML =
-            '<strong>✅ ' + etiquetaIdentificacion + '</strong><br>' +
-            'DNI: ' + estudiante.dni + '<br>' +
-            nombreIdentificado + '<br>' +
-            'Rol: ' + detalleIdentificado;
-        } else {
-          mensaje.innerHTML =
-            '<strong>✅ ' + etiquetaIdentificacion + '</strong><br>' +
-            'DNI: ' + estudiante.dni + '<br>' +
-            nombreIdentificado + '<br>' +
-            'Grado: ' + detalleIdentificado + '<br>' +
-            'Turno: ' + (estudiante.turno || '');
-        }
+          estudiante.apellidoMaterno +
+          ' ' +
+
+          estudiante.nombres +
+          '<br>' +
+
+          'Grado: ' +
+          estudiante.grado +
+          ' ' +
+          estudiante.seccion +
+          '<br>' +
+
+          'Turno: ' +
+          estudiante.turno;
 
       }
 
@@ -3172,9 +3130,17 @@ async function identificarQRBackend(
     // Ese DNI se envía al endpoint apiRegistrar para registrar la asistencia.
     // =================================================
 
-    // La identificación y el registro permanecen separados.
-    // El callback de cámara recibe el DNI identificado y recién aquí
-    // entra al motor de registro correspondiente al tipo de persona.
+    if (
+      resultado.tipoQR === 'LEGACY_2026' &&
+      resultado.estudiante &&
+      resultado.estudiante.dni
+    ) {
+
+      await registrarAsistenciaBackend(
+        resultado.estudiante.dni
+      );
+
+    }
 
 
     return resultado;
@@ -3285,15 +3251,8 @@ function registrarAsistenciaOfflineMGP(id) {
     const tipo =
       String(state.tipo || 'estudiante').trim();
 
-    const estadoSeleccionado =
-      String(state.estado || 'INGRESO').trim().toUpperCase();
-
-    const esPersonalAuto =
-      tipo.toLowerCase() === 'personal' &&
-      state.registroModo !== 'OFFLINE';
-
     const estado =
-      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
+      String(state.estado || 'INGRESO').trim().toUpperCase();
 
     if (!idLimpio) {
 
@@ -3450,17 +3409,8 @@ function registrarAsistenciaBackend(id) {
     const tipo =
       String(state.tipo || 'estudiante').trim();
 
-    const estadoSeleccionado =
-      String(state.estado || 'INGRESO').trim().toUpperCase();
-
-    // PERSONAL ONLINE no obliga al docente a pulsar SALIDA.
-    // El servidor decide INGRESO/SALIDA mediante AUTO_PERSONAL.
-    const esPersonalAuto =
-      tipo.toLowerCase() === 'personal' &&
-      state.registroModo !== 'OFFLINE';
-
     const estado =
-      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
+      String(state.estado || 'INGRESO').trim().toUpperCase();
 
     if (!idLimpio) {
 
@@ -3479,7 +3429,7 @@ function registrarAsistenciaBackend(id) {
     if (mensaje) {
       mensaje.innerHTML =
         '<strong>⏳ REGISTRANDO ' +
-        (esPersonalAuto ? 'PERSONAL' : (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO')) +
+        (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO') +
         '...</strong><br>' +
         'DNI: ' + idLimpio + '<br>' +
         'Tipo: ' + tipo + '<br>' +
@@ -3516,9 +3466,6 @@ function registrarAsistenciaBackend(id) {
             { datos: datos }
           );
 
-          const esPersonalRespuesta =
-            tipo.toLowerCase() === 'personal';
-
           const nombre =
             datos.nombre ||
             (state.persona && state.persona.estudiante
@@ -3529,7 +3476,7 @@ function registrarAsistenciaBackend(id) {
                 ).trim()
               : '');
 
-          const detalleEstudiante =
+          const detalle =
             datos.gradoSeccion ||
             (state.persona && state.persona.estudiante
               ? (
@@ -3538,32 +3485,13 @@ function registrarAsistenciaBackend(id) {
                 ).trim()
               : '');
 
-          const rolPersonal =
-            (datos.perfil ||
-             (state.persona && state.persona.datos && state.persona.datos.perfil) ||
-             (state.persona && state.persona.estudiante && state.persona.estudiante.turno) ||
-             'PERSONAL');
-
-          const estadoRespuesta =
-            String(data.estado || '').trim().toUpperCase();
-
-          // AUTO_PERSONAL es solo una orden interna. Si por compatibilidad
-          // el servidor no devuelve todavía el estado efectivo, no lo mostramos
-          // como estado final al usuario. El API corregido sí devuelve INGRESO/SALIDA.
-          const estadoFinal =
-            estadoRespuesta === 'INGRESO' || estadoRespuesta === 'SALIDA'
-              ? estadoRespuesta
-              : (esPersonalRespuesta ? 'INGRESO' : estado);
-
           if (mensaje) {
             mensaje.innerHTML =
-              '<strong>✅ ' + (estadoFinal === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
+              '<strong>✅ ' + (String(data.estado || estado).toUpperCase() === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
               'DNI: ' + idLimpio + '<br>' +
               (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
-              (esPersonalRespuesta
-                ? 'Rol: ' + rolPersonal + '<br>'
-                : (detalleEstudiante ? 'Grado: ' + detalleEstudiante + '<br>' : '')) +
-              'Estado: ' + estadoFinal + '<br>' +
+              (detalle ? 'Grado: ' + detalle + '<br>' : '') +
+              'Estado: ' + (data.estado || estado) + '<br>' +
               'Hora: ' + (data.hora || '--:--:--') + '<br>' +
               'Puntualidad: ' + (data.puntualidad || 'N/A');
           }
@@ -3789,6 +3717,47 @@ function asegurarHtml5QrCode() {
 
   });
 
+}
+
+
+// =====================================================
+// ESPEJO VISUAL CONTROLADO DE LA CÁMARA FRONTAL
+// =====================================================
+// SOLO modifica la previsualización en pantalla.
+// No modifica facingMode, el stream ni la lectura QR.
+// Frontal  -> espejo visual para que el movimiento sea natural.
+// Trasera  -> vista normal.
+// =====================================================
+
+function aplicarEspejoCamaraMGP(usarEspejo) {
+
+  const reader =
+    document.getElementById('reader');
+
+  if (!reader) {
+    return;
+  }
+
+  let style =
+    document.getElementById('mgp-camera-mirror-style');
+
+  if (!style) {
+    style =
+      document.createElement('style');
+
+    style.id =
+      'mgp-camera-mirror-style';
+
+    style.textContent =
+      '#reader.mgp-camera-frontal-espejo video { transform: scaleX(-1); transform-origin: center center; }';
+
+    document.head.appendChild(style);
+  }
+
+  reader.classList.toggle(
+    'mgp-camera-frontal-espejo',
+    !!usarEspejo
+  );
 }
 
 
@@ -4035,42 +4004,12 @@ async function iniciarCamara() {
         );
 
 
-        // Primero identificamos el QR. No enviamos el texto bruto del QR
-        // a apiRegistrar: el backend de identificación devuelve el DNI real.
-        // En ONLINE, el registro se inicia únicamente después de identificar.
-        const identificacionPromise =
-          state.registroModo === 'OFFLINE'
-            ? Promise.resolve(null)
-            : identificarQRBackend(decodedText);
-
-        let registroPromise;
-
-        if (state.registroModo === 'OFFLINE') {
-          registroPromise = registrarAsistenciaSegunModoMGP(decodedText);
-        } else {
-          registroPromise = identificacionPromise.then(function(resultadoIdentificacion) {
-            if (!resultadoIdentificacion || !resultadoIdentificacion.ok) {
-              return resultadoIdentificacion || { exito: false };
-            }
-
-            const dniIdentificado =
-              resultadoIdentificacion.dni ||
-              (resultadoIdentificacion.estudiante && resultadoIdentificacion.estudiante.dni) ||
-              (resultadoIdentificacion.personal && resultadoIdentificacion.personal.dni) ||
-              '';
-
-            if (!dniIdentificado) {
-              const mensaje = document.getElementById('regMsg');
-              if (mensaje) {
-                mensaje.textContent =
-                  '❌ QR identificado, pero no se obtuvo el DNI para registrar.';
-              }
-              return { exito: false };
-            }
-
-            return registrarAsistenciaSegunModoMGP(dniIdentificado);
-          });
-        }
+        // Iniciamos el registro inmediatamente y detenemos la cámara
+        // en paralelo. En OFFLINE no se realiza ninguna llamada HTTP.
+        const registroPromise =
+          registrarAsistenciaSegunModoMGP(
+            decodedText
+          );
 
         await detenerCamara();
 
@@ -4112,6 +4051,13 @@ async function iniciarCamara() {
 
       }
 
+    );
+
+
+    // Cambio controlado: solo espeja visualmente la frontal.
+    // La lectura QR y el stream original permanecen intactos.
+    aplicarEspejoCamaraMGP(
+      camaraFrontal
     );
 
 
@@ -4533,6 +4479,8 @@ if (cameraSelect) {
 // =====================================================
 
 async function detenerCamara() {
+
+  aplicarEspejoCamaraMGP(false);
 
   if (cameraState.reader) {
 
