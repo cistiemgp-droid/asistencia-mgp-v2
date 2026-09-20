@@ -291,8 +291,17 @@ function guardarRegistroOfflineMGP(id) {
     const tipo =
       String(state.tipo || 'estudiante').trim();
 
-    const estado =
+    const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
+
+    // PERSONAL ONLINE usa el nuevo motor automático del servidor.
+    // ESTUDIANTE y el modo OFFLINE conservan su comportamiento actual.
+    const esPersonalAuto =
+      String(tipo || '').trim().toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
+
+    const estado =
+      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
 
     if (!idLimpio) {
       reject(new Error('No se obtuvo el DNI para registrar.'));
@@ -3429,7 +3438,7 @@ function registrarAsistenciaBackend(id) {
     if (mensaje) {
       mensaje.innerHTML =
         '<strong>⏳ REGISTRANDO ' +
-        (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO') +
+        (esPersonalAuto ? 'PERSONAL' : (estado === 'SALIDA' ? 'SALIDA' : 'INGRESO')) +
         '...</strong><br>' +
         'DNI: ' + idLimpio + '<br>' +
         'Tipo: ' + tipo + '<br>' +
