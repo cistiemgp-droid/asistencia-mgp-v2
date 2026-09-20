@@ -3526,8 +3526,16 @@ function registrarAsistenciaBackend(id) {
              (state.persona && state.persona.estudiante && state.persona.estudiante.turno) ||
              'PERSONAL');
 
+          const estadoRespuesta =
+            String(data.estado || '').trim().toUpperCase();
+
+          // AUTO_PERSONAL es solo una orden interna. Si por compatibilidad
+          // el servidor no devuelve todavía el estado efectivo, no lo mostramos
+          // como estado final al usuario. El API corregido sí devuelve INGRESO/SALIDA.
           const estadoFinal =
-            String(data.estado || estado).trim().toUpperCase();
+            estadoRespuesta === 'INGRESO' || estadoRespuesta === 'SALIDA'
+              ? estadoRespuesta
+              : (esPersonalRespuesta ? 'INGRESO' : estado);
 
           if (mensaje) {
             mensaje.innerHTML =
