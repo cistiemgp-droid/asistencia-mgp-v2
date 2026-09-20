@@ -7718,6 +7718,27 @@ function crearModuloHorarioDocentesMGP() {
       '</div>' +
       '<div id="horarioMsgMGP" style="margin-top:12px;font-size:13px;color:#64748b;"></div>' +
     '</div>' +
+    '<style id="mgpHorarioResponsiveStyle">' +
+      '.mgp-horario-tabla-contenedor{overflow-x:auto;border:1px solid #dbe3ea;border-radius:12px;background:#fff;}' +
+      '.mgp-horario-tabla{width:100%;border-collapse:collapse;min-width:760px;font-size:13px;}' +
+      '.mgp-horario-movil{display:none;}' +
+      '.mgp-horario-tarjeta-movil{border:1px solid #dbe3ea;border-radius:12px;background:#fff;padding:13px;box-sizing:border-box;}' +
+      '.mgp-horario-tarjeta-cabecera{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:9px;}' +
+      '.mgp-horario-tarjeta-cabecera span{font-weight:600;white-space:nowrap;}' +
+      '.mgp-horario-tarjeta-seccion{font-size:16px;font-weight:700;margin-bottom:10px;}' +
+      '.mgp-horario-campo-movil{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;padding:5px 0;font-size:13px;}' +
+      '.mgp-horario-campo-movil span{color:#64748b;}' +
+      '.mgp-horario-campo-movil strong{min-width:0;overflow-wrap:anywhere;}' +
+      '@media (max-width:700px){' +
+        '#horario{padding:12px !important;box-sizing:border-box;max-width:100% !important;overflow-x:hidden;}' +
+        '#horario .mgp-horario-filtros{grid-template-columns:1fr !important;}' +
+        '#horario .mgp-horario-filtros label{width:100%;}' +
+        '#horario .mgp-horario-filtros button{width:100%;min-height:42px;}' +
+        '#horario .mgp-horario-filtros input,#horario .mgp-horario-filtros select{font-size:16px;}' +
+        '#horario .mgp-horario-tabla-contenedor{display:none;}' +
+        '#horario .mgp-horario-movil{display:grid;grid-template-columns:1fr;gap:10px;}' +
+      '}' +
+    '</style>' +
     '<div id="horarioResultadoMGP"></div>';
 
   document.body.appendChild(vista);
@@ -7809,27 +7830,6 @@ function renderizarHorarioDocentesMGP(resultado) {
   }).join('');
 
   contenedor.innerHTML =
-    '<style id="mgpHorarioResponsiveStyle">' +
-      '.mgp-horario-tabla-contenedor{overflow-x:auto;border:1px solid #dbe3ea;border-radius:12px;background:#fff;}' +
-      '.mgp-horario-tabla{width:100%;border-collapse:collapse;min-width:760px;font-size:13px;}' +
-      '.mgp-horario-movil{display:none;}' +
-      '.mgp-horario-tarjeta-movil{border:1px solid #dbe3ea;border-radius:12px;background:#fff;padding:13px;box-sizing:border-box;}' +
-      '.mgp-horario-tarjeta-cabecera{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:9px;}' +
-      '.mgp-horario-tarjeta-cabecera span{font-weight:600;white-space:nowrap;}' +
-      '.mgp-horario-tarjeta-seccion{font-size:16px;font-weight:700;margin-bottom:10px;}' +
-      '.mgp-horario-campo-movil{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;padding:5px 0;font-size:13px;}' +
-      '.mgp-horario-campo-movil span{color:#64748b;}' +
-      '.mgp-horario-campo-movil strong{min-width:0;overflow-wrap:anywhere;}' +
-      '@media (max-width:700px){' +
-        '#horario{padding:12px !important;box-sizing:border-box;max-width:100% !important;overflow-x:hidden;}' +
-        '#horario .mgp-horario-filtros{grid-template-columns:1fr !important;}' +
-        '#horario .mgp-horario-filtros label{width:100%;}' +
-        '#horario .mgp-horario-filtros button{width:100%;min-height:42px;}' +
-        '#horario .mgp-horario-filtros input,#horario .mgp-horario-filtros select{font-size:16px;}' +
-        '#horario .mgp-horario-tabla-contenedor{display:none;}' +
-        '#horario .mgp-horario-movil{display:grid;grid-template-columns:1fr;gap:10px;}' +
-      '}' +
-    '</style>' +
     '<div class="mgp-horario-tabla-contenedor">' +
       '<table class="mgp-horario-tabla">' +
         '<thead><tr>' +
