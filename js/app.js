@@ -3139,17 +3139,9 @@ async function identificarQRBackend(
     // Ese DNI se envía al endpoint apiRegistrar para registrar la asistencia.
     // =================================================
 
-    if (
-      resultado.tipoQR === 'LEGACY_2026' &&
-      resultado.estudiante &&
-      resultado.estudiante.dni
-    ) {
-
-      await registrarAsistenciaBackend(
-        resultado.estudiante.dni
-      );
-
-    }
+    // La identificación y el registro permanecen separados.
+    // El callback de cámara recibe el DNI identificado y recién aquí
+    // entra al motor de registro correspondiente al tipo de persona.
 
 
     return resultado;
@@ -3260,8 +3252,15 @@ function registrarAsistenciaOfflineMGP(id) {
     const tipo =
       String(state.tipo || 'estudiante').trim();
 
-    const estado =
+    const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
+
+    const esPersonalAuto =
+      tipo.toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
+
+    const estado =
+      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
 
     if (!idLimpio) {
 
@@ -3972,12 +3971,42 @@ async function iniciarCamara() {
         );
 
 
-        // Iniciamos el registro inmediatamente y detenemos la cámara
-        // en paralelo. En OFFLINE no se realiza ninguna llamada HTTP.
-        const registroPromise =
-          registrarAsistenciaSegunModoMGP(
-            decodedText
-          );
+        // Primero identificamos el QR. No enviamos el texto bruto del QR
+        // a apiRegistrar: el backend de identificación devuelve el DNI real.
+        // En ONLINE, el registro se inicia únicamente después de identificar.
+        const identificacionPromise =
+          state.registroModo === 'OFFLINE'
+            ? Promise.resolve(null)
+            : identificarQRBackend(decodedText);
+
+        let registroPromise;
+
+        if (state.registroModo === 'OFFLINE') {
+          registroPromise = registrarAsistenciaSegunModoMGP(decodedText);
+        } else {
+          registroPromise = identificacionPromise.then(function(resultadoIdentificacion) {
+            if (!resultadoIdentificacion || !resultadoIdentificacion.ok) {
+              return resultadoIdentificacion || { exito: false };
+            }
+
+            const dniIdentificado =
+              resultadoIdentificacion.dni ||
+              (resultadoIdentificacion.estudiante && resultadoIdentificacion.estudiante.dni) ||
+              (resultadoIdentificacion.personal && resultadoIdentificacion.personal.dni) ||
+              '';
+
+            if (!dniIdentificado) {
+              const mensaje = document.getElementById('regMsg');
+              if (mensaje) {
+                mensaje.textContent =
+                  '❌ QR identificado, pero no se obtuvo el DNI para registrar.';
+              }
+              return { exito: false };
+            }
+
+            return registrarAsistenciaSegunModoMGP(dniIdentificado);
+          });
+        }
 
         await detenerCamara();
 
