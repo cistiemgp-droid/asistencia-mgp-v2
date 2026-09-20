@@ -3066,31 +3066,46 @@ async function identificarQRBackend(
 
       if (mensaje) {
 
-        mensaje.innerHTML =
+        const esPersonalIdentificado =
+          String(state.tipo || 'estudiante').trim().toLowerCase() === 'personal';
 
-          '<strong>✅ ESTUDIANTE IDENTIFICADO</strong><br>' +
+        const etiquetaIdentificacion =
+          esPersonalIdentificado
+            ? 'PERSONAL IDENTIFICADO'
+            : 'ESTUDIANTE IDENTIFICADO';
 
-          'DNI: ' +
-          estudiante.dni +
-          '<br>' +
+        const nombreIdentificado =
+          esPersonalIdentificado
+            ? (resultado.datos && resultado.datos.nombre) ||
+              (estudiante.apellidoPaterno || '')
+            : (
+                (estudiante.apellidoPaterno || '') + ' ' +
+                (estudiante.apellidoMaterno || '') + ' ' +
+                (estudiante.nombres || '')
+              ).trim();
 
-          estudiante.apellidoPaterno +
-          ' ' +
+        const detalleIdentificado =
+          esPersonalIdentificado
+            ? ((resultado.datos && resultado.datos.perfil) || 'PERSONAL')
+            : (
+                ((estudiante.grado || '') + ' ' +
+                 (estudiante.seccion || '')).trim()
+              );
 
-          estudiante.apellidoMaterno +
-          ' ' +
-
-          estudiante.nombres +
-          '<br>' +
-
-          'Grado: ' +
-          estudiante.grado +
-          ' ' +
-          estudiante.seccion +
-          '<br>' +
-
-          'Turno: ' +
-          estudiante.turno;
+        if (esPersonalIdentificado) {
+          mensaje.innerHTML =
+            '<strong>✅ ' + etiquetaIdentificacion + '</strong><br>' +
+            'DNI: ' + estudiante.dni + '<br>' +
+            nombreIdentificado + '<br>' +
+            'Rol: ' + detalleIdentificado;
+        } else {
+          mensaje.innerHTML =
+            '<strong>✅ ' + etiquetaIdentificacion + '</strong><br>' +
+            'DNI: ' + estudiante.dni + '<br>' +
+            nombreIdentificado + '<br>' +
+            'Grado: ' + detalleIdentificado + '<br>' +
+            'Turno: ' + (estudiante.turno || '');
+        }
 
       }
 
@@ -3417,8 +3432,17 @@ function registrarAsistenciaBackend(id) {
     const tipo =
       String(state.tipo || 'estudiante').trim();
 
-    const estado =
+    const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
+
+    // PERSONAL ONLINE no obliga al docente a pulsar SALIDA.
+    // El servidor decide INGRESO/SALIDA mediante AUTO_PERSONAL.
+    const esPersonalAuto =
+      tipo.toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
+
+    const estado =
+      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
 
     if (!idLimpio) {
 
