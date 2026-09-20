@@ -2507,6 +2507,24 @@ document
           boton.dataset.tipo ||
           'estudiante';
 
+        // PERSONAL ONLINE funciona en modo automático.
+        // No mostramos INGRESO/SALIDA para evitar que el usuario
+        // intente seleccionar manualmente una operación que decide
+        // el servidor. El modo OFFLINE conserva sus controles.
+        const esPersonal =
+          String(state.tipo).trim().toLowerCase() === 'personal';
+
+        const estadoBotones =
+          document.querySelectorAll('[data-e], [data-estado]');
+
+        estadoBotones.forEach(function(estadoBoton) {
+          if (esPersonal && state.registroModo !== 'OFFLINE') {
+            estadoBoton.style.display = 'none';
+          } else {
+            estadoBoton.style.display = '';
+          }
+        });
+
       }
     );
 
