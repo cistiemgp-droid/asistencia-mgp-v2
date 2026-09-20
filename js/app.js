@@ -3498,6 +3498,9 @@ function registrarAsistenciaBackend(id) {
             { datos: datos }
           );
 
+          const esPersonalRespuesta =
+            tipo.toLowerCase() === 'personal';
+
           const nombre =
             datos.nombre ||
             (state.persona && state.persona.estudiante
@@ -3508,7 +3511,7 @@ function registrarAsistenciaBackend(id) {
                 ).trim()
               : '');
 
-          const detalle =
+          const detalleEstudiante =
             datos.gradoSeccion ||
             (state.persona && state.persona.estudiante
               ? (
@@ -3517,13 +3520,24 @@ function registrarAsistenciaBackend(id) {
                 ).trim()
               : '');
 
+          const rolPersonal =
+            (datos.perfil ||
+             (state.persona && state.persona.datos && state.persona.datos.perfil) ||
+             (state.persona && state.persona.estudiante && state.persona.estudiante.turno) ||
+             'PERSONAL');
+
+          const estadoFinal =
+            String(data.estado || estado).trim().toUpperCase();
+
           if (mensaje) {
             mensaje.innerHTML =
-              '<strong>✅ ' + (String(data.estado || estado).toUpperCase() === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
+              '<strong>✅ ' + (estadoFinal === 'SALIDA' ? 'SALIDA REGISTRADA' : 'INGRESO REGISTRADO') + '</strong><br>' +
               'DNI: ' + idLimpio + '<br>' +
               (nombre ? 'Nombre: ' + nombre + '<br>' : '') +
-              (detalle ? 'Grado: ' + detalle + '<br>' : '') +
-              'Estado: ' + (data.estado || estado) + '<br>' +
+              (esPersonalRespuesta
+                ? 'Rol: ' + rolPersonal + '<br>'
+                : (detalleEstudiante ? 'Grado: ' + detalleEstudiante + '<br>' : '')) +
+              'Estado: ' + estadoFinal + '<br>' +
               'Hora: ' + (data.hora || '--:--:--') + '<br>' +
               'Puntualidad: ' + (data.puntualidad || 'N/A');
           }
