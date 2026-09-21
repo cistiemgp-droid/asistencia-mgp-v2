@@ -3310,59 +3310,45 @@ function registrarAsistenciaOfflineMGP(id) {
     // =================================================
     // VALIDACIÓN OFFLINE DEL TIPO DE PERSONA
     // =================================================
-    // Si este DNI ya fue identificado ONLINE, no permitimos
-    // registrarlo con un tipo diferente. Esto evita el caso
-    // detectado: ESTUDIANTE seleccionado como PERSONAL.
-    // Si el DNI nunca fue identificado ONLINE en este dispositivo,
-    // no podemos verificar su pertenencia sin servidor; por seguridad
-    // el registro OFFLINE se bloquea y se solicita una identificación
-    // previa ONLINE.
+    // Si este DNI ya fue identificado ONLINE, conservamos
+    // la protección contra registrar el tipo equivocado.
+    //
+    // Si el DNI NO tiene identidad cacheada, NO se bloquea:
+    // el registro OFFLINE debe continuar y guardarse en IndexedDB.
+    //
+    // Esto permite que un estudiante o personal pueda registrar
+    // su asistencia OFFLINE aunque nunca haya sido identificado
+    // previamente ONLINE en ese dispositivo.
     const identidadOffline =
       obtenerIdentidadOfflineMGP(idLimpio);
 
-    if (!identidadOffline) {
+    if (identidadOffline) {
 
-      if (mensaje) {
-        mensaje.innerHTML =
-          '<strong>⚠️ NO SE PUEDE VALIDAR OFFLINE</strong><br>' +
-          'DNI: ' + idLimpio + '<br>' +
-          'Este DNI no tiene una identidad previamente validada en este dispositivo.<br>' +
-          '<strong>Conéctese a Internet, identifique el QR y vuelva a intentar.</strong>';
+      if (
+        normalizarTipoPersonaOfflineMGP(identidadOffline.tipo) !==
+        normalizarTipoPersonaOfflineMGP(tipo)
+      ) {
+
+        if (mensaje) {
+          mensaje.innerHTML =
+            '<strong>❌ TIPO DE PERSONA INCORRECTO</strong><br>' +
+            'DNI: ' + idLimpio + '<br>' +
+            'Seleccionado: <strong>' + tipo.toUpperCase() + '</strong><br>' +
+            'Registrado como: <strong>' + identidadOffline.tipo.toUpperCase() + '</strong><br>' +
+            'El registro NO se guardó offline.';
+        }
+
+        resolve({
+          exito: false,
+          offline: true,
+          validacionTipo: false,
+          motivo: 'TIPO_PERSONA_NO_CORRESPONDE',
+          tipoSeleccionado: normalizarTipoPersonaOfflineMGP(tipo),
+          tipoValidado: normalizarTipoPersonaOfflineMGP(identidadOffline.tipo)
+        });
+        return;
+
       }
-
-      resolve({
-        exito: false,
-        offline: true,
-        validacionTipo: false,
-        motivo: 'IDENTIDAD_NO_VALIDADA_OFFLINE'
-      });
-      return;
-
-    }
-
-    if (
-      normalizarTipoPersonaOfflineMGP(identidadOffline.tipo) !==
-      normalizarTipoPersonaOfflineMGP(tipo)
-    ) {
-
-      if (mensaje) {
-        mensaje.innerHTML =
-          '<strong>❌ TIPO DE PERSONA INCORRECTO</strong><br>' +
-          'DNI: ' + idLimpio + '<br>' +
-          'Seleccionado: <strong>' + tipo.toUpperCase() + '</strong><br>' +
-          'Registrado como: <strong>' + identidadOffline.tipo.toUpperCase() + '</strong><br>' +
-          'El registro NO se guardó offline.';
-      }
-
-      resolve({
-        exito: false,
-        offline: true,
-        validacionTipo: false,
-        motivo: 'TIPO_PERSONA_NO_CORRESPONDE',
-        tipoSeleccionado: normalizarTipoPersonaOfflineMGP(tipo),
-        tipoValidado: normalizarTipoPersonaOfflineMGP(identidadOffline.tipo)
-      });
-      return;
 
     }
 
