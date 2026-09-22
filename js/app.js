@@ -1533,23 +1533,6 @@ function actualizarModoRegistroMGP() {
 
   actualizarControlesErroresOfflineMGP();
 
-  // PERSONAL ONLINE usa AUTO_PERSONAL y oculta INGRESO/SALIDA.
-  // PERSONAL OFFLINE necesita conservar los controles manuales.
-  // Este bloque sincroniza la interfaz inmediatamente al cambiar ONLINE/OFFLINE.
-  const esPersonalActual =
-    String(state.tipo || '').trim().toLowerCase() === 'personal';
-
-  const estadoBotonesModo =
-    document.querySelectorAll('[data-e], [data-estado]');
-
-  estadoBotonesModo.forEach(function(estadoBoton) {
-    if (esPersonalActual && !offline) {
-      estadoBoton.style.display = 'none';
-    } else {
-      estadoBoton.style.display = '';
-    }
-  });
-
   const sincronizarBtn =
     document.getElementById('sincronizarOfflineBtnMGP');
 
@@ -3328,40 +3311,58 @@ function registrarAsistenciaOfflineMGP(id) {
     // VALIDACIÓN OFFLINE DEL TIPO DE PERSONA
     // =================================================
     // Si este DNI ya fue identificado ONLINE, no permitimos
-    // registrarlo con un tipo diferente.
-    // Si el DNI NO tiene identidad en caché local, se permite
-    // el registro OFFLINE. La validación de identidad queda
-    // pendiente del servidor durante la sincronización.
+    // registrarlo con un tipo diferente. Esto evita el caso
+    // detectado: ESTUDIANTE seleccionado como PERSONAL.
+    // Si el DNI nunca fue identificado ONLINE en este dispositivo,
+    // no podemos verificar su pertenencia sin servidor; por seguridad
+    // el registro OFFLINE se bloquea y se solicita una identificación
+    // previa ONLINE.
     const identidadOffline =
       obtenerIdentidadOfflineMGP(idLimpio);
 
-    if (identidadOffline) {
+    if (!identidadOffline) {
 
-      if (
-        normalizarTipoPersonaOfflineMGP(identidadOffline.tipo) !==
-        normalizarTipoPersonaOfflineMGP(tipo)
-      ) {
-
-        if (mensaje) {
-          mensaje.innerHTML =
-            '<strong>❌ TIPO DE PERSONA INCORRECTO</strong><br>' +
-            'DNI: ' + idLimpio + '<br>' +
-            'Seleccionado: <strong>' + tipo.toUpperCase() + '</strong><br>' +
-            'Registrado como: <strong>' + identidadOffline.tipo.toUpperCase() + '</strong><br>' +
-            'El registro NO se guardó offline.';
-        }
-
-        resolve({
-          exito: false,
-          offline: true,
-          validacionTipo: false,
-          motivo: 'TIPO_PERSONA_NO_CORRESPONDE',
-          tipoSeleccionado: normalizarTipoPersonaOfflineMGP(tipo),
-          tipoValidado: normalizarTipoPersonaOfflineMGP(identidadOffline.tipo)
-        });
-        return;
-
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>⚠️ NO SE PUEDE VALIDAR OFFLINE</strong><br>' +
+          'DNI: ' + idLimpio + '<br>' +
+          'Este DNI no tiene una identidad previamente validada en este dispositivo.<br>' +
+          '<strong>Conéctese a Internet, identifique el QR y vuelva a intentar.</strong>';
       }
+
+      resolve({
+        exito: false,
+        offline: true,
+        validacionTipo: false,
+        motivo: 'IDENTIDAD_NO_VALIDADA_OFFLINE'
+      });
+      return;
+
+    }
+
+    if (
+      normalizarTipoPersonaOfflineMGP(identidadOffline.tipo) !==
+      normalizarTipoPersonaOfflineMGP(tipo)
+    ) {
+
+      if (mensaje) {
+        mensaje.innerHTML =
+          '<strong>❌ TIPO DE PERSONA INCORRECTO</strong><br>' +
+          'DNI: ' + idLimpio + '<br>' +
+          'Seleccionado: <strong>' + tipo.toUpperCase() + '</strong><br>' +
+          'Registrado como: <strong>' + identidadOffline.tipo.toUpperCase() + '</strong><br>' +
+          'El registro NO se guardó offline.';
+      }
+
+      resolve({
+        exito: false,
+        offline: true,
+        validacionTipo: false,
+        motivo: 'TIPO_PERSONA_NO_CORRESPONDE',
+        tipoSeleccionado: normalizarTipoPersonaOfflineMGP(tipo),
+        tipoValidado: normalizarTipoPersonaOfflineMGP(identidadOffline.tipo)
+      });
+      return;
 
     }
 
@@ -4847,6 +4848,29 @@ const reporteMensualFiltros =
     'reporteMensualFiltros'
   );
 
+// REPORTES DE PERSONAL V2 — reintegración controlada.
+if (reporteTipo) {
+  const existePersonal = Array.from(reporteTipo.options).some(function(opcion) {
+    return String(opcion.value || '').toLowerCase() === 'personal';
+  });
+  if (!existePersonal) {
+    const opcionPersonal = document.createElement('option');
+    opcionPersonal.value = 'personal';
+    opcionPersonal.textContent = 'Diario — Personal';
+    reporteTipo.appendChild(opcionPersonal);
+  }
+
+  const existeMensualPersonal = Array.from(reporteTipo.options).some(function(opcion) {
+    return String(opcion.value || '').toLowerCase() === 'mensual_personal';
+  });
+  if (!existeMensualPersonal) {
+    const opcionMensualPersonal = document.createElement('option');
+    opcionMensualPersonal.value = 'mensual_personal';
+    opcionMensualPersonal.textContent = 'Mensual — Personal';
+    reporteTipo.appendChild(opcionMensualPersonal);
+  }
+}
+
 
 function actualizarFiltroReporte() {
 
@@ -4863,11 +4887,26 @@ function actualizarFiltroReporte() {
   const esMensual =
     tipo === 'mensual';
 
+  const esMensualPersonal =
+    tipo === 'mensual_personal';
+
+  const esPersonal =
+    tipo === 'personal';
+
   const esAlertas =
     tipo === 'alertas';
 
   const usaFiltroMensual =
-    esMensual || esAlertas;
+    esMensual || esMensualPersonal || esAlertas;
+
+  const grupoGrado = document.getElementById('reporteGrado')
+    ? document.getElementById('reporteGrado').closest('.grupo')
+    : null;
+
+  if (grupoGrado) {
+    grupoGrado.style.display =
+      (esPersonal || esMensualPersonal) ? 'none' : '';
+  }
 
 
   if (reporteFecha) {
@@ -4972,7 +5011,7 @@ async function consultarReporte() {
       tablaReporteBase.style.width = 'max-content';
       tablaReporteBase.style.maxWidth = 'none';
       tablaReporteBase.style.minWidth =
-        tipoReporte === 'mensual'
+        (tipoReporte === 'mensual' || tipoReporte === 'mensual_personal')
           ? '1050px'
           : '720px';
       tablaReporteBase.style.tableLayout = 'auto';
@@ -5007,11 +5046,17 @@ const mes =
 const esMensual =
   tipoReporte === 'mensual';
 
+const esMensualPersonal =
+  tipoReporte === 'mensual_personal';
+
+const esPersonal =
+  tipoReporte === 'personal';
+
 const esAlertas =
   tipoReporte === 'alertas';
 
 const usaFiltroMensual =
-  esMensual || esAlertas;
+  esMensual || esMensualPersonal || esAlertas;
 
   // -------------------------------------------------
   // VALIDACIONES
@@ -5324,6 +5369,76 @@ const usaFiltroMensual =
 
 
     // -------------------------------------------------
+    // REPORTES DE PERSONAL V2 — RENDER INDEPENDIENTE
+    // -------------------------------------------------
+    if (tipoReporte === 'personal' || tipoReporte === 'mensual_personal') {
+
+      const personal = Array.isArray(resultado.personal) ? resultado.personal : [];
+      const datosResumenPersonal = resultado.resumen || {};
+
+      const totalElemento = document.getElementById('reporteTotal');
+      const presentesElemento = document.getElementById('reportePresentes');
+      const puntualesElemento = document.getElementById('reportePuntuales');
+      const tardanzasElemento = document.getElementById('reporteTardanzas');
+      const faltasElemento = document.getElementById('reporteFaltas');
+
+      if (totalElemento) totalElemento.textContent = datosResumenPersonal.total || 0;
+      if (presentesElemento) presentesElemento.textContent = datosResumenPersonal.presentes || 0;
+      if (puntualesElemento) puntualesElemento.textContent = datosResumenPersonal.puntuales || 0;
+      if (tardanzasElemento) tardanzasElemento.textContent = datosResumenPersonal.tardanzas || 0;
+      if (faltasElemento) faltasElemento.textContent = tipoReporte === 'personal' ? (datosResumenPersonal.ausentes || 0) : (datosResumenPersonal.faltas || 0);
+
+      if (resumen) resumen.style.display = 'block';
+      if (resultados) resultados.style.display = 'block';
+
+      const tablaElementoPersonal = tabla ? tabla.closest('table') : null;
+      const cabeceraPersonal = tablaElementoPersonal ? tablaElementoPersonal.querySelector('thead') : null;
+
+      if (cabeceraPersonal) {
+        if (tipoReporte === 'mensual_personal') {
+          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Días evaluados</th><th>Presentes</th><th>Faltas</th><th>Puntuales</th><th>Tardanzas</th><th>% Asistencia</th><th>Salidas</th></tr>';
+        } else {
+          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>Puntualidad</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
+        }
+      }
+
+      if (tabla) {
+        tabla.style.display = 'table-row-group';
+        tabla.hidden = false;
+        tabla.innerHTML = '';
+
+        personal.forEach(function(persona) {
+          const fila = document.createElement('tr');
+          const valores = tipoReporte === 'mensual_personal'
+            ? [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.diasEvaluados || 0, persona.presentes || 0, persona.faltas || 0, persona.puntuales || 0, persona.tardanzas || 0, (persona.porcentajeAsistencia || 0) + '%', persona.conSalida || 0]
+            : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+          valores.forEach(function(valor) { const celda = document.createElement('td'); celda.textContent = String(valor); fila.appendChild(celda); });
+          tabla.appendChild(fila);
+        });
+      }
+
+      ultimoReporteMGP = {
+        tipoReporte: tipoReporte,
+        fecha: fecha,
+        mes: mes,
+        grado: '',
+        resumen: datosResumenPersonal,
+        alumnos: [],
+        personal: personal
+      };
+
+      actualizarBotonesDescargaReporte();
+      matrizMensualVisibleMGP = false;
+      renderizarMatrizMensualMGP();
+
+      if (mensaje) {
+        mensaje.textContent = '✅ ' + (tipoReporte === 'mensual_personal' ? 'Reporte mensual de personal generado: ' : 'Reporte diario de personal generado: ') + personal.length + ' registro(s).';
+      }
+
+      return;
+    }
+
+    // -------------------------------------------------
     // GUARDAR REPORTE ACTUAL PARA EXPORTACIÓN
     // -------------------------------------------------
 
@@ -5335,6 +5450,9 @@ const usaFiltroMensual =
       resumen: resultado.resumen || {},
       alumnos: Array.isArray(resultado.alumnos)
         ? resultado.alumnos
+        : [],
+      personal: Array.isArray(resultado.personal)
+        ? resultado.personal
         : []
     };
 
@@ -6971,7 +7089,8 @@ function actualizarBotonesDescargaReporte() {
 
   const habilitado =
     !!ultimoReporteMGP &&
-    Array.isArray(ultimoReporteMGP.alumnos);
+    (Array.isArray(ultimoReporteMGP.alumnos) ||
+     Array.isArray(ultimoReporteMGP.personal));
 
   if (descargarReporteExcelBtn) {
     descargarReporteExcelBtn.disabled = !habilitado;
@@ -7011,12 +7130,27 @@ function obtenerDatosExportacionReporte() {
 
   const reporte = ultimoReporteMGP;
   const esMensual =
-    reporte.tipoReporte === 'mensual';
+    reporte.tipoReporte === 'mensual' ||
+    reporte.tipoReporte === 'mensual_personal';
 
   let encabezados = [];
   let filas = [];
 
-  if (esMensual) {
+  if (reporte.tipoReporte === 'personal') {
+
+    encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','Puntualidad','Método','Usuario','Observación'];
+    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
+      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+    });
+
+  } else if (reporte.tipoReporte === 'mensual_personal') {
+
+    encabezados = ['DNI','Personal','Cargo','Área','Días evaluados','Presentes','Faltas','Puntuales','Tardanzas','% Asistencia','Salidas'];
+    filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
+      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.diasEvaluados || 0, persona.presentes || 0, persona.faltas || 0, persona.puntuales || 0, persona.tardanzas || 0, (persona.porcentajeAsistencia || 0) + '%', persona.conSalida || 0];
+    });
+
+  } else if (esMensual) {
 
     encabezados = [
       'DNI',
@@ -7092,9 +7226,11 @@ function obtenerTituloReporteMGP(datos) {
 
   const nombres = {
     asistencia: 'REPORTE DE ASISTENCIA',
+    personal: 'REPORTE DIARIO DE PERSONAL',
     faltas: 'REPORTE DE FALTAS',
     tardanzas: 'REPORTE DE TARDANZAS',
-    mensual: 'REPORTE MENSUAL DE ASISTENCIA'
+    mensual: 'REPORTE MENSUAL DE ASISTENCIA',
+    mensual_personal: 'REPORTE MENSUAL DE PERSONAL'
   };
 
   return nombres[datos.reporte.tipoReporte] ||
@@ -7125,10 +7261,13 @@ function obtenerSubtituloReporteMGP(datos) {
     }
   }
 
-  partes.push(
-    'Grado / Sección: ' +
-    (reporte.grado || 'Todos')
-  );
+  if (reporte.tipoReporte !== 'personal' &&
+      reporte.tipoReporte !== 'mensual_personal') {
+    partes.push(
+      'Grado / Sección: ' +
+      (reporte.grado || 'Todos')
+    );
+  }
 
   return partes.join('   |   ');
 }
