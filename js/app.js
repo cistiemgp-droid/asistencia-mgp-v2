@@ -5854,6 +5854,23 @@ const usaFiltroMensual =
           document.getElementById('justMotivoMGP').value = '';
           document.getElementById('justObservacionMGP').value = '';
           actualizarCamposJustificacionMGP();
+
+          // La vista de Justificaciones puede estar dentro de otra vista
+          // institucional. Activarla antes de desplazar el formulario;
+          // scrollIntoView() por sí solo no cambia la vista activa.
+          let contenedorVista = bloque;
+          let vistaDestino = '';
+          while (contenedorVista && contenedorVista !== document.body) {
+            const idVista = String(contenedorVista.id || '').trim();
+            if (['portal','consulta','login','panel','registro','reportes','carnets','admin','horario'].indexOf(idVista) >= 0) {
+              vistaDestino = idVista;
+              break;
+            }
+            contenedorVista = contenedorVista.parentElement;
+          }
+          if (vistaDestino && typeof mostrarVista === 'function') {
+            mostrarVista(vistaDestino);
+          }
           bloque.scrollIntoView({behavior:'smooth', block:'start'});
           const motivo = document.getElementById('justMotivoMGP');
           if (motivo) motivo.focus();
