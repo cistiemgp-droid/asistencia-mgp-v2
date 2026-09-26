@@ -8895,7 +8895,11 @@ function inicializarModuloJustificacionesMGP() {
 
   aplicarAlcanceJustificacionesMGP();
   actualizarCamposJustificacionMGP();
-  listarJustificacionesMGP();
+
+  // La consulta general NO se ejecuta automáticamente al entrar
+  // al módulo. El usuario la solicita mediante el botón Listar.
+  // Así se evita una llamada pesada en segundo plano que pueda
+  // interferir visualmente con Alertas -> Justificar.
 }
 
 function aplicarAlcanceJustificacionesMGP() {
