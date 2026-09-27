@@ -5739,8 +5739,9 @@ const usaFiltroMensual =
         '10%',
         '20%',
         '10%',
-        '24%',
-        '7%'
+        '21%',
+        '6%',
+        '8%'
       ].forEach(function(ancho) {
         const col = document.createElement('col');
         col.style.width = ancho;
@@ -5769,7 +5770,8 @@ const usaFiltroMensual =
         'Estudiante',
         'Grado / Sección',
         'Mensaje',
-        'Valor'
+        'Valor',
+        'Acción'
       ].forEach(
         function(texto) {
 
@@ -5882,9 +5884,26 @@ const usaFiltroMensual =
             }
           );
 
-          tbodyAlertas.appendChild(
-            fila
-          );
+          const celdaAccion = document.createElement('td');
+          celdaAccion.style.padding = '8px';
+          celdaAccion.style.borderBottom = '1px solid #ddd';
+          celdaAccion.style.verticalAlign = 'top';
+
+          if (String(alerta.tipo || '').toUpperCase() === 'LIMITE_DNI') {
+            const botonJustificar = document.createElement('button');
+            botonJustificar.type = 'button';
+            botonJustificar.textContent = 'Justificar';
+            botonJustificar.style.cursor = 'pointer';
+            botonJustificar.addEventListener('click', function() {
+              abrirJustificacionDniLimiteMGP(alerta, mes);
+            });
+            celdaAccion.appendChild(botonJustificar);
+          } else {
+            celdaAccion.textContent = '—';
+          }
+
+          fila.appendChild(celdaAccion);
+          tbodyAlertas.appendChild(fila);
 
         }
       );
@@ -8747,6 +8766,57 @@ function escaparHtmlJustificacionesMGP(valor) {
     .replace(/'/g, '&#039;');
 }
 
+function asegurarOpcionTipoDniLimiteMGP() {
+  const select = document.getElementById('justTipoMGP');
+  if (!select) return null;
+  let opcion = select.querySelector('option[value="DNI_LIMITE"]');
+  if (!opcion) {
+    opcion = document.createElement('option');
+    opcion.value = 'DNI_LIMITE';
+    opcion.textContent = 'DNI_LIMITE - Límite mensual';
+    select.appendChild(opcion);
+  }
+  return opcion;
+}
+
+function asegurarCampoPeriodoDniMGP() {
+  let input = document.getElementById('justPeriodoDniMGP');
+  if (input) return input;
+  input = document.createElement('input');
+  input.type = 'month';
+  input.id = 'justPeriodoDniMGP';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  return input;
+}
+
+function abrirJustificacionDniLimiteMGP(alerta, mes) {
+  asegurarOpcionTipoDniLimiteMGP();
+  const periodo = asegurarCampoPeriodoDniMGP();
+  const tipoPersona = document.getElementById('justTipoPersonaMGP');
+  const tipo = document.getElementById('justTipoMGP');
+  const dni = document.getElementById('justDniMGP');
+  const idPersona = document.getElementById('justIdPersonaMGP');
+  const fecha = document.getElementById('justFechaMGP');
+  const idRegistro = document.getElementById('justIdRegistroMGP');
+  const motivo = document.getElementById('justMotivoMGP');
+  if (!tipo) return;
+  if (tipoPersona) tipoPersona.value = 'estudiante';
+  tipo.value = 'DNI_LIMITE';
+  if (dni) dni.value = String(alerta.dni || '');
+  if (idPersona) idPersona.value = String(alerta.id || '');
+  if (periodo) periodo.value = String(mes || '').trim();
+  if (fecha) fecha.value = '';
+  if (idRegistro) idRegistro.value = '';
+  if (motivo) motivo.value = 'Justificación de incidencia por límite mensual de registros mediante DNI.';
+  justificacionesMGPEnEdicion = null;
+  const bloque = document.getElementById('justificacionesMGP');
+  if (bloque) bloque.style.display = '';
+  actualizarCamposJustificacionMGP();
+  mostrarMensajeJustificacionMGP('⚠️ Incidencia DNI_LIMITE cargada para justificar. Periodo: ' + String(mes || ''), false);
+  if (bloque) bloque.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 function solicitarJustificacionesMGP(params) {
   return new Promise(function(resolve, reject) {
     const callbackName =
@@ -8862,10 +8932,17 @@ function actualizarCamposJustificacionMGP() {
   if (!tipo || !idRegistro) return;
 
   const tardanza = tipo.value === 'TARDANZA';
+  const dniLimite = tipo.value === 'DNI_LIMITE';
   idRegistro.disabled = !tardanza;
   idRegistro.placeholder = tardanza
     ? 'ID_REGISTRO de la tardanza'
-    : 'No aplica para falta';
+    : 'No aplica para ' + (dniLimite ? 'DNI_LIMITE' : 'falta');
+  const fecha = document.getElementById('justFechaMGP');
+  if (fecha) {
+    fecha.disabled = dniLimite;
+    fecha.placeholder = dniLimite ? 'No aplica para DNI_LIMITE' : '';
+  }
+  if (dniLimite) asegurarCampoPeriodoDniMGP();
 }
 
 function mostrarMensajeJustificacionMGP(texto, error) {
@@ -8926,7 +9003,7 @@ function renderizarJustificacionesMGP(lista) {
       item.dni,
       item.nombre,
       item.tipo,
-      item.fechaInasistencia,
+      item.tipo === 'DNI_LIMITE' ? ('Periodo: ' + (item.periodoDni || '')) : item.fechaInasistencia,
       item.motivo,
       item.estado,
       item.responsable,
@@ -8971,8 +9048,14 @@ async function guardarJustificacionMGP() {
     mostrarMensajeJustificacionMGP('❌ Indique DNI o ID de persona.', true);
     return;
   }
-  if (!fecha) {
+  const periodoDniEl = asegurarCampoPeriodoDniMGP();
+  const periodoDni = periodoDniEl ? String(periodoDniEl.value || '').trim() : '';
+  if (tipo !== 'DNI_LIMITE' && !fecha) {
     mostrarMensajeJustificacionMGP('❌ Indique la fecha de inasistencia.', true);
+    return;
+  }
+  if (tipo === 'DNI_LIMITE' && !periodoDni) {
+    mostrarMensajeJustificacionMGP('❌ Indique el periodo mensual de la incidencia DNI_LIMITE.', true);
     return;
   }
   if (!motivo) {
@@ -8993,7 +9076,8 @@ async function guardarJustificacionMGP() {
       tipo:tipo,
       dni:dni,
       idPersona:idPersona,
-      fechaInasistencia:fecha,
+      fechaInasistencia:tipo === 'DNI_LIMITE' ? '' : fecha,
+      periodoDni:tipo === 'DNI_LIMITE' ? periodoDni : '',
       idRegistro:tipo === 'TARDANZA' ? idRegistro : '',
       motivo:motivo,
       observacion:observacion
@@ -9019,12 +9103,14 @@ async function guardarJustificacionMGP() {
 }
 
 function cargarEdicionJustificacionMGP(item) {
+  if (item && item.tipo === 'DNI_LIMITE') asegurarOpcionTipoDniLimiteMGP();
   justificacionesMGPEnEdicion = item;
   document.getElementById('justTipoPersonaMGP').value = item.tipoPersona || 'estudiante';
   document.getElementById('justTipoMGP').value = item.tipo || 'FALTA';
   document.getElementById('justDniMGP').value = item.dni || '';
   document.getElementById('justIdPersonaMGP').value = item.idPersona || '';
   document.getElementById('justFechaMGP').value = item.fechaInasistencia || '';
+  asegurarCampoPeriodoDniMGP().value = item.periodoDni || '';
   document.getElementById('justIdRegistroMGP').value = item.idRegistro || '';
   document.getElementById('justMotivoMGP').value = item.motivo || '';
   document.getElementById('justObservacionMGP').value = item.observacion || '';
@@ -9045,6 +9131,7 @@ function cancelarEdicionJustificacionMGP() {
     if (el) el.value = '';
   });
   document.getElementById('justTipoMGP').value = 'FALTA';
+  asegurarCampoPeriodoDniMGP().value = '';
   document.getElementById('justGuardarBtnMGP').textContent = '💾 Registrar justificación';
   document.getElementById('justCancelarBtnMGP').style.display = 'none';
   actualizarCamposJustificacionMGP();
