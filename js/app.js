@@ -281,7 +281,7 @@ function generarIdOfflineMGP() {
 
 }
 
-function guardarRegistroOfflineMGP(id, metodoRegistro) {
+function guardarRegistroOfflineMGP(id) {
 
   return new Promise(function(resolve, reject) {
 
@@ -303,13 +303,6 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
 
-    const metodo =
-      String(metodoRegistro || 'DNI')
-        .trim()
-        .toUpperCase() === 'QR'
-        ? 'QR'
-        : 'DNI';
-
     if (!idLimpio) {
       reject(new Error('No se obtuvo el DNI para registrar.'));
       return;
@@ -324,7 +317,6 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       id: idLimpio,
       tipo: tipo,
       estado: estado,
-      metodo: metodo,
       usuario: state.usuario && state.usuario.usuario
         ? String(state.usuario.usuario)
         : '',
@@ -699,13 +691,6 @@ function enviarRegistroOfflineAlServidorMGP(registro) {
     const idOffline =
       String(registro.idOffline || '').trim();
 
-    const metodo =
-      String(registro.metodo || 'DNI')
-        .trim()
-        .toUpperCase() === 'QR'
-        ? 'QR'
-        : 'DNI';
-
     script.src =
       CONFIG.API_URL +
       '?action=apiRegistrar' +
@@ -715,7 +700,6 @@ function enviarRegistroOfflineAlServidorMGP(registro) {
       '&token=' + encodeURIComponent(state.token || '') +
       '&fechaHoraCliente=' + encodeURIComponent(fechaHoraCliente) +
       '&idOffline=' + encodeURIComponent(idOffline) +
-      '&metodo=' + encodeURIComponent(metodo) +
       '&callback=' + encodeURIComponent(nombreCallback);
 
     script.async = true;
@@ -3288,7 +3272,7 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
+function registrarAsistenciaOfflineMGP(id) {
 
   return new Promise(function(resolve) {
 
@@ -3310,13 +3294,6 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
-
-    const metodo =
-      String(metodoRegistro || 'DNI')
-        .trim()
-        .toUpperCase() === 'QR'
-        ? 'QR'
-        : 'DNI';
 
     if (!idLimpio) {
 
@@ -3379,7 +3356,7 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         'Estado: ' + estado;
     }
 
-    guardarRegistroOfflineMGP(idLimpio, metodo)
+    guardarRegistroOfflineMGP(idLimpio)
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
@@ -3432,24 +3409,17 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
 }
 
-function registrarAsistenciaSegunModoMGP(id, metodoRegistro) {
-
-  const metodo =
-    String(metodoRegistro || 'DNI')
-      .trim()
-      .toUpperCase() === 'QR'
-      ? 'QR'
-      : 'DNI';
+function registrarAsistenciaSegunModoMGP(id) {
 
   if (state.registroModo === 'OFFLINE') {
-    return registrarAsistenciaOfflineMGP(id, metodo);
+    return registrarAsistenciaOfflineMGP(id);
   }
 
-  return registrarAsistenciaBackend(id, metodo);
+  return registrarAsistenciaBackend(id);
 
 }
 
-function registrarAsistenciaBackend(id, metodoRegistro) {
+function registrarAsistenciaBackend(id) {
 
   return new Promise(function(resolve) {
 
@@ -3473,13 +3443,6 @@ function registrarAsistenciaBackend(id, metodoRegistro) {
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
-
-    const metodo =
-      String(metodoRegistro || 'DNI')
-        .trim()
-        .toUpperCase() === 'QR'
-        ? 'QR'
-        : 'DNI';
 
     if (!idLimpio) {
 
@@ -3609,7 +3572,6 @@ function registrarAsistenciaBackend(id, metodoRegistro) {
       '&id=' + encodeURIComponent(idLimpio) +
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
-      '&metodo=' + encodeURIComponent(metodo) +
       '&token=' + encodeURIComponent(state.token || '') +
       '&callback=respuestaRegistroMGP';
 
@@ -4107,7 +4069,7 @@ async function iniciarCamara() {
         let registroPromise;
 
         if (state.registroModo === 'OFFLINE') {
-          registroPromise = registrarAsistenciaSegunModoMGP(decodedText, 'QR');
+          registroPromise = registrarAsistenciaSegunModoMGP(decodedText);
         } else {
           registroPromise = identificacionPromise.then(function(resultadoIdentificacion) {
             if (!resultadoIdentificacion || !resultadoIdentificacion.ok) {
@@ -4129,7 +4091,7 @@ async function iniciarCamara() {
               return { exito: false };
             }
 
-            return registrarAsistenciaSegunModoMGP(dniIdentificado, 'QR');
+            return registrarAsistenciaSegunModoMGP(dniIdentificado);
           });
         }
 
@@ -5740,14 +5702,15 @@ const usaFiltroMensual =
         document.createElement('colgroup');
 
       [
-        '8%',
-        '8%',
-        '13%',
+        '7%',
+        '7%',
+        '11%',
+        '9%',
+        '18%',
         '10%',
-        '20%',
-        '10%',
-        '24%',
-        '7%'
+        '21%',
+        '7%',
+        '10%'
       ].forEach(function(ancho) {
         const col = document.createElement('col');
         col.style.width = ancho;
@@ -5776,7 +5739,8 @@ const usaFiltroMensual =
         'Estudiante',
         'Grado / Sección',
         'Mensaje',
-        'Valor'
+        'Valor',
+        'Acción'
       ].forEach(
         function(texto) {
 
@@ -5828,6 +5792,98 @@ const usaFiltroMensual =
 
       const tbodyAlertas =
         document.createElement('tbody');
+
+      async function prepararJustificacionDesdeAlertaMGP(alerta) {
+        if (!puedeAdministrarJustificacionesMGP()) {
+          alert('No tiene permiso para administrar justificaciones.');
+          return;
+        }
+        const tipoAlerta = String(alerta && alerta.tipo || '').trim().toUpperCase();
+        if (tipoAlerta !== 'TARDANZAS' && tipoAlerta !== 'FALTAS' && tipoAlerta !== 'LIMITE_DNI') {
+          alert('Esta alerta no tiene una incidencia directa justificable.');
+          return;
+        }
+        const mesConsulta = String(ultimoReporteMGP && ultimoReporteMGP.mes || '').trim();
+        if (!mesConsulta) {
+          alert('No se pudo determinar el mes de la alerta.');
+          return;
+        }
+        try {
+          const resultado = await solicitarJustificacionesMGP({
+            operacion:'listarIncidenciasAlerta',
+            tipoAlerta:tipoAlerta,
+            dni:String(alerta.dni || '').trim(),
+            mes:mesConsulta
+          });
+          if (!resultado.ok) {
+            alert('❌ ' + (resultado.mensaje || 'No se pudieron consultar las incidencias.'));
+            return;
+          }
+          const incidencias = Array.isArray(resultado.incidencias) ? resultado.incidencias : [];
+          if (!incidencias.length) {
+            alert('No hay incidencias injustificadas disponibles para justificar.');
+            return;
+          }
+          let incidencia = incidencias[0];
+          if (incidencias.length > 1) {
+            const opciones = incidencias.map(function(item, indice) {
+              return (indice + 1) + '. ' + item.fecha + (item.hora ? ' - ' + item.hora : '');
+            }).join('\n');
+            const seleccion = window.prompt('Seleccione la incidencia que desea justificar:\n\n' + opciones + '\n\nIngrese el número:', '1');
+            const indice = Number(seleccion) - 1;
+            if (!Number.isInteger(indice) || indice < 0 || indice >= incidencias.length) return;
+            incidencia = incidencias[indice];
+          }
+          const tipoPersona = document.getElementById('justTipoPersonaMGP');
+          const tipo = document.getElementById('justTipoMGP');
+          const dni = document.getElementById('justDniMGP');
+          const fecha = document.getElementById('justFechaMGP');
+          const periodo = document.getElementById('justPeriodoMGP');
+          const idRegistro = document.getElementById('justIdRegistroMGP');
+          const idPersona = document.getElementById('justIdPersonaMGP');
+          const bloque = document.getElementById('justificacionesMGP');
+          if (!tipoPersona || !tipo || !dni || !fecha || !idRegistro || !idPersona || !bloque) {
+            alert('No se encontró el formulario de Justificaciones.');
+            return;
+          }
+          tipoPersona.value = 'estudiante';
+          tipo.value = incidencia.tipo === 'TARDANZA'
+            ? 'TARDANZA'
+            : (incidencia.tipo === 'DNI_LIMITE' ? 'DNI_LIMITE' : 'FALTA');
+          dni.value = incidencia.dni || alerta.dni || '';
+          idPersona.value = '';
+          fecha.value = incidencia.fecha || '';
+          if (periodo) periodo.value = incidencia.periodo || mesConsulta || '';
+          idRegistro.value = incidencia.tipo === 'TARDANZA' ? (incidencia.idRegistro || '') : '';
+          document.getElementById('justMotivoMGP').value = '';
+          document.getElementById('justObservacionMGP').value = '';
+          actualizarCamposJustificacionMGP();
+
+          // La vista de Justificaciones puede estar dentro de otra vista
+          // institucional. Activarla antes de desplazar el formulario;
+          // scrollIntoView() por sí solo no cambia la vista activa.
+          let contenedorVista = bloque;
+          let vistaDestino = '';
+          while (contenedorVista && contenedorVista !== document.body) {
+            const idVista = String(contenedorVista.id || '').trim();
+            if (['portal','consulta','login','panel','registro','reportes','carnets','admin','horario'].indexOf(idVista) >= 0) {
+              vistaDestino = idVista;
+              break;
+            }
+            contenedorVista = contenedorVista.parentElement;
+          }
+          if (vistaDestino && typeof mostrarVista === 'function') {
+            mostrarVista(vistaDestino);
+          }
+          bloque.scrollIntoView({behavior:'smooth', block:'start'});
+          const motivo = document.getElementById('justMotivoMGP');
+          if (motivo) motivo.focus();
+          mostrarMensajeJustificacionMGP('✏️ Incidencia seleccionada desde Alertas: ' + incidencia.tipo + ' del ' + incidencia.fecha + '.', false);
+        } catch (error) {
+          alert('❌ ' + error.message);
+        }
+      }
+
 
       alertas.forEach(
         function(alerta) {
@@ -5889,6 +5945,27 @@ const usaFiltroMensual =
             }
           );
 
+          const celdaAccion = document.createElement('td');
+          celdaAccion.style.padding = '8px';
+          celdaAccion.style.borderBottom = '1px solid #ddd';
+          celdaAccion.style.verticalAlign = 'top';
+
+          const tipoAlertaFila = String(alerta.tipo || '').trim().toUpperCase();
+          if (puedeAdministrarJustificacionesMGP() && (tipoAlertaFila === 'TARDANZAS' || tipoAlertaFila === 'FALTAS' || tipoAlertaFila === 'LIMITE_DNI')) {
+            const botonJustificar = document.createElement('button');
+            botonJustificar.type = 'button';
+            botonJustificar.textContent = 'Justificar';
+            botonJustificar.style.cursor = 'pointer';
+            botonJustificar.addEventListener('click', function() {
+              prepararJustificacionDesdeAlertaMGP(alerta);
+            });
+            celdaAccion.appendChild(botonJustificar);
+          } else {
+            celdaAccion.textContent = '—';
+          }
+
+          fila.appendChild(celdaAccion);
+
           tbodyAlertas.appendChild(
             fila
           );
@@ -5909,7 +5986,7 @@ const usaFiltroMensual =
           document.createElement('td');
 
         celdaSinAlertas.colSpan =
-          8;
+          9;
 
         celdaSinAlertas.textContent =
           'No se encontraron alertas para el período seleccionado.';
@@ -8258,7 +8335,7 @@ document.getElementById('dniBtn')
       return;
     }
 
-    registrarAsistenciaSegunModoMGP(dni, 'DNI');
+    registrarAsistenciaSegunModoMGP(dni);
 
   });
 
@@ -8866,13 +8943,27 @@ function aplicarAlcanceJustificacionesMGP() {
 function actualizarCamposJustificacionMGP() {
   const tipo = document.getElementById('justTipoMGP');
   const idRegistro = document.getElementById('justIdRegistroMGP');
-  if (!tipo || !idRegistro) return;
+  const fecha = document.getElementById('justFechaMGP');
+  const periodo = document.getElementById('justPeriodoMGP');
+  if (!tipo || !idRegistro || !fecha) return;
 
   const tardanza = tipo.value === 'TARDANZA';
+  const dniLimite = tipo.value === 'DNI_LIMITE';
+
   idRegistro.disabled = !tardanza;
   idRegistro.placeholder = tardanza
     ? 'ID_REGISTRO de la tardanza'
-    : 'No aplica para falta';
+    : 'No aplica';
+
+  fecha.disabled = dniLimite;
+  fecha.required = !dniLimite;
+  fecha.style.display = dniLimite ? 'none' : '';
+
+  if (periodo) {
+    periodo.disabled = !dniLimite;
+    periodo.required = dniLimite;
+    periodo.style.display = dniLimite ? '' : 'none';
+  }
 }
 
 function mostrarMensajeJustificacionMGP(texto, error) {
@@ -8933,7 +9024,7 @@ function renderizarJustificacionesMGP(lista) {
       item.dni,
       item.nombre,
       item.tipo,
-      item.fechaInasistencia,
+      item.tipo === 'DNI_LIMITE' ? (item.periodo || '') : (item.fechaInasistencia || ''),
       item.motivo,
       item.estado,
       item.responsable,
@@ -8970,6 +9061,8 @@ async function guardarJustificacionMGP() {
   const dni = document.getElementById('justDniMGP').value.trim();
   const idPersona = document.getElementById('justIdPersonaMGP').value.trim();
   const fecha = document.getElementById('justFechaMGP').value;
+  const periodoEl = document.getElementById('justPeriodoMGP');
+  const periodo = periodoEl ? periodoEl.value : '';
   const idRegistro = document.getElementById('justIdRegistroMGP').value.trim();
   const motivo = document.getElementById('justMotivoMGP').value.trim();
   const observacion = document.getElementById('justObservacionMGP').value.trim();
@@ -8978,7 +9071,12 @@ async function guardarJustificacionMGP() {
     mostrarMensajeJustificacionMGP('❌ Indique DNI o ID de persona.', true);
     return;
   }
-  if (!fecha) {
+  if (tipo === 'DNI_LIMITE') {
+    if (!periodo) {
+      mostrarMensajeJustificacionMGP('❌ Indique el período mensual del límite DNI.', true);
+      return;
+    }
+  } else if (!fecha) {
     mostrarMensajeJustificacionMGP('❌ Indique la fecha de inasistencia.', true);
     return;
   }
@@ -9000,7 +9098,8 @@ async function guardarJustificacionMGP() {
       tipo:tipo,
       dni:dni,
       idPersona:idPersona,
-      fechaInasistencia:fecha,
+      fechaInasistencia:tipo === 'DNI_LIMITE' ? '' : fecha,
+      periodo:tipo === 'DNI_LIMITE' ? periodo : '',
       idRegistro:tipo === 'TARDANZA' ? idRegistro : '',
       motivo:motivo,
       observacion:observacion
@@ -9032,6 +9131,8 @@ function cargarEdicionJustificacionMGP(item) {
   document.getElementById('justDniMGP').value = item.dni || '';
   document.getElementById('justIdPersonaMGP').value = item.idPersona || '';
   document.getElementById('justFechaMGP').value = item.fechaInasistencia || '';
+  const periodoEl = document.getElementById('justPeriodoMGP');
+  if (periodoEl) periodoEl.value = item.periodo || '';
   document.getElementById('justIdRegistroMGP').value = item.idRegistro || '';
   document.getElementById('justMotivoMGP').value = item.motivo || '';
   document.getElementById('justObservacionMGP').value = item.observacion || '';
@@ -9044,7 +9145,7 @@ function cargarEdicionJustificacionMGP(item) {
 function cancelarEdicionJustificacionMGP() {
   justificacionesMGPEnEdicion = null;
   const ids = [
-    'justDniMGP','justIdPersonaMGP','justFechaMGP',
+    'justDniMGP','justIdPersonaMGP','justFechaMGP','justPeriodoMGP',
     'justIdRegistroMGP','justMotivoMGP','justObservacionMGP'
   ];
   ids.forEach(function(id) {
