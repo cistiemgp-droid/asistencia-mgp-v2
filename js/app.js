@@ -8833,32 +8833,54 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
     alert('No tiene permiso para administrar justificaciones.');
     return;
   }
+
   const tipoAlerta = String(alerta && alerta.tipo || '').trim().toUpperCase();
   if (tipoAlerta !== 'TARDANZAS' && tipoAlerta !== 'FALTAS') {
     alert('Esta alerta no tiene una incidencia directa justificable.');
     return;
   }
+
   const mesConsulta = String(ultimoReporteMGP && ultimoReporteMGP.mes || '').trim();
-  if (!mesConsulta) {
-    alert('No se pudo determinar el mes de la alerta.');
+  const dniAlerta = String(alerta && alerta.dni || '').trim();
+  if (!mesConsulta || !dniAlerta) {
+    alert('No se pudo determinar el mes o DNI de la alerta.');
     return;
   }
+
+  const tipoPersona = document.getElementById('justTipoPersonaMGP');
+  const tipo = document.getElementById('justTipoMGP');
+  const dni = document.getElementById('justDniMGP');
+  const fecha = document.getElementById('justFechaMGP');
+  const idRegistro = document.getElementById('justIdRegistroMGP');
+  const idPersona = document.getElementById('justIdPersonaMGP');
+  const bloque = document.getElementById('justificacionesMGP');
+
+  if (!tipoPersona || !tipo || !dni || !fecha || !idRegistro || !idPersona || !bloque) {
+    alert('No se encontró el formulario de Justificaciones.');
+    return;
+  }
+
+  mostrarMensajeJustificacionMGP('Consultando incidencia seleccionada...', false);
+
   try {
     const resultado = await solicitarJustificacionesMGP({
-      operacion:'listarIncidenciasAlerta',
+      operacion:'prepararIncidenciaAlerta',
       tipoAlerta:tipoAlerta,
-      dni:String(alerta.dni || '').trim(),
+      dni:dniAlerta,
       mes:mesConsulta
     });
+
     if (!resultado.ok) {
-      alert('❌ ' + (resultado.mensaje || 'No se pudieron consultar las incidencias.'));
+      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo preparar la incidencia.'), true);
       return;
     }
+
     const incidencias = Array.isArray(resultado.incidencias) ? resultado.incidencias : [];
     if (!incidencias.length) {
-      alert('No hay incidencias injustificadas disponibles para justificar.');
+      mostrarMensajeJustificacionMGP('❌ No hay incidencias injustificadas disponibles para justificar.', true);
       return;
     }
+
     let incidencia = incidencias[0];
     if (incidencias.length > 1) {
       const opciones = incidencias.map(function(item, indice) {
@@ -8869,32 +8891,24 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
       if (!Number.isInteger(indice) || indice < 0 || indice >= incidencias.length) return;
       incidencia = incidencias[indice];
     }
-    const tipoPersona = document.getElementById('justTipoPersonaMGP');
-    const tipo = document.getElementById('justTipoMGP');
-    const dni = document.getElementById('justDniMGP');
-    const fecha = document.getElementById('justFechaMGP');
-    const idRegistro = document.getElementById('justIdRegistroMGP');
-    const idPersona = document.getElementById('justIdPersonaMGP');
-    const bloque = document.getElementById('justificacionesMGP');
-    if (!tipoPersona || !tipo || !dni || !fecha || !idRegistro || !idPersona || !bloque) {
-      alert('No se encontró el formulario de Justificaciones.');
-      return;
-    }
+
     tipoPersona.value = 'estudiante';
     tipo.value = incidencia.tipo === 'TARDANZA' ? 'TARDANZA' : 'FALTA';
-    dni.value = incidencia.dni || alerta.dni || '';
+    dni.value = incidencia.dni || dniAlerta;
     idPersona.value = '';
     fecha.value = incidencia.fecha || '';
     idRegistro.value = incidencia.tipo === 'TARDANZA' ? (incidencia.idRegistro || '') : '';
     document.getElementById('justMotivoMGP').value = '';
     document.getElementById('justObservacionMGP').value = '';
+    justificacionesMGPEnEdicion = null;
+    bloque.style.display = '';
     actualizarCamposJustificacionMGP();
     bloque.scrollIntoView({behavior:'smooth', block:'start'});
     const motivo = document.getElementById('justMotivoMGP');
     if (motivo) motivo.focus();
-    mostrarMensajeJustificacionMGP('✏️ Incidencia seleccionada desde Alertas: ' + incidencia.tipo + ' del ' + incidencia.fecha + '.', false);
+    mostrarMensajeJustificacionMGP('✏️ Incidencia seleccionada: ' + incidencia.tipo + ' del ' + incidencia.fecha + '.', false);
   } catch (error) {
-    alert('❌ ' + error.message);
+    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
   }
 }
 
