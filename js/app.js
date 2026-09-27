@@ -5889,13 +5889,24 @@ const usaFiltroMensual =
           celdaAccion.style.borderBottom = '1px solid #ddd';
           celdaAccion.style.verticalAlign = 'top';
 
-          if (String(alerta.tipo || '').toUpperCase() === 'LIMITE_DNI') {
+          const tipoAlertaAccion = String(alerta.tipo || '').toUpperCase();
+
+          if (tipoAlertaAccion === 'LIMITE_DNI') {
             const botonJustificar = document.createElement('button');
             botonJustificar.type = 'button';
             botonJustificar.textContent = 'Justificar';
             botonJustificar.style.cursor = 'pointer';
             botonJustificar.addEventListener('click', function() {
               abrirJustificacionDniLimiteMGP(alerta, mes);
+            });
+            celdaAccion.appendChild(botonJustificar);
+          } else if (tipoAlertaAccion === 'TARDANZAS' || tipoAlertaAccion === 'FALTAS') {
+            const botonJustificar = document.createElement('button');
+            botonJustificar.type = 'button';
+            botonJustificar.textContent = 'Justificar';
+            botonJustificar.style.cursor = 'pointer';
+            botonJustificar.addEventListener('click', function() {
+              prepararJustificacionDesdeAlertaMGP(alerta);
             });
             celdaAccion.appendChild(botonJustificar);
           } else {
