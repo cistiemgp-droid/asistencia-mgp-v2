@@ -3288,7 +3288,7 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
+function registrarAsistenciaOfflineMGP(id) {
 
   return new Promise(function(resolve) {
 
@@ -3310,13 +3310,6 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
-
-    const metodo =
-      String(metodoRegistro || 'DNI')
-        .trim()
-        .toUpperCase() === 'QR'
-        ? 'QR'
-        : 'DNI';
 
     if (!idLimpio) {
 
@@ -3379,7 +3372,7 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         'Estado: ' + estado;
     }
 
-    guardarRegistroOfflineMGP(idLimpio, metodo)
+    guardarRegistroOfflineMGP(idLimpio)
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
@@ -8258,7 +8251,7 @@ document.getElementById('dniBtn')
       return;
     }
 
-    registrarAsistenciaSegunModoMGP(dni, 'DNI');
+    registrarAsistenciaSegunModoMGP(dni);
 
   });
 
