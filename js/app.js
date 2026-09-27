@@ -697,6 +697,9 @@ function enviarRegistroOfflineAlServidorMGP(registro) {
       '&id=' + encodeURIComponent(id) +
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
+      '&metodo=' + encodeURIComponent(
+        String(metodo || '').trim().toUpperCase() === 'QR' ? 'QR' : 'DNI'
+      ) +
       '&token=' + encodeURIComponent(state.token || '') +
       '&fechaHoraCliente=' + encodeURIComponent(fechaHoraCliente) +
       '&idOffline=' + encodeURIComponent(idOffline) +
@@ -3409,17 +3412,17 @@ function registrarAsistenciaOfflineMGP(id) {
 
 }
 
-function registrarAsistenciaSegunModoMGP(id) {
+function registrarAsistenciaSegunModoMGP(id, metodo) {
 
   if (state.registroModo === 'OFFLINE') {
     return registrarAsistenciaOfflineMGP(id);
   }
 
-  return registrarAsistenciaBackend(id);
+  return registrarAsistenciaBackend(id, metodo);
 
 }
 
-function registrarAsistenciaBackend(id) {
+function registrarAsistenciaBackend(id, metodo) {
 
   return new Promise(function(resolve) {
 
@@ -4069,7 +4072,7 @@ async function iniciarCamara() {
         let registroPromise;
 
         if (state.registroModo === 'OFFLINE') {
-          registroPromise = registrarAsistenciaSegunModoMGP(decodedText);
+          registroPromise = registrarAsistenciaSegunModoMGP(decodedText, 'QR');
         } else {
           registroPromise = identificacionPromise.then(function(resultadoIdentificacion) {
             if (!resultadoIdentificacion || !resultadoIdentificacion.ok) {
@@ -4091,7 +4094,7 @@ async function iniciarCamara() {
               return { exito: false };
             }
 
-            return registrarAsistenciaSegunModoMGP(dniIdentificado);
+            return registrarAsistenciaSegunModoMGP(dniIdentificado, 'QR');
           });
         }
 
@@ -8335,7 +8338,7 @@ document.getElementById('dniBtn')
       return;
     }
 
-    registrarAsistenciaSegunModoMGP(dni);
+    registrarAsistenciaSegunModoMGP(dni, 'DNI');
 
   });
 
