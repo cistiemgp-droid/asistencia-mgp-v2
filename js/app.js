@@ -281,7 +281,7 @@ function generarIdOfflineMGP() {
 
 }
 
-function guardarRegistroOfflineMGP(id) {
+function guardarRegistroOfflineMGP(id, metodoRegistro) {
 
   return new Promise(function(resolve, reject) {
 
@@ -303,6 +303,13 @@ function guardarRegistroOfflineMGP(id) {
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
 
+    const metodo =
+      String(metodoRegistro || 'DNI')
+        .trim()
+        .toUpperCase() === 'QR'
+        ? 'QR'
+        : 'DNI';
+
     if (!idLimpio) {
       reject(new Error('No se obtuvo el DNI para registrar.'));
       return;
@@ -317,6 +324,7 @@ function guardarRegistroOfflineMGP(id) {
       id: idLimpio,
       tipo: tipo,
       estado: estado,
+      metodo: metodo,
       usuario: state.usuario && state.usuario.usuario
         ? String(state.usuario.usuario)
         : '',
@@ -691,6 +699,13 @@ function enviarRegistroOfflineAlServidorMGP(registro) {
     const idOffline =
       String(registro.idOffline || '').trim();
 
+    const metodo =
+      String(registro.metodo || 'DNI')
+        .trim()
+        .toUpperCase() === 'QR'
+        ? 'QR'
+        : 'DNI';
+
     script.src =
       CONFIG.API_URL +
       '?action=apiRegistrar' +
@@ -700,6 +715,7 @@ function enviarRegistroOfflineAlServidorMGP(registro) {
       '&token=' + encodeURIComponent(state.token || '') +
       '&fechaHoraCliente=' + encodeURIComponent(fechaHoraCliente) +
       '&idOffline=' + encodeURIComponent(idOffline) +
+      '&metodo=' + encodeURIComponent(metodo) +
       '&callback=' + encodeURIComponent(nombreCallback);
 
     script.async = true;
@@ -3272,7 +3288,7 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function registrarAsistenciaOfflineMGP(id) {
+function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
   return new Promise(function(resolve) {
 
@@ -3294,6 +3310,13 @@ function registrarAsistenciaOfflineMGP(id) {
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
+
+    const metodo =
+      String(metodoRegistro || 'DNI')
+        .trim()
+        .toUpperCase() === 'QR'
+        ? 'QR'
+        : 'DNI';
 
     if (!idLimpio) {
 
@@ -3356,7 +3379,7 @@ function registrarAsistenciaOfflineMGP(id) {
         'Estado: ' + estado;
     }
 
-    guardarRegistroOfflineMGP(idLimpio)
+    guardarRegistroOfflineMGP(idLimpio, metodo)
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
@@ -3409,17 +3432,24 @@ function registrarAsistenciaOfflineMGP(id) {
 
 }
 
-function registrarAsistenciaSegunModoMGP(id) {
+function registrarAsistenciaSegunModoMGP(id, metodoRegistro) {
+
+  const metodo =
+    String(metodoRegistro || 'DNI')
+      .trim()
+      .toUpperCase() === 'QR'
+      ? 'QR'
+      : 'DNI';
 
   if (state.registroModo === 'OFFLINE') {
-    return registrarAsistenciaOfflineMGP(id);
+    return registrarAsistenciaOfflineMGP(id, metodo);
   }
 
-  return registrarAsistenciaBackend(id);
+  return registrarAsistenciaBackend(id, metodo);
 
 }
 
-function registrarAsistenciaBackend(id) {
+function registrarAsistenciaBackend(id, metodoRegistro) {
 
   return new Promise(function(resolve) {
 
@@ -3443,6 +3473,13 @@ function registrarAsistenciaBackend(id) {
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
+
+    const metodo =
+      String(metodoRegistro || 'DNI')
+        .trim()
+        .toUpperCase() === 'QR'
+        ? 'QR'
+        : 'DNI';
 
     if (!idLimpio) {
 
@@ -3572,6 +3609,7 @@ function registrarAsistenciaBackend(id) {
       '&id=' + encodeURIComponent(idLimpio) +
       '&tipo=' + encodeURIComponent(tipo) +
       '&estado=' + encodeURIComponent(estado) +
+      '&metodo=' + encodeURIComponent(metodo) +
       '&token=' + encodeURIComponent(state.token || '') +
       '&callback=respuestaRegistroMGP';
 
@@ -4069,7 +4107,7 @@ async function iniciarCamara() {
         let registroPromise;
 
         if (state.registroModo === 'OFFLINE') {
-          registroPromise = registrarAsistenciaSegunModoMGP(decodedText);
+          registroPromise = registrarAsistenciaSegunModoMGP(decodedText, 'QR');
         } else {
           registroPromise = identificacionPromise.then(function(resultadoIdentificacion) {
             if (!resultadoIdentificacion || !resultadoIdentificacion.ok) {
@@ -4091,7 +4129,7 @@ async function iniciarCamara() {
               return { exito: false };
             }
 
-            return registrarAsistenciaSegunModoMGP(dniIdentificado);
+            return registrarAsistenciaSegunModoMGP(dniIdentificado, 'QR');
           });
         }
 
@@ -8220,7 +8258,7 @@ document.getElementById('dniBtn')
       return;
     }
 
-    registrarAsistenciaSegunModoMGP(dni);
+    registrarAsistenciaSegunModoMGP(dni, 'DNI');
 
   });
 
