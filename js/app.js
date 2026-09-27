@@ -5891,16 +5891,7 @@ const usaFiltroMensual =
 
           const tipoAlertaAccion = String(alerta.tipo || '').toUpperCase();
 
-          if (tipoAlertaAccion === 'LIMITE_DNI') {
-            const botonJustificar = document.createElement('button');
-            botonJustificar.type = 'button';
-            botonJustificar.textContent = 'Justificar';
-            botonJustificar.style.cursor = 'pointer';
-            botonJustificar.addEventListener('click', function() {
-              abrirJustificacionDniLimiteMGP(alerta, mes);
-            });
-            celdaAccion.appendChild(botonJustificar);
-          } else if (tipoAlertaAccion === 'TARDANZAS' || tipoAlertaAccion === 'FALTAS') {
+          if (tipoAlertaAccion === 'LIMITE_DNI' || tipoAlertaAccion === 'TARDANZAS' || tipoAlertaAccion === 'FALTAS') {
             const botonJustificar = document.createElement('button');
             botonJustificar.type = 'button';
             botonJustificar.textContent = 'Justificar';
@@ -8835,7 +8826,8 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
   }
 
   const tipoAlerta = String(alerta && alerta.tipo || '').trim().toUpperCase();
-  if (tipoAlerta !== 'TARDANZAS' && tipoAlerta !== 'FALTAS') {
+  const tiposPermitidos = ['TARDANZAS', 'FALTAS', 'LIMITE_DNI'];
+  if (tiposPermitidos.indexOf(tipoAlerta) === -1) {
     alert('Esta alerta no tiene una incidencia directa justificable.');
     return;
   }
@@ -8854,13 +8846,180 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
   const idRegistro = document.getElementById('justIdRegistroMGP');
   const idPersona = document.getElementById('justIdPersonaMGP');
   const bloque = document.getElementById('justificacionesMGP');
+  const motivo = document.getElementById('justMotivoMGP');
+  const observacion = document.getElementById('justObservacionMGP');
 
-  if (!tipoPersona || !tipo || !dni || !fecha || !idRegistro || !idPersona || !bloque) {
+  if (!tipoPersona || !tipo || !dni || !fecha || !idRegistro || !idPersona || !bloque || !motivo || !observacion) {
     alert('No se encontró el formulario de Justificaciones.');
     return;
   }
 
-  mostrarMensajeJustificacionMGP('Consultando incidencia seleccionada...', false);
+  let modal = document.getElementById('modalSeleccionIncidenciaMGP');
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'modalSeleccionIncidenciaMGP';
+  modal.style.position = 'fixed';
+  modal.style.inset = '0';
+  modal.style.background = 'rgba(0,0,0,0.45)';
+  modal.style.display = 'flex';
+  modal.style.alignItems = 'center';
+  modal.style.justifyContent = 'center';
+  modal.style.zIndex = '99999';
+  modal.style.padding = '20px';
+
+  const caja = document.createElement('div');
+  caja.style.background = '#fff';
+  caja.style.width = 'min(520px, 100%)';
+  caja.style.maxHeight = '80vh';
+  caja.style.overflowY = 'auto';
+  caja.style.borderRadius = '10px';
+  caja.style.padding = '20px';
+  caja.style.boxSizing = 'border-box';
+  caja.style.boxShadow = '0 12px 35px rgba(0,0,0,0.30)';
+
+  const titulo = document.createElement('h3');
+  titulo.textContent = 'Seleccione la incidencia a justificar';
+  titulo.style.margin = '0 0 8px 0';
+  caja.appendChild(titulo);
+
+  const detalle = document.createElement('div');
+  detalle.textContent = 'DNI: ' + dniAlerta + ' — Mes: ' + mesConsulta;
+  detalle.style.marginBottom = '14px';
+  detalle.style.fontSize = '14px';
+  detalle.style.color = '#555';
+  caja.appendChild(detalle);
+
+  const contenido = document.createElement('div');
+  contenido.textContent = 'Consultando incidencias...';
+  contenido.style.padding = '12px';
+  contenido.style.border = '1px solid #ddd';
+  contenido.style.borderRadius = '6px';
+  caja.appendChild(contenido);
+
+  const acciones = document.createElement('div');
+  acciones.style.display = 'flex';
+  acciones.style.justifyContent = 'flex-end';
+  acciones.style.gap = '8px';
+  acciones.style.marginTop = '16px';
+
+  const cancelar = document.createElement('button');
+  cancelar.type = 'button';
+  cancelar.textContent = 'Cancelar';
+  cancelar.style.cursor = 'pointer';
+  cancelar.addEventListener('click', function() { modal.remove(); });
+  acciones.appendChild(cancelar);
+
+  const aceptar = document.createElement('button');
+  aceptar.type = 'button';
+  aceptar.textContent = 'Aceptar';
+  aceptar.disabled = true;
+  aceptar.style.cursor = 'pointer';
+  acciones.appendChild(aceptar);
+
+  caja.appendChild(acciones);
+  modal.appendChild(caja);
+  document.body.appendChild(modal);
+
+  let incidencias = [];
+
+  function cerrarModal() {
+    if (modal && modal.parentNode) modal.remove();
+  }
+
+  function mostrarFormulario(incidencia) {
+    tipoPersona.value = 'estudiante';
+    tipo.value = incidencia.tipo === 'DNI_LIMITE' ? 'DNI_LIMITE' : (incidencia.tipo === 'TARDANZA' ? 'TARDANZA' : 'FALTA');
+    dni.value = incidencia.dni || dniAlerta;
+    idPersona.value = incidencia.idPersona || String(alerta && alerta.id || '');
+    fecha.value = incidencia.tipo === 'DNI_LIMITE' ? '' : (incidencia.fecha || '');
+    idRegistro.value = incidencia.tipo === 'TARDANZA' ? (incidencia.idRegistro || '') : '';
+    motivo.value = incidencia.tipo === 'DNI_LIMITE'
+      ? 'Justificación de incidencia por límite mensual de registros mediante DNI.'
+      : '';
+    observacion.value = '';
+    justificacionesMGPEnEdicion = null;
+
+    if (incidencia.tipo === 'DNI_LIMITE') {
+      asegurarOpcionTipoDniLimiteMGP();
+      asegurarCampoPeriodoDniMGP().value = incidencia.periodoDni || mesConsulta;
+    } else {
+      asegurarCampoPeriodoDniMGP().value = '';
+    }
+
+    bloque.style.display = '';
+    actualizarCamposJustificacionMGP();
+    cerrarModal();
+    bloque.scrollIntoView({behavior:'smooth', block:'start'});
+    motivo.focus();
+    mostrarMensajeJustificacionMGP(
+      '✏️ Incidencia seleccionada: ' + incidencia.tipo +
+      (incidencia.fecha ? ' del ' + incidencia.fecha : ' del periodo ' + (incidencia.periodoDni || mesConsulta)) + '.',
+      false
+    );
+  }
+
+  function pintarOpciones(lista) {
+    contenido.innerHTML = '';
+    if (!lista.length) {
+      contenido.textContent = 'No existen incidencias pendientes de justificación para este alumno.';
+      aceptar.disabled = true;
+      return;
+    }
+
+    const grupo = document.createElement('div');
+    lista.forEach(function(item, indice) {
+      const etiqueta = document.createElement('label');
+      etiqueta.style.display = 'block';
+      etiqueta.style.padding = '10px';
+      etiqueta.style.marginBottom = '7px';
+      etiqueta.style.border = '1px solid #ddd';
+      etiqueta.style.borderRadius = '6px';
+      etiqueta.style.cursor = 'pointer';
+
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'incidenciaMGP';
+      radio.value = String(indice);
+      radio.checked = indice === 0;
+      radio.style.marginRight = '8px';
+      radio.addEventListener('change', function() { aceptar.disabled = false; });
+
+      const fechaTexto = item.tipo === 'DNI_LIMITE'
+        ? 'Periodo ' + (item.periodoDni || mesConsulta)
+        : String(item.fecha || '').split('-').reverse().join('/');
+      const horaTexto = item.hora ? ' — Hora ' + item.hora : '';
+      etiqueta.appendChild(radio);
+      etiqueta.appendChild(document.createTextNode(
+        (item.tipo || tipoAlerta) + ' — ' + fechaTexto + horaTexto
+      ));
+      grupo.appendChild(etiqueta);
+    });
+    contenido.appendChild(grupo);
+    aceptar.disabled = false;
+  }
+
+  aceptar.addEventListener('click', function() {
+    const seleccionado = contenido.querySelector('input[name="incidenciaMGP"]:checked');
+    if (!seleccionado) return;
+    const indice = Number(seleccionado.value);
+    if (!Number.isInteger(indice) || !incidencias[indice]) return;
+    mostrarFormulario(incidencias[indice]);
+  });
+
+  if (tipoAlerta === 'LIMITE_DNI') {
+    incidencias = [{
+      tipo:'DNI_LIMITE',
+      fecha:'',
+      idRegistro:'',
+      hora:'',
+      dni:dniAlerta,
+      idPersona:String(alerta && alerta.id || ''),
+      periodoDni:mesConsulta
+    }];
+    pintarOpciones(incidencias);
+    return;
+  }
 
   try {
     const resultado = await solicitarJustificacionesMGP({
@@ -8870,45 +9029,20 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
       mes:mesConsulta
     });
 
-    if (!resultado.ok) {
-      mostrarMensajeJustificacionMGP('❌ ' + (resultado.mensaje || 'No se pudo preparar la incidencia.'), true);
+    if (!resultado || resultado.ok !== true) {
+      contenido.textContent = (resultado && resultado.mensaje)
+        ? resultado.mensaje
+        : 'No se pudo consultar las incidencias.';
+      aceptar.disabled = true;
       return;
     }
 
-    const incidencias = Array.isArray(resultado.incidencias) ? resultado.incidencias : [];
-    if (!incidencias.length) {
-      mostrarMensajeJustificacionMGP('❌ No hay incidencias injustificadas disponibles para justificar.', true);
-      return;
-    }
-
-    let incidencia = incidencias[0];
-    if (incidencias.length > 1) {
-      const opciones = incidencias.map(function(item, indice) {
-        return (indice + 1) + '. ' + item.fecha + (item.hora ? ' - ' + item.hora : '');
-      }).join('\n');
-      const seleccion = window.prompt('Seleccione la incidencia que desea justificar:\n\n' + opciones + '\n\nIngrese el número:', '1');
-      const indice = Number(seleccion) - 1;
-      if (!Number.isInteger(indice) || indice < 0 || indice >= incidencias.length) return;
-      incidencia = incidencias[indice];
-    }
-
-    tipoPersona.value = 'estudiante';
-    tipo.value = incidencia.tipo === 'TARDANZA' ? 'TARDANZA' : 'FALTA';
-    dni.value = incidencia.dni || dniAlerta;
-    idPersona.value = '';
-    fecha.value = incidencia.fecha || '';
-    idRegistro.value = incidencia.tipo === 'TARDANZA' ? (incidencia.idRegistro || '') : '';
-    document.getElementById('justMotivoMGP').value = '';
-    document.getElementById('justObservacionMGP').value = '';
-    justificacionesMGPEnEdicion = null;
-    bloque.style.display = '';
-    actualizarCamposJustificacionMGP();
-    bloque.scrollIntoView({behavior:'smooth', block:'start'});
-    const motivo = document.getElementById('justMotivoMGP');
-    if (motivo) motivo.focus();
-    mostrarMensajeJustificacionMGP('✏️ Incidencia seleccionada: ' + incidencia.tipo + ' del ' + incidencia.fecha + '.', false);
-  } catch (error) {
-    mostrarMensajeJustificacionMGP('❌ ' + error.message, true);
+    incidencias = Array.isArray(resultado.incidencias) ? resultado.incidencias : [];
+    pintarOpciones(incidencias);
+  }
+  catch (error) {
+    contenido.textContent = 'No se pudo consultar las incidencias: ' + error.message;
+    aceptar.disabled = true;
   }
 }
 
