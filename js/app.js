@@ -3288,7 +3288,7 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
+function registrarAsistenciaOfflineMGP(id) {
 
   return new Promise(function(resolve) {
 
@@ -3372,7 +3372,7 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         'Estado: ' + estado;
     }
 
-    guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
+    guardarRegistroOfflineMGP(idLimpio)
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
@@ -8815,6 +8815,76 @@ function abrirJustificacionDniLimiteMGP(alerta, mes) {
   actualizarCamposJustificacionMGP();
   mostrarMensajeJustificacionMGP('⚠️ Incidencia DNI_LIMITE cargada para justificar. Periodo: ' + String(mes || ''), false);
   if (bloque) bloque.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+async function prepararJustificacionDesdeAlertaMGP(alerta) {
+  if (!puedeAdministrarJustificacionesMGP()) {
+    alert('No tiene permiso para administrar justificaciones.');
+    return;
+  }
+  const tipoAlerta = String(alerta && alerta.tipo || '').trim().toUpperCase();
+  if (tipoAlerta !== 'TARDANZAS' && tipoAlerta !== 'FALTAS') {
+    alert('Esta alerta no tiene una incidencia directa justificable.');
+    return;
+  }
+  const mesConsulta = String(ultimoReporteMGP && ultimoReporteMGP.mes || '').trim();
+  if (!mesConsulta) {
+    alert('No se pudo determinar el mes de la alerta.');
+    return;
+  }
+  try {
+    const resultado = await solicitarJustificacionesMGP({
+      operacion:'listarIncidenciasAlerta',
+      tipoAlerta:tipoAlerta,
+      dni:String(alerta.dni || '').trim(),
+      mes:mesConsulta
+    });
+    if (!resultado.ok) {
+      alert('❌ ' + (resultado.mensaje || 'No se pudieron consultar las incidencias.'));
+      return;
+    }
+    const incidencias = Array.isArray(resultado.incidencias) ? resultado.incidencias : [];
+    if (!incidencias.length) {
+      alert('No hay incidencias injustificadas disponibles para justificar.');
+      return;
+    }
+    let incidencia = incidencias[0];
+    if (incidencias.length > 1) {
+      const opciones = incidencias.map(function(item, indice) {
+        return (indice + 1) + '. ' + item.fecha + (item.hora ? ' - ' + item.hora : '');
+      }).join('\n');
+      const seleccion = window.prompt('Seleccione la incidencia que desea justificar:\n\n' + opciones + '\n\nIngrese el número:', '1');
+      const indice = Number(seleccion) - 1;
+      if (!Number.isInteger(indice) || indice < 0 || indice >= incidencias.length) return;
+      incidencia = incidencias[indice];
+    }
+    const tipoPersona = document.getElementById('justTipoPersonaMGP');
+    const tipo = document.getElementById('justTipoMGP');
+    const dni = document.getElementById('justDniMGP');
+    const fecha = document.getElementById('justFechaMGP');
+    const idRegistro = document.getElementById('justIdRegistroMGP');
+    const idPersona = document.getElementById('justIdPersonaMGP');
+    const bloque = document.getElementById('justificacionesMGP');
+    if (!tipoPersona || !tipo || !dni || !fecha || !idRegistro || !idPersona || !bloque) {
+      alert('No se encontró el formulario de Justificaciones.');
+      return;
+    }
+    tipoPersona.value = 'estudiante';
+    tipo.value = incidencia.tipo === 'TARDANZA' ? 'TARDANZA' : 'FALTA';
+    dni.value = incidencia.dni || alerta.dni || '';
+    idPersona.value = '';
+    fecha.value = incidencia.fecha || '';
+    idRegistro.value = incidencia.tipo === 'TARDANZA' ? (incidencia.idRegistro || '') : '';
+    document.getElementById('justMotivoMGP').value = '';
+    document.getElementById('justObservacionMGP').value = '';
+    actualizarCamposJustificacionMGP();
+    bloque.scrollIntoView({behavior:'smooth', block:'start'});
+    const motivo = document.getElementById('justMotivoMGP');
+    if (motivo) motivo.focus();
+    mostrarMensajeJustificacionMGP('✏️ Incidencia seleccionada desde Alertas: ' + incidencia.tipo + ' del ' + incidencia.fecha + '.', false);
+  } catch (error) {
+    alert('❌ ' + error.message);
+  }
 }
 
 function solicitarJustificacionesMGP(params) {
