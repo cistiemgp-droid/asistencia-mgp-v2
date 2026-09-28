@@ -8950,8 +8950,18 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
     bloque.style.display = '';
     actualizarCamposJustificacionMGP();
     cerrarModal();
-    bloque.scrollIntoView({behavior:'smooth', block:'start'});
-    motivo.focus();
+
+    // El formulario de Justificaciones está dentro de la vista ADMIN.
+    // Cambiar de vista es obligatorio; scrollIntoView() por sí solo
+    // no activa una vista institucional oculta.
+    if (typeof mostrarVista === 'function') {
+      mostrarVista('admin');
+    }
+
+    setTimeout(function() {
+      bloque.scrollIntoView({behavior:'smooth', block:'start'});
+      motivo.focus();
+    }, 0);
     mostrarMensajeJustificacionMGP(
       '✏️ Incidencia seleccionada: ' + incidencia.tipo +
       (incidencia.fecha ? ' del ' + incidencia.fecha : ' del periodo ' + (incidencia.periodoDni || mesConsulta)) + '.',
