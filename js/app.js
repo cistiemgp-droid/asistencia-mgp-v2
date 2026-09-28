@@ -8929,6 +8929,9 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
 
   function mostrarFormulario(incidencia) {
     tipoPersona.value = 'estudiante';
+    if (incidencia.tipo === 'DNI_LIMITE') {
+      asegurarOpcionTipoDniLimiteMGP();
+    }
     tipo.value = incidencia.tipo === 'DNI_LIMITE' ? 'DNI_LIMITE' : (incidencia.tipo === 'TARDANZA' ? 'TARDANZA' : 'FALTA');
     dni.value = incidencia.dni || dniAlerta;
     idPersona.value = incidencia.idPersona || String(alerta && alerta.id || '');
@@ -8941,7 +8944,6 @@ async function prepararJustificacionDesdeAlertaMGP(alerta) {
     justificacionesMGPEnEdicion = null;
 
     if (incidencia.tipo === 'DNI_LIMITE') {
-      asegurarOpcionTipoDniLimiteMGP();
       asegurarCampoPeriodoDniMGP().value = incidencia.periodoDni || mesConsulta;
     } else {
       asegurarCampoPeriodoDniMGP().value = '';
