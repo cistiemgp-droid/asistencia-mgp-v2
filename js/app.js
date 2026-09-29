@@ -5824,6 +5824,95 @@ const usaFiltroMensual =
       const tbodyAlertas =
         document.createElement('tbody');
 
+      async function prepararJustificacionDesdeAlertaMGP(alerta) {
+        if (!puedeAdministrarJustificacionesMGP()) {
+          alert('No tiene permiso para administrar justificaciones.');
+          return;
+        }
+        const tipoAlerta = String(alerta && alerta.tipo || '').trim().toUpperCase();
+        if (tipoAlerta !== 'TARDANZAS' && tipoAlerta !== 'FALTAS' && tipoAlerta !== 'LIMITE_DNI') {
+          alert('Esta alerta no tiene una incidencia directa justificable.');
+          return;
+        }
+        const mesConsulta = String(ultimoReporteMGP && ultimoReporteMGP.mes || '').trim();
+        if (!mesConsulta) {
+          alert('No se pudo determinar el mes de la alerta.');
+          return;
+        }
+        try {
+          const resultado = await solicitarJustificacionesMGP({
+            operacion:'listarIncidenciasAlerta',
+            tipoAlerta:tipoAlerta,
+            dni:String(alerta.dni || '').trim(),
+            mes:mesConsulta
+          });
+          if (!resultado.ok) {
+            alert('❌ ' + (resultado.mensaje || 'No se pudieron consultar las incidencias.'));
+            return;
+          }
+          const incidencias = Array.isArray(resultado.incidencias) ? resultado.incidencias : [];
+          if (!incidencias.length) {
+            alert('No hay incidencias injustificadas disponibles para justificar.');
+            return;
+          }
+          let incidencia = incidencias[0];
+          if (incidencias.length > 1) {
+            const opciones = incidencias.map(function(item, indice) {
+              return (indice + 1) + '. ' + item.fecha + (item.hora ? ' - ' + item.hora : '');
+            }).join('\n');
+            const seleccion = window.prompt('Seleccione la incidencia que desea justificar:\n\n' + opciones + '\n\nIngrese el número:', '1');
+            const indice = Number(seleccion) - 1;
+            if (!Number.isInteger(indice) || indice < 0 || indice >= incidencias.length) return;
+            incidencia = incidencias[indice];
+          }
+          const tipoPersona = document.getElementById('justTipoPersonaMGP');
+          const tipo = document.getElementById('justTipoMGP');
+          const dni = document.getElementById('justDniMGP');
+          const fecha = document.getElementById('justFechaMGP');
+          const periodo = document.getElementById('justPeriodoMGP');
+          const idRegistro = document.getElementById('justIdRegistroMGP');
+          const idPersona = document.getElementById('justIdPersonaMGP');
+          const bloque = document.getElementById('justificacionesMGP');
+          if (!tipoPersona || !tipo || !dni || !fecha || !idRegistro || !idPersona || !bloque) {
+            alert('No se encontró el formulario de Justificaciones.');
+            return;
+          }
+          tipoPersona.value = 'estudiante';
+          tipo.value = incidencia.tipo === 'TARDANZA'
+            ? 'TARDANZA'
+            : (incidencia.tipo === 'DNI_LIMITE' ? 'DNI_LIMITE' : 'FALTA');
+          dni.value = incidencia.dni || alerta.dni || '';
+          idPersona.value = '';
+          fecha.value = incidencia.fecha || '';
+          if (periodo) periodo.value = incidencia.periodo || mesConsulta || '';
+          idRegistro.value = incidencia.tipo === 'TARDANZA' ? (incidencia.idRegistro || '') : '';
+          document.getElementById('justMotivoMGP').value = '';
+          document.getElementById('justObservacionMGP').value = '';
+          actualizarCamposJustificacionMGP();
+
+          let contenedorVista = bloque;
+          let vistaDestino = '';
+          while (contenedorVista && contenedorVista !== document.body) {
+            const idVista = String(contenedorVista.id || '').trim();
+            if (['portal','consulta','login','panel','registro','reportes','carnets','admin','horario'].indexOf(idVista) >= 0) {
+              vistaDestino = idVista;
+              break;
+            }
+            contenedorVista = contenedorVista.parentElement;
+          }
+          if (vistaDestino && typeof mostrarVista === 'function') {
+            mostrarVista(vistaDestino);
+          }
+          bloque.scrollIntoView({behavior:'smooth', block:'start'});
+          const motivo = document.getElementById('justMotivoMGP');
+          if (motivo) motivo.focus();
+          mostrarMensajeJustificacionMGP('✏️ Incidencia seleccionada desde Alertas: ' + incidencia.tipo + ' del ' + incidencia.fecha + '.', false);
+        } catch (error) {
+          alert('❌ ' + error.message);
+        }
+      }
+
+
       alertas.forEach(
         function(alerta) {
 
@@ -5889,13 +5978,14 @@ const usaFiltroMensual =
           celdaAccion.style.borderBottom = '1px solid #ddd';
           celdaAccion.style.verticalAlign = 'top';
 
-          if (String(alerta.tipo || '').toUpperCase() === 'LIMITE_DNI') {
+          const tipoAlertaFila = String(alerta.tipo || '').trim().toUpperCase();
+          if (puedeAdministrarJustificacionesMGP() && (tipoAlertaFila === 'TARDANZAS' || tipoAlertaFila === 'FALTAS' || tipoAlertaFila === 'LIMITE_DNI')) {
             const botonJustificar = document.createElement('button');
             botonJustificar.type = 'button';
             botonJustificar.textContent = 'Justificar';
             botonJustificar.style.cursor = 'pointer';
             botonJustificar.addEventListener('click', function() {
-              abrirJustificacionDniLimiteMGP(alerta, mes);
+              prepararJustificacionDesdeAlertaMGP(alerta);
             });
             celdaAccion.appendChild(botonJustificar);
           } else {
@@ -5903,7 +5993,10 @@ const usaFiltroMensual =
           }
 
           fila.appendChild(celdaAccion);
-          tbodyAlertas.appendChild(fila);
+
+          tbodyAlertas.appendChild(
+            fila
+          );
 
         }
       );
