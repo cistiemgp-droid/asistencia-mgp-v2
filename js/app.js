@@ -3288,7 +3288,7 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function registrarAsistenciaOfflineMGP(id) {
+function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
   return new Promise(function(resolve) {
 
@@ -3372,7 +3372,7 @@ function registrarAsistenciaOfflineMGP(id) {
         'Estado: ' + estado;
     }
 
-    guardarRegistroOfflineMGP(idLimpio)
+    guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
