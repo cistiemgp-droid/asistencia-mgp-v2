@@ -3288,7 +3288,7 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
+function registrarAsistenciaOfflineMGP(id) {
 
   return new Promise(function(resolve) {
 
@@ -3372,7 +3372,7 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         'Estado: ' + estado;
     }
 
-    guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
+    guardarRegistroOfflineMGP(idLimpio)
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
@@ -7109,6 +7109,11 @@ function renderizarMatrizMensualMGP() {
     new Date(anio, numeroMes, 0).getDate();
 
   const diasEvaluados = new Set();
+  const estadosMatriz = {};
+  (Array.isArray(ultimoReporteMGP.diasMatriz) ? ultimoReporteMGP.diasMatriz : []).forEach(function(estado) {
+    const dia = Number(estado && estado.dia);
+    if (dia >= 1 && dia <= ultimoDia) estadosMatriz[dia] = estado;
+  });
   const datosPorAlumno = [];
   const incidencias = [];
 
@@ -7224,12 +7229,22 @@ function renderizarMatrizMensualMGP() {
       // Si no fue evaluado, se muestra D.
       let codigo = '';
 
+      const estadoDia = estadosMatriz[dia];
+
       if (registro) {
         codigo = registro.codigo || '';
+        if (codigo === 'A') codigo = '•';
+      } else if (estadoDia && !estadoDia.evaluable) {
+        codigo = '';
+        td.style.backgroundColor = '#e5e7eb';
+      } else if (estadoDia && estadoDia.evaluable && estadoDia.cerrado) {
+        codigo = 'F';
+      } else if (estadoDia && estadoDia.evaluable && !estadoDia.cerrado) {
+        codigo = 'P';
       } else if (diasEvaluados.has(dia)) {
         codigo = 'F';
       } else {
-        codigo = 'D';
+        codigo = 'P';
       }
 
       td.textContent = codigo;
@@ -7286,12 +7301,13 @@ function renderizarMatrizMensualMGP() {
   tablaLeyenda.style.marginTop = '7px';
 
   [
-    ['A', 'Asistió'],
+    ['•', 'Asistió'],
     ['T', 'Tardanza'],
     ['U', 'Tardanza justificada'],
     ['F', 'Falta'],
     ['J', 'Falta justificada'],
-    ['D', 'Día no evaluable']
+    ['P', 'Día pendiente / futuro'],
+    ['', 'Día no evaluable (celda sombreada)']
   ].forEach(function(item) {
     const fila = document.createElement('tr');
 
@@ -7751,6 +7767,11 @@ function obtenerDatosMatrizMensualMGP() {
       : 0;
 
   const diasEvaluados = new Set();
+  const estadosMatriz = {};
+  (Array.isArray(reporte.diasMatriz) ? reporte.diasMatriz : []).forEach(function(estado) {
+    const dia = Number(estado && estado.dia);
+    if (dia >= 1 && dia <= ultimoDia) estadosMatriz[dia] = estado;
+  });
   const datosPorAlumno = [];
 
   (Array.isArray(reporte.alumnos) ? reporte.alumnos : []).forEach(function(alumno, indiceAlumno) {
@@ -7798,12 +7819,21 @@ function obtenerDatosMatrizMensualMGP() {
       const registro = item.porFecha[dia];
       let codigo = '';
 
+      const estadoDia = estadosMatriz[dia];
+
       if (registro) {
         codigo = registro.codigo || '';
+        if (codigo === 'A') codigo = '•';
+      } else if (estadoDia && !estadoDia.evaluable) {
+        codigo = '';
+      } else if (estadoDia && estadoDia.evaluable && estadoDia.cerrado) {
+        codigo = 'F';
+      } else if (estadoDia && estadoDia.evaluable && !estadoDia.cerrado) {
+        codigo = 'P';
       } else if (diasEvaluados.has(dia)) {
         codigo = 'F';
       } else {
-        codigo = 'D';
+        codigo = 'P';
       }
 
       fila.push(codigo);
@@ -7904,12 +7934,13 @@ function descargarReporteExcel() {
         ...matriz.filas,
         [],
         ['LEYENDA DE CÓDIGOS'],
-        ['A', 'Asistió'],
+        ['•', 'Asistió'],
         ['T', 'Tardanza'],
         ['U', 'Tardanza justificada'],
         ['F', 'Falta'],
         ['J', 'Falta justificada'],
-        ['D', 'Día no evaluable']
+        ['P', 'Día pendiente / futuro'],
+        ['', 'Día no evaluable (celda sombreada)']
       ];
 
       const hojaMatriz = XLSX.utils.aoa_to_sheet(filasMatriz);
@@ -8095,6 +8126,13 @@ function descargarReportePDF() {
         headStyles: {
           fontSize: 5
         },
+        didParseCell: function(dataCell) {
+          if (dataCell.section === 'body' &&
+              dataCell.column.index >= 3 &&
+              String(dataCell.cell.raw || '') === '') {
+            dataCell.cell.styles.fillColor = [229, 231, 235];
+          }
+        },
         margin: {
           left: 8,
           right: 8
@@ -8110,12 +8148,13 @@ function descargarReportePDF() {
       doc.autoTable({
         head: [['Código', 'Significado']],
         body: [
-          ['A', 'Asistió'],
+          ['•', 'Asistió'],
           ['T', 'Tardanza'],
           ['U', 'Tardanza justificada'],
           ['F', 'Falta'],
           ['J', 'Falta justificada'],
-          ['D', 'Día no evaluable']
+          ['P', 'Día pendiente / futuro'],
+          ['', 'Día no evaluable (celda sombreada)']
         ],
         startY: siguienteY,
         theme: 'grid',
