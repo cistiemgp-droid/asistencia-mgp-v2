@@ -7110,9 +7110,14 @@ function renderizarMatrizMensualMGP() {
 
   const diasEvaluados = new Set();
   const estadosMatriz = {};
-  (Array.isArray(ultimoReporteMGP.diasMatriz) ? ultimoReporteMGP.diasMatriz : []).forEach(function(estado) {
+  (Array.isArray(ultimoReporteMGP.diasMatriz)
+    ? ultimoReporteMGP.diasMatriz
+    : []
+  ).forEach(function(estado) {
     const dia = Number(estado && estado.dia);
-    if (dia >= 1 && dia <= ultimoDia) estadosMatriz[dia] = estado;
+    if (dia >= 1 && dia <= ultimoDia) {
+      estadosMatriz[dia] = estado;
+    }
   });
   const datosPorAlumno = [];
   const incidencias = [];
@@ -7224,11 +7229,10 @@ function renderizarMatrizMensualMGP() {
       const td = document.createElement('td');
       const registro = item.porFecha[dia];
 
-      // Si el día fue evaluado, el código proviene
-      // directamente de las reglas mensuales actuales.
-      // Si no fue evaluado, se muestra D.
+      // Los estados J/F/T/U/A provienen del detalle mensual
+      // existente. Esta capa solo decide qué mostrar cuando
+      // no existe registro para ese día.
       let codigo = '';
-
       const estadoDia = estadosMatriz[dia];
 
       if (registro) {
@@ -7244,7 +7248,10 @@ function renderizarMatrizMensualMGP() {
       } else if (diasEvaluados.has(dia)) {
         codigo = 'F';
       } else {
-        codigo = 'P';
+        // Si el backend no entrega metadata del calendario,
+        // no inventamos que el día es futuro.
+        codigo = '';
+        td.style.backgroundColor = '#e5e7eb';
       }
 
       td.textContent = codigo;
@@ -7768,9 +7775,14 @@ function obtenerDatosMatrizMensualMGP() {
 
   const diasEvaluados = new Set();
   const estadosMatriz = {};
-  (Array.isArray(reporte.diasMatriz) ? reporte.diasMatriz : []).forEach(function(estado) {
+  (Array.isArray(reporte.diasMatriz)
+    ? reporte.diasMatriz
+    : []
+  ).forEach(function(estado) {
     const dia = Number(estado && estado.dia);
-    if (dia >= 1 && dia <= ultimoDia) estadosMatriz[dia] = estado;
+    if (dia >= 1 && dia <= ultimoDia) {
+      estadosMatriz[dia] = estado;
+    }
   });
   const datosPorAlumno = [];
 
@@ -7833,7 +7845,7 @@ function obtenerDatosMatrizMensualMGP() {
       } else if (diasEvaluados.has(dia)) {
         codigo = 'F';
       } else {
-        codigo = 'P';
+        codigo = '';
       }
 
       fila.push(codigo);
@@ -8125,13 +8137,6 @@ function descargarReportePDF() {
         },
         headStyles: {
           fontSize: 5
-        },
-        didParseCell: function(dataCell) {
-          if (dataCell.section === 'body' &&
-              dataCell.column.index >= 3 &&
-              String(dataCell.cell.raw || '') === '') {
-            dataCell.cell.styles.fillColor = [229, 231, 235];
-          }
         },
         margin: {
           left: 8,
