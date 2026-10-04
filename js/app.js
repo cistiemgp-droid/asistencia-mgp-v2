@@ -7324,6 +7324,22 @@ function obtenerEstadoCeldaMatrizEstudianteMGP_(estadoDia, registro) {
     return { codigo: '', noEvaluable: true };
   }
 
+  // Regla maestra: el periodo operativo inicia el 14/09/2026.
+  // Esta guarda pertenece exclusivamente a la matriz para impedir que
+  // un estado de calendario incorrecto pueda convertir fechas anteriores
+  // en faltas. No modifica CONFIGURACION ni otras superficies.
+  const fechaMatriz = String(estadoDia.fecha || '').trim();
+  const partesFecha = fechaMatriz.split('/');
+  if (partesFecha.length === 3) {
+    const diaMatriz = Number(partesFecha[0]);
+    const mesMatriz = Number(partesFecha[1]);
+    const anioMatriz = Number(partesFecha[2]);
+    if (anioMatriz === 2026 &&
+        (mesMatriz < 9 || (mesMatriz === 9 && diaMatriz < 14))) {
+      return { codigo: '', noEvaluable: true };
+    }
+  }
+
   if (registro) {
     const codigo = String(registro.codigo || '').trim().toUpperCase();
     if (codigo === 'A') return { codigo: '•', noEvaluable: false };
