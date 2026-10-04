@@ -5467,7 +5467,10 @@ const usaFiltroMensual =
         : [],
       personal: Array.isArray(resultado.personal)
         ? resultado.personal
-        : []
+        : [],
+      diasMatriz: Array.isArray(resultado.diasMatriz)
+        ? resultado.diasMatriz
+        : null
     };
 
     actualizarBotonesDescargaReporte();
