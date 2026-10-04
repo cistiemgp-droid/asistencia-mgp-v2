@@ -3288,7 +3288,7 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function registrarAsistenciaOfflineMGP(id) {
+function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
   return new Promise(function(resolve) {
 
@@ -3372,7 +3372,7 @@ function registrarAsistenciaOfflineMGP(id) {
         'Estado: ' + estado;
     }
 
-    guardarRegistroOfflineMGP(idLimpio)
+    guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
@@ -7038,37 +7038,27 @@ function renderizarMatrizMensualPersonalMGP(
 function renderizarMatrizMensualMGP() {
 
   const contenedorMatriz =
-    document.getElementById(
-      'reporteMatrizTablaContenedor'
-    );
-
+    document.getElementById('reporteMatrizTablaContenedor');
   const contenedorIncidencias =
-    document.getElementById(
-      'reporteIncidenciasTablaContenedor'
-    );
-
+    document.getElementById('reporteIncidenciasTablaContenedor');
   const contenedorPrincipal =
-    document.getElementById(
-      'reporteMatrizMensual'
-    );
+    document.getElementById('reporteMatrizMensual');
 
-  if (!contenedorMatriz ||
-      !contenedorIncidencias ||
-      !contenedorPrincipal) {
+  if (!contenedorMatriz || !contenedorIncidencias || !contenedorPrincipal) {
     return;
   }
 
   contenedorMatriz.innerHTML = '';
   contenedorIncidencias.innerHTML = '';
 
-  if (!matrizMensualVisibleMGP ||
-      !ultimoReporteMGP ||
+  if (!matrizMensualVisibleMGP || !ultimoReporteMGP ||
       (ultimoReporteMGP.tipoReporte !== 'mensual' &&
        ultimoReporteMGP.tipoReporte !== 'mensual_personal')) {
     contenedorPrincipal.style.display = 'none';
     return;
   }
 
+  // La matriz de PERSONAL es una rama independiente y permanece intacta.
   if (ultimoReporteMGP.tipoReporte === 'mensual_personal') {
     renderizarMatrizMensualPersonalMGP(
       contenedorMatriz,
@@ -7078,22 +7068,22 @@ function renderizarMatrizMensualMGP() {
     return;
   }
 
-  const alumnos =
-    Array.isArray(ultimoReporteMGP.alumnos)
-      ? ultimoReporteMGP.alumnos
-      : [];
+  const alumnos = Array.isArray(ultimoReporteMGP.alumnos)
+    ? ultimoReporteMGP.alumnos
+    : [];
+  const estados = Array.isArray(ultimoReporteMGP.diasMatriz)
+    ? ultimoReporteMGP.diasMatriz
+    : null;
 
-  if (!alumnos.length) {
+  if (!estados) {
     contenedorPrincipal.style.display = 'block';
     contenedorMatriz.textContent =
-      'No hay estudiantes para mostrar.';
-    contenedorIncidencias.textContent =
-      'No hay incidencias para mostrar.';
+      'No se recibió el estado del calendario para construir la matriz.';
+    contenedorIncidencias.textContent = '';
     return;
   }
 
-  const mes =
-    String(ultimoReporteMGP.mes || '').trim();
+  const mes = String(ultimoReporteMGP.mes || '').trim();
   const partesMes = mes.split('-');
   const anio = Number(partesMes[0]);
   const numeroMes = Number(partesMes[1]);
@@ -7105,85 +7095,27 @@ function renderizarMatrizMensualMGP() {
     return;
   }
 
-  const ultimoDia =
-    new Date(anio, numeroMes, 0).getDate();
-
-  const diasEvaluados = new Set();
-  const estadosMatriz = {};
-  (Array.isArray(ultimoReporteMGP.diasMatriz)
-    ? ultimoReporteMGP.diasMatriz
-    : []
-  ).forEach(function(estado) {
-    const dia = Number(estado && estado.dia);
+  const ultimoDia = new Date(anio, numeroMes, 0).getDate();
+  const estadosPorDia = {};
+  estados.forEach(function(estadoDia) {
+    const dia = Number(estadoDia && estadoDia.dia);
     if (dia >= 1 && dia <= ultimoDia) {
-      estadosMatriz[dia] = estado;
+      estadosPorDia[dia] = estadoDia;
     }
   });
-  const datosPorAlumno = [];
+
   const incidencias = [];
 
-  alumnos.forEach(function(alumno, indiceAlumno) {
-
-    const porFecha = {};
-    const detalleDias =
-      Array.isArray(alumno.detalleDias)
-        ? alumno.detalleDias
-        : [];
-
-    detalleDias.forEach(function(dia) {
-      const fecha =
-        String(dia.fecha || '').trim();
-
-      const partesFecha = fecha.split('/');
-      if (partesFecha.length !== 3) {
-        return;
-      }
-
-      const diaNumero = Number(partesFecha[0]);
-      if (diaNumero < 1 || diaNumero > ultimoDia) {
-        return;
-      }
-
-      diasEvaluados.add(diaNumero);
-      porFecha[diaNumero] = {
-        codigo: String(dia.codigo || '').trim().toUpperCase(),
-        fecha: fecha,
-        estado: String(dia.estado || '').trim().toUpperCase(),
-        puntualidad: String(dia.puntualidad || '').trim().toUpperCase(),
-        hora: String(dia.hora || '').trim()
-      };
-    });
-
-    datosPorAlumno.push({
-      alumno: alumno,
-      porFecha: porFecha,
-      numero: indiceAlumno + 1
-    });
-  });
-
-  // ---------------------------------------------------
-  // TABLA MATRIZ
-  // ---------------------------------------------------
-
-  const tablaMatriz =
-    document.createElement('table');
-
+  const tablaMatriz = document.createElement('table');
   tablaMatriz.style.borderCollapse = 'collapse';
   tablaMatriz.style.minWidth = '1100px';
   tablaMatriz.style.width = '100%';
   tablaMatriz.style.tableLayout = 'auto';
   tablaMatriz.style.fontSize = '10px';
 
-  const thead =
-    document.createElement('thead');
-  const filaCabecera =
-    document.createElement('tr');
-
-  [
-    'N.º',
-    'DNI',
-    'APELLIDOS Y NOMBRES'
-  ].forEach(function(texto) {
+  const thead = document.createElement('thead');
+  const filaCabecera = document.createElement('tr');
+  ['N.º', 'DNI', 'APELLIDOS Y NOMBRES'].forEach(function(texto) {
     const th = document.createElement('th');
     th.textContent = texto;
     th.style.padding = '3px';
@@ -7202,20 +7134,26 @@ function renderizarMatrizMensualMGP() {
     th.style.width = '2.2%';
     filaCabecera.appendChild(th);
   }
-
   thead.appendChild(filaCabecera);
   tablaMatriz.appendChild(thead);
 
   const tbody = document.createElement('tbody');
+  (alumnos || []).forEach(function(alumno, indiceAlumno) {
+    const porFecha = {};
+    (Array.isArray(alumno.detalleDias) ? alumno.detalleDias : []).forEach(function(dia) {
+      const fecha = String(dia.fecha || '').trim();
+      const partes = fecha.split('/');
+      if (partes.length !== 3) return;
+      const diaNumero = Number(partes[0]);
+      if (diaNumero < 1 || diaNumero > ultimoDia) return;
+      porFecha[diaNumero] = {
+        codigo: String(dia.codigo || '').trim().toUpperCase(),
+        fecha: fecha
+      };
+    });
 
-  datosPorAlumno.forEach(function(item) {
     const fila = document.createElement('tr');
-
-    [
-      item.numero,
-      item.alumno.dni || '',
-      item.alumno.nombre || ''
-    ].forEach(function(valor) {
+    [indiceAlumno + 1, alumno.dni || '', alumno.nombre || ''].forEach(function(valor) {
       const td = document.createElement('td');
       td.textContent = valor;
       td.style.padding = '3px';
@@ -7227,71 +7165,42 @@ function renderizarMatrizMensualMGP() {
 
     for (let dia = 1; dia <= ultimoDia; dia++) {
       const td = document.createElement('td');
-      const registro = item.porFecha[dia];
+      const estadoDia = estadosPorDia[dia];
+      const registro = porFecha[dia] || null;
+      const estadoCelda = obtenerEstadoCeldaMatrizEstudianteMGP_(estadoDia, registro);
 
-      // Los estados J/F/T/U/A provienen del detalle mensual
-      // existente. Esta capa solo decide qué mostrar cuando
-      // no existe registro para ese día.
-      let codigo = '';
-      const estadoDia = estadosMatriz[dia];
-
-      if (registro) {
-        codigo = registro.codigo || '';
-        if (codigo === 'A') codigo = '•';
-      } else if (estadoDia && !estadoDia.evaluable) {
-        codigo = '';
-        td.style.backgroundColor = '#e5e7eb';
-      } else if (estadoDia && estadoDia.evaluable && estadoDia.cerrado) {
-        codigo = 'F';
-      } else if (estadoDia && estadoDia.evaluable && !estadoDia.cerrado) {
-        codigo = 'P';
-      } else if (diasEvaluados.has(dia)) {
-        codigo = 'F';
-      } else {
-        // Si el backend no entrega metadata del calendario,
-        // no inventamos que el día es futuro.
-        codigo = '';
-        td.style.backgroundColor = '#e5e7eb';
-      }
-
-      td.textContent = codigo;
+      td.textContent = estadoCelda.codigo;
       td.style.padding = '3px';
       td.style.border = '1px solid #ccc';
       td.style.textAlign = 'center';
       td.style.fontWeight = 'bold';
       td.style.width = '2.2%';
-      fila.appendChild(td);
 
-      if (
-        registro &&
-        ['T', 'U', 'F', 'J'].indexOf(codigo) !== -1
-      ) {
+      if (estadoCelda.noEvaluable) {
+        td.style.backgroundColor = '#e5e7eb';
+      }
+
+      if (registro && ['T', 'U', 'F', 'J'].indexOf(estadoCelda.codigo) !== -1) {
         incidencias.push({
-          numero: item.numero,
-          nombre: item.alumno.nombre || '',
-          dni: item.alumno.dni || '',
+          numero: indiceAlumno + 1,
+          nombre: alumno.nombre || '',
+          dni: alumno.dni || '',
           dia: dia,
           fecha: registro.fecha || '',
-          codigo: codigo
+          codigo: estadoCelda.codigo
         });
       }
+      fila.appendChild(td);
     }
-
     tbody.appendChild(fila);
   });
 
   tablaMatriz.appendChild(tbody);
-
   contenedorMatriz.style.maxWidth = '100%';
   contenedorMatriz.style.overflowX = 'auto';
   contenedorMatriz.style.overflowY = 'visible';
   contenedorMatriz.style.webkitOverflowScrolling = 'touch';
-
   contenedorMatriz.appendChild(tablaMatriz);
-
-  // ---------------------------------------------------
-  // LEYENDA DE CÓDIGOS
-  // ---------------------------------------------------
 
   const leyenda = document.createElement('div');
   leyenda.style.marginTop = '12px';
@@ -7313,11 +7222,10 @@ function renderizarMatrizMensualMGP() {
     ['U', 'Tardanza justificada'],
     ['F', 'Falta'],
     ['J', 'Falta justificada'],
-    ['P', 'Día pendiente / futuro'],
+    ['P', 'Día pendiente/futuro'],
     ['', 'Día no evaluable (celda sombreada)']
   ].forEach(function(item) {
     const fila = document.createElement('tr');
-
     item.forEach(function(valor, indice) {
       const td = document.createElement('td');
       td.textContent = valor;
@@ -7326,54 +7234,35 @@ function renderizarMatrizMensualMGP() {
       if (indice === 0) {
         td.style.fontWeight = 'bold';
         td.style.textAlign = 'center';
+        if (valor === '') td.style.backgroundColor = '#e5e7eb';
       }
       fila.appendChild(td);
     });
-
     tablaLeyenda.appendChild(fila);
   });
-
   leyenda.appendChild(tablaLeyenda);
 
   const notaLeyenda = document.createElement('div');
   notaLeyenda.style.marginTop = '8px';
   notaLeyenda.textContent =
-    'Nota: Las incidencias para SIAGIE se muestran en la sección siguiente y corresponden a F, T, U y J.';
+    'Nota: Las incidencias para SIAGIE se muestran en la sección siguiente y corresponden a F, T, U y J registrados.';
   leyenda.appendChild(notaLeyenda);
-
   contenedorMatriz.appendChild(leyenda);
 
-  // ---------------------------------------------------
-  // TABLA DE INCIDENCIAS
-  // ---------------------------------------------------
-
   incidencias.sort(function(a, b) {
-    if (a.numero !== b.numero) {
-      return a.numero - b.numero;
-    }
+    if (a.numero !== b.numero) return a.numero - b.numero;
     return a.dia - b.dia;
   });
 
-  const tablaIncidencias =
-    document.createElement('table');
-
+  const tablaIncidencias = document.createElement('table');
   tablaIncidencias.style.borderCollapse = 'collapse';
   tablaIncidencias.style.width = '100%';
   tablaIncidencias.style.minWidth = '700px';
   tablaIncidencias.style.tableLayout = 'auto';
   tablaIncidencias.style.fontSize = '11px';
 
-  const filaIncidenciasCabecera =
-    document.createElement('tr');
-
-  [
-    'N.º',
-    'DNI',
-    'ESTUDIANTE',
-    'DÍA',
-    'FECHA',
-    'CÓDIGO'
-  ].forEach(function(texto) {
+  const filaIncidenciasCabecera = document.createElement('tr');
+  ['N.º', 'DNI', 'ESTUDIANTE', 'DÍA', 'FECHA', 'CÓDIGO'].forEach(function(texto) {
     const th = document.createElement('th');
     th.textContent = texto;
     th.style.padding = '4px';
@@ -7383,26 +7272,14 @@ function renderizarMatrizMensualMGP() {
     th.style.wordBreak = 'break-word';
     filaIncidenciasCabecera.appendChild(th);
   });
-
-  const theadIncidencias =
-    document.createElement('thead');
+  const theadIncidencias = document.createElement('thead');
   theadIncidencias.appendChild(filaIncidenciasCabecera);
   tablaIncidencias.appendChild(theadIncidencias);
 
-  const tbodyIncidencias =
-    document.createElement('tbody');
-
+  const tbodyIncidencias = document.createElement('tbody');
   incidencias.forEach(function(item) {
     const fila = document.createElement('tr');
-
-    [
-      item.numero,
-      item.dni,
-      item.nombre,
-      item.dia,
-      item.fecha,
-      item.codigo
-    ].forEach(function(valor) {
+    [item.numero, item.dni, item.nombre, item.dia, item.fecha, item.codigo].forEach(function(valor) {
       const td = document.createElement('td');
       td.textContent = valor;
       td.style.padding = '4px';
@@ -7411,17 +7288,14 @@ function renderizarMatrizMensualMGP() {
       td.style.wordBreak = 'break-word';
       fila.appendChild(td);
     });
-
     tbodyIncidencias.appendChild(fila);
   });
-
   tablaIncidencias.appendChild(tbodyIncidencias);
 
   contenedorIncidencias.style.maxWidth = '100%';
   contenedorIncidencias.style.overflowX = 'auto';
   contenedorIncidencias.style.overflowY = 'visible';
   contenedorIncidencias.style.webkitOverflowScrolling = 'touch';
-
   contenedorIncidencias.appendChild(tablaIncidencias);
 
   if (!incidencias.length) {
@@ -7430,16 +7304,39 @@ function renderizarMatrizMensualMGP() {
   }
 
   contenedorPrincipal.style.display = 'block';
-
-  // ---------------------------------------------------
-  // MARCO AZUL DE LA MATRIZ MENSUAL
-  // ---------------------------------------------------
   contenedorPrincipal.style.border = '1px solid #2563eb';
   contenedorPrincipal.style.borderRadius = '8px';
   contenedorPrincipal.style.padding = '10px';
   contenedorPrincipal.style.background = '#ffffff';
   contenedorPrincipal.style.boxSizing = 'border-box';
 }
+
+function obtenerEstadoCeldaMatrizEstudianteMGP_(estadoDia, registro) {
+  // Orden único y obligatorio de decisión:
+  // 1) no evaluable -> vacío/sombreado
+  // 2) registro evaluable -> código real (A se presenta como •)
+  // 3) evaluable cerrado sin registro -> F
+  // 4) evaluable abierto sin registro -> P
+  if (!estadoDia || estadoDia.evaluable !== true) {
+    return { codigo: '', noEvaluable: true };
+  }
+
+  if (registro) {
+    const codigo = String(registro.codigo || '').trim().toUpperCase();
+    if (codigo === 'A') return { codigo: '•', noEvaluable: false };
+    if (['T', 'U', 'F', 'J'].indexOf(codigo) !== -1) {
+      return { codigo: codigo, noEvaluable: false };
+    }
+    return { codigo: '', noEvaluable: false };
+  }
+
+  if (estadoDia.cerrado === true) {
+    return { codigo: 'F', noEvaluable: false };
+  }
+
+  return { codigo: 'P', noEvaluable: false };
+}
+
 
 
 // =====================================================
@@ -7753,11 +7650,7 @@ function obtenerDatosMatrizMensualMGP() {
   if (!reporte ||
       (reporte.tipoReporte !== 'mensual' &&
        reporte.tipoReporte !== 'mensual_personal')) {
-    return {
-      encabezados: [],
-      filas: [],
-      incidencias: []
-    };
+    return { encabezados: [], filas: [], incidencias: [] };
   }
 
   if (reporte.tipoReporte === 'mensual_personal') {
@@ -7768,109 +7661,67 @@ function obtenerDatosMatrizMensualMGP() {
   const partesMes = mes.split('-');
   const anio = Number(partesMes[0]);
   const numeroMes = Number(partesMes[1]);
-  const ultimoDia =
-    anio && numeroMes
-      ? new Date(anio, numeroMes, 0).getDate()
-      : 0;
+  const ultimoDia = anio && numeroMes
+    ? new Date(anio, numeroMes, 0).getDate()
+    : 0;
 
-  const diasEvaluados = new Set();
-  const estadosMatriz = {};
-  (Array.isArray(reporte.diasMatriz)
+  const estados = Array.isArray(reporte.diasMatriz)
     ? reporte.diasMatriz
-    : []
-  ).forEach(function(estado) {
-    const dia = Number(estado && estado.dia);
-    if (dia >= 1 && dia <= ultimoDia) {
-      estadosMatriz[dia] = estado;
-    }
+    : null;
+  if (!estados) {
+    throw new Error('El reporte mensual no contiene diasMatriz. No se puede exportar una matriz confiable.');
+  }
+
+  const estadosPorDia = {};
+  estados.forEach(function(estadoDia) {
+    const dia = Number(estadoDia && estadoDia.dia);
+    if (dia >= 1 && dia <= ultimoDia) estadosPorDia[dia] = estadoDia;
   });
-  const datosPorAlumno = [];
+
+  const encabezados = ['N.º', 'DNI', 'APELLIDOS Y NOMBRES'];
+  for (let dia = 1; dia <= ultimoDia; dia++) encabezados.push(String(dia));
+
+  const filas = [];
+  const incidencias = [];
 
   (Array.isArray(reporte.alumnos) ? reporte.alumnos : []).forEach(function(alumno, indiceAlumno) {
     const porFecha = {};
-    const detalleDias =
-      Array.isArray(alumno.detalleDias)
-        ? alumno.detalleDias
-        : [];
-
-    detalleDias.forEach(function(dia) {
+    (Array.isArray(alumno.detalleDias) ? alumno.detalleDias : []).forEach(function(dia) {
       const fecha = String(dia.fecha || '').trim();
       const partesFecha = fecha.split('/');
       if (partesFecha.length !== 3) return;
-
       const diaNumero = Number(partesFecha[0]);
       if (diaNumero < 1 || diaNumero > ultimoDia) return;
-
-      diasEvaluados.add(diaNumero);
       porFecha[diaNumero] = {
         codigo: String(dia.codigo || '').trim().toUpperCase(),
         fecha: fecha
       };
     });
 
-    datosPorAlumno.push({
-      numero: indiceAlumno + 1,
-      dni: alumno.dni || '',
-      nombre: alumno.nombre || '',
-      porFecha: porFecha
-    });
-  });
-
-  const encabezados = ['N.º', 'DNI', 'APELLIDOS Y NOMBRES'];
-  for (let dia = 1; dia <= ultimoDia; dia++) {
-    encabezados.push(String(dia));
-  }
-
-  const filas = [];
-  const incidencias = [];
-
-  datosPorAlumno.forEach(function(item) {
-    const fila = [item.numero, item.dni, item.nombre];
+    const fila = [indiceAlumno + 1, alumno.dni || '', alumno.nombre || ''];
 
     for (let dia = 1; dia <= ultimoDia; dia++) {
-      const registro = item.porFecha[dia];
-      let codigo = '';
+      const registro = porFecha[dia] || null;
+      const estadoCelda = obtenerEstadoCeldaMatrizEstudianteMGP_(estadosPorDia[dia], registro);
+      fila.push(estadoCelda.codigo);
 
-      const estadoDia = estadosMatriz[dia];
-
-      if (registro) {
-        codigo = registro.codigo || '';
-        if (codigo === 'A') codigo = '•';
-      } else if (estadoDia && !estadoDia.evaluable) {
-        codigo = '';
-      } else if (estadoDia && estadoDia.evaluable && estadoDia.cerrado) {
-        codigo = 'F';
-      } else if (estadoDia && estadoDia.evaluable && !estadoDia.cerrado) {
-        codigo = 'P';
-      } else if (diasEvaluados.has(dia)) {
-        codigo = 'F';
-      } else {
-        codigo = '';
-      }
-
-      fila.push(codigo);
-
-      if (['T', 'U', 'F', 'J'].indexOf(codigo) !== -1 && registro) {
+      if (registro && ['T', 'U', 'F', 'J'].indexOf(estadoCelda.codigo) !== -1) {
         incidencias.push([
-          item.numero,
-          item.dni,
-          item.nombre,
+          indiceAlumno + 1,
+          alumno.dni || '',
+          alumno.nombre || '',
           dia,
           registro.fecha || '',
-          codigo
+          estadoCelda.codigo
         ]);
       }
     }
-
     filas.push(fila);
   });
 
-  return {
-    encabezados: encabezados,
-    filas: filas,
-    incidencias: incidencias
-  };
+  return { encabezados: encabezados, filas: filas, incidencias: incidencias };
 }
+
 
 
 function descargarReporteExcel() {
@@ -7951,7 +7802,7 @@ function descargarReporteExcel() {
         ['U', 'Tardanza justificada'],
         ['F', 'Falta'],
         ['J', 'Falta justificada'],
-        ['P', 'Día pendiente / futuro'],
+        ['P', 'Día pendiente/futuro'],
         ['', 'Día no evaluable (celda sombreada)']
       ];
 
@@ -8153,13 +8004,12 @@ function descargarReportePDF() {
       doc.autoTable({
         head: [['Código', 'Significado']],
         body: [
-          ['•', 'Asistió'],
+          ['A', 'Asistió'],
           ['T', 'Tardanza'],
           ['U', 'Tardanza justificada'],
           ['F', 'Falta'],
           ['J', 'Falta justificada'],
-          ['P', 'Día pendiente / futuro'],
-          ['', 'Día no evaluable (celda sombreada)']
+          ['D', 'Día no evaluable']
         ],
         startY: siguienteY,
         theme: 'grid',
