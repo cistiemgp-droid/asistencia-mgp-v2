@@ -2152,6 +2152,8 @@ if (salirBtn) {
       state.persona = null;
       state.qr = null;
 
+      aplicarRestriccionReportesPsicologoMGP();
+
       // ETAPA 07:
       // Al cerrar sesión, limpiar los campos del formulario LOGIN.
       // No modifica la sesión, permisos, cámara, QR ni registros offline.
@@ -2370,6 +2372,7 @@ if (entrarBtn) {
         }
 
         aplicarPermisosPanel();
+        aplicarRestriccionReportesPsicologoMGP();
 
         inicializarModuloJustificacionesMGP();
 
@@ -4886,6 +4889,64 @@ if (reporteTipo) {
 }
 
 
+// =====================================================
+// RESTRICCIÓN DE REPORTES — ROL PSICOLOGO
+// -----------------------------------------------------
+// PSICOLOGO solo puede consultar reportes de estudiantes.
+// No puede consultar reportes de PERSONAL ni ALERTAS.
+// La restricción es visual y preventiva en el frontend;
+// la autorización definitiva corresponde al servidor.
+// =====================================================
+function aplicarRestriccionReportesPsicologoMGP() {
+
+  if (!reporteTipo) {
+    return;
+  }
+
+  const rolActual =
+    String(
+      (state.usuario && state.usuario.rol) || ''
+    ).trim().toUpperCase();
+
+  const esPsicologo =
+    rolActual === 'PSICOLOGO';
+
+  Array.from(reporteTipo.options).forEach(function(opcion) {
+
+    const tipoOpcion =
+      String(opcion.value || '').trim().toLowerCase();
+
+    const restringida =
+      tipoOpcion === 'personal' ||
+      tipoOpcion === 'mensual_personal' ||
+      tipoOpcion === 'alertas';
+
+    opcion.hidden =
+      esPsicologo && restringida;
+
+    opcion.disabled =
+      esPsicologo && restringida;
+
+  });
+
+  const tipoActual =
+    String(reporteTipo.value || '').trim().toLowerCase();
+
+  if (
+    esPsicologo &&
+    (
+      tipoActual === 'personal' ||
+      tipoActual === 'mensual_personal' ||
+      tipoActual === 'alertas'
+    )
+  ) {
+    reporteTipo.value = 'asistencia';
+  }
+
+  actualizarFiltroReporte();
+
+}
+
 function actualizarFiltroReporte() {
 
   if (!reporteTipo) {
@@ -5015,6 +5076,32 @@ async function consultarReporte() {
     tipoElemento
       ? tipoElemento.value.trim().toLowerCase()
       : 'asistencia';
+
+  const rolActualReporte =
+    String(
+      (state.usuario && state.usuario.rol) || ''
+    ).trim().toUpperCase();
+
+  if (
+    rolActualReporte === 'PSICOLOGO' &&
+    (
+      tipoReporte === 'personal' ||
+      tipoReporte === 'mensual_personal' ||
+      tipoReporte === 'alertas'
+    )
+  ) {
+    if (mensaje) {
+      mensaje.textContent =
+        '❌ PSICOLOGO solo puede consultar reportes de estudiantes.';
+    }
+
+    if (tipoElemento) {
+      tipoElemento.value = 'asistencia';
+    }
+
+    actualizarFiltroReporte();
+    return;
+  }
 
   if (tabla) {
 
