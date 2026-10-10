@@ -125,6 +125,10 @@ const OFFLINE_DB_VERSION_MGP = 1;
 // que un DNI previamente identificado ONLINE pertenece al tipo correcto.
 const OFFLINE_IDENTIDAD_CACHE_MGP = 'ASISTENCIA_MGP_V2_IDENTIDAD_OFFLINE';
 
+// Caché reducido de horario PERSONAL para uso OFFLINE.
+// Solo conserva primera hora de ingreso y última hora de salida por docente/día.
+const OFFLINE_HORARIO_PERSONAL_CACHE_MGP = 'ASISTENCIA_MGP_V2_HORARIO_PERSONAL_REDUCIDO';
+
 let offlineDBPromiseMGP = null;
 
 function abrirDBOfflineMGP() {
@@ -197,6 +201,177 @@ function normalizarTipoPersonaOfflineMGP(tipo) {
     ? 'personal'
     : 'estudiante';
 
+}
+
+function normalizarTextoHorarioPersonalOfflineMGP(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function minutosHorarioPersonalOfflineMGP(valor) {
+  const texto = String(valor || '').trim();
+  const partes = texto.split(':');
+  if (partes.length !== 2) return null;
+  let h = Number(partes[0]);
+  const m = Number(partes[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || m < 0 || m > 59) return null;
+  if (h >= 1 && h <= 6) h += 12;
+  return h * 60 + m;
+}
+
+function rangoHorarioPersonalOfflineMGP(valor) {
+  const partes = String(valor || '').split('-');
+  if (partes.length !== 2) return null;
+  const inicio = minutosHorarioPersonalOfflineMGP(partes[0]);
+  const fin = minutosHorarioPersonalOfflineMGP(partes[1]);
+  if (inicio == null || fin == null) return null;
+  return { inicio: inicio, fin: fin };
+}
+
+function guardarHorarioPersonalOfflineMGP(horarioReducido) {
+  try {
+    localStorage.setItem(
+      OFFLINE_HORARIO_PERSONAL_CACHE_MGP,
+      JSON.stringify({
+        actualizadoEn: new Date().toISOString(),
+        docentes: horarioReducido || {}
+      })
+    );
+    return true;
+  } catch (error) {
+    console.warn('No fue posible guardar horario PERSONAL offline:', error);
+    return false;
+  }
+}
+
+function obtenerHorarioPersonalOfflineMGP() {
+  try {
+    const cache = JSON.parse(
+      localStorage.getItem(OFFLINE_HORARIO_PERSONAL_CACHE_MGP) || '{}'
+    );
+    return cache && cache.docentes ? cache : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function actualizarHorarioPersonalOfflineMGP() {
+  if (!state.token || state.registroModo !== 'ONLINE') return false;
+  try {
+    const resultado = await solicitarHorarioDocentesMGP({});
+    if (!resultado || !resultado.ok || resultado.exito === false || !Array.isArray(resultado.clases)) {
+      return false;
+    }
+
+    const reducido = {};
+    resultado.clases.forEach(function(clase) {
+      const docente = normalizarTextoHorarioPersonalOfflineMGP(clase && clase.docente);
+      const dia = normalizarTextoHorarioPersonalOfflineMGP(clase && clase.dia);
+      const rango = rangoHorarioPersonalOfflineMGP(clase && clase.hora);
+      if (!docente || !dia || !rango) return;
+      if (!reducido[docente]) reducido[docente] = {};
+      if (!reducido[docente][dia]) {
+        reducido[docente][dia] = {
+          primeraHoraIngreso: rango.inicio,
+          ultimaHoraSalida: rango.fin
+        };
+        return;
+      }
+      if (rango.inicio < reducido[docente][dia].primeraHoraIngreso) {
+        reducido[docente][dia].primeraHoraIngreso = rango.inicio;
+      }
+      if (rango.fin > reducido[docente][dia].ultimaHoraSalida) {
+        reducido[docente][dia].ultimaHoraSalida = rango.fin;
+      }
+    });
+
+    return guardarHorarioPersonalOfflineMGP(reducido);
+  } catch (error) {
+    console.warn('No se pudo actualizar horario PERSONAL offline:', error);
+    return false;
+  }
+}
+
+function obtenerClaveFechaLocalMGP(fecha) {
+  const d = fecha || new Date();
+  return String(d.getFullYear()) + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function obtenerDiaLocalHorarioPersonalOfflineMGP(fecha) {
+  const d = fecha || new Date();
+  const nombres = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+  return nombres[d.getDay()] || '';
+}
+
+function obtenerMinutosActualesOfflineMGP(fecha) {
+  const d = fecha || new Date();
+  return d.getHours() * 60 + d.getMinutes() + (d.getSeconds() / 60);
+}
+
+async function obtenerEstadoPersonalOfflineMGP(id) {
+  const identidad = obtenerIdentidadOfflineMGP(id);
+  if (!identidad || normalizarTipoPersonaOfflineMGP(identidad.tipo) !== 'personal') {
+    return { estado: String(state.estado || 'INGRESO').trim().toUpperCase(), horario: null, puntualidad: 'N/A', salidaTemprana: false };
+  }
+
+  const cache = obtenerHorarioPersonalOfflineMGP();
+  const docente = normalizarTextoHorarioPersonalOfflineMGP(identidad.nombre);
+  const dia = obtenerDiaLocalHorarioPersonalOfflineMGP();
+  const horario = cache && cache.docentes && cache.docentes[docente]
+    ? cache.docentes[docente][dia]
+    : null;
+
+  let registros = [];
+  try {
+    const db = await abrirDBOfflineMGP();
+    registros = await new Promise(function(resolve, reject) {
+      const tx = db.transaction(OFFLINE_STORE_MGP, 'readonly');
+      const solicitud = tx.objectStore(OFFLINE_STORE_MGP).getAll();
+      solicitud.onsuccess = function() { resolve(Array.isArray(solicitud.result) ? solicitud.result : []); };
+      solicitud.onerror = function() { reject(solicitud.error || new Error('No fue posible leer registros offline.')); };
+    });
+  } catch (error) {}
+
+  const fechaClave = obtenerClaveFechaLocalMGP();
+  const mismos = registros.filter(function(registro) {
+    if (String(registro.id || '').trim() !== String(id || '').trim()) return false;
+    if (normalizarTipoPersonaOfflineMGP(registro.tipo) !== 'personal') return false;
+    return String(registro.fechaHoraCliente || '').slice(0, 10) === fechaClave;
+  });
+
+  const tieneIngreso = mismos.some(function(registro) {
+    return String(registro.estado || '').toUpperCase() === 'INGRESO';
+  });
+  const tieneSalida = mismos.some(function(registro) {
+    return String(registro.estado || '').toUpperCase() === 'SALIDA';
+  });
+
+  const estado = tieneIngreso && !tieneSalida ? 'SALIDA' : 'INGRESO';
+  const ahoraMin = obtenerMinutosActualesOfflineMGP();
+  let puntualidad = 'N/A';
+  let salidaTemprana = false;
+
+  if (horario) {
+    if (estado === 'INGRESO') {
+      puntualidad = ahoraMin > horario.primeraHoraIngreso ? 'TARDE' : 'PUNTUAL';
+    } else {
+      salidaTemprana = ahoraMin < horario.ultimaHoraSalida;
+    }
+  }
+
+  return {
+    estado: estado,
+    horario: horario,
+    puntualidad: puntualidad,
+    salidaTemprana: salidaTemprana,
+    docente: identidad.nombre || ''
+  };
 }
 
 function guardarIdentidadOfflineMGP(id, tipo, resultado) {
@@ -325,6 +500,9 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       tipo: tipo,
       estado: estado,
       metodo: metodo,
+      puntualidadOffline: puntualidadOffline,
+      salidaTempranaOffline: salidaTempranaOffline,
+      horarioPersonalOffline: horarioPersonalOffline,
       usuario: state.usuario && state.usuario.usuario
         ? String(state.usuario.usuario)
         : '',
@@ -716,6 +894,10 @@ function enviarRegistroOfflineAlServidorMGP(registro) {
       '&fechaHoraCliente=' + encodeURIComponent(fechaHoraCliente) +
       '&idOffline=' + encodeURIComponent(idOffline) +
       '&metodo=' + encodeURIComponent(metodo) +
+      '&puntualidadOffline=' + encodeURIComponent(String(registro.puntualidadOffline || '')) +
+      '&observacionOffline=' + encodeURIComponent(
+        registro.salidaTempranaOffline ? 'SALIDA TEMPRANA SEGUN HORARIO OFFLINE' : ''
+      ) +
       '&callback=' + encodeURIComponent(nombreCallback);
 
     script.async = true;
@@ -1571,6 +1753,9 @@ function alternarModoRegistroMGP() {
 
   if (state.registroModo === 'ONLINE') {
     sincronizarRegistrosOfflineMGP();
+    if (String(state.tipo || '').trim().toLowerCase() === 'personal') {
+      actualizarHorarioPersonalOfflineMGP();
+    }
   }
 
   const mensaje =
@@ -2533,6 +2718,10 @@ document
         const esPersonal =
           String(state.tipo).trim().toLowerCase() === 'personal';
 
+        if (esPersonal && state.registroModo === 'ONLINE') {
+          actualizarHorarioPersonalOfflineMGP();
+        }
+
         const estadoBotones =
           document.querySelectorAll('[data-e], [data-estado]');
 
@@ -3293,7 +3482,7 @@ function reproducirPitidoRegistroMGP() {
 
 function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
-  return new Promise(function(resolve) {
+  return new Promise(async function(resolve) {
 
     const mensaje =
       document.getElementById('regMsg');
@@ -3307,12 +3496,28 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
     const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
+    const esPersonalOffline =
+      tipo.toLowerCase() === 'personal' &&
+      state.registroModo === 'OFFLINE';
+
     const esPersonalAuto =
       tipo.toLowerCase() === 'personal' &&
       state.registroModo !== 'OFFLINE';
 
-    const estado =
+    let estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
+
+    let horarioPersonalOffline = null;
+    let puntualidadOffline = 'N/A';
+    let salidaTempranaOffline = false;
+
+    if (esPersonalOffline) {
+      const evaluacionOffline = await obtenerEstadoPersonalOfflineMGP(idLimpio);
+      estado = evaluacionOffline.estado;
+      horarioPersonalOffline = evaluacionOffline.horario;
+      puntualidadOffline = evaluacionOffline.puntualidad;
+      salidaTempranaOffline = evaluacionOffline.salidaTemprana;
+    }
 
     if (!idLimpio) {
 
@@ -3385,6 +3590,12 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
             '<strong>✅ GUARDADO OFFLINE</strong><br>' +
             'DNI: ' + idLimpio + '<br>' +
             'Estado: ' + estado + '<br>' +
+            (tipo.toLowerCase() === 'personal' && puntualidadOffline !== 'N/A'
+              ? 'Puntualidad: ' + puntualidadOffline + '<br>'
+              : '') +
+            (tipo.toLowerCase() === 'personal' && salidaTempranaOffline
+              ? '<strong>⚠️ SALIDA ANTES DE LA ÚLTIMA HORA DEL HORARIO</strong><br>'
+              : '') +
             'Hora: ' +
             new Date(registro.fechaHoraCliente)
               .toLocaleTimeString('es-PE') + '<br>' +
