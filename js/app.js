@@ -119,7 +119,7 @@ const cameraState = {
 
 const OFFLINE_DB_MGP = 'ASISTENCIA_MGP_V2_OFFLINE';
 const OFFLINE_STORE_MGP = 'pendientes';
-const OFFLINE_DB_VERSION_MGP = 1;
+const OFFLINE_DB_VERSION_MGP = 2;
 
 // Caché local de identidad: permite validar, cuando estamos OFFLINE,
 // que un DNI previamente identificado ONLINE pertenece al tipo correcto.
@@ -168,6 +168,10 @@ function abrirDBOfflineMGP() {
           { unique: false }
         );
 
+      }
+
+      if (!db.objectStoreNames.contains('personalOfflineCache')) {
+        db.createObjectStore('personalOfflineCache', { keyPath: 'clave' });
       }
 
     };
@@ -281,6 +285,58 @@ function generarIdOfflineMGP() {
 
 }
 
+function solicitarCachePersonalOfflineMGP() {
+  return new Promise(function(resolve,reject){
+    if(!navigator.onLine || !state.token){reject(new Error('Se requiere conexión y sesión activa para preparar la caché personal.'));return;}
+    const cb='cachePersonalMGP_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    const script=document.createElement('script'); let terminado=false;
+    const timer=setTimeout(function(){fin(new Error('Tiempo agotado preparando caché de PERSONAL.'));},20000);
+    function fin(err,data){if(terminado)return;terminado=true;clearTimeout(timer);if(script.parentNode)script.parentNode.removeChild(script);try{delete window[cb];}catch(e){} if(err)reject(err);else resolve(data);}
+    window[cb]=function(data){if(!data||data.exito!==true){fin(new Error(data&&data.mensaje?data.mensaje:'API no entregó caché válida.'));return;} if(!data.personas||!data.fechaServidor){fin(new Error('La respuesta de caché está incompleta.'));return;} guardarCachePersonalOfflineMGP(data).then(function(){fin(null,data);}).catch(function(e){fin(e);});};
+    script.onerror=function(){fin(new Error('No se pudo descargar la caché de PERSONAL.'));};
+    script.src=CONFIG.API_URL+'?action=apiPersonalOfflineCache&token='+encodeURIComponent(state.token)+'&callback='+encodeURIComponent(cb)+'&_t='+Date.now();
+    document.head.appendChild(script);
+  });
+}
+function guardarCachePersonalOfflineMGP(data){
+  return abrirDBOfflineMGP().then(function(db){return new Promise(function(resolve,reject){const tx=db.transaction('personalOfflineCache','readwrite');tx.objectStore('personalOfflineCache').put({clave:'vigente',version:data.version,fechaServidor:data.fechaServidor,actualizadoEn:data.actualizadoEn,dia:data.dia,personas:data.personas});tx.oncomplete=function(){resolve(true);};tx.onerror=function(){reject(tx.error||new Error('No se pudo guardar la caché de PERSONAL.'));};});});
+}
+function leerCachePersonalOfflineMGP(){
+  return abrirDBOfflineMGP().then(function(db){return new Promise(function(resolve,reject){const tx=db.transaction('personalOfflineCache','readonly');const req=tx.objectStore('personalOfflineCache').get('vigente');req.onsuccess=function(){const d=req.result;if(!d||d.version!=='PERSONAL_OFFLINE_V2'||!d.personas||!d.fechaServidor){resolve(null);return;}resolve(d);};req.onerror=function(){reject(req.error||new Error('No se pudo leer caché de PERSONAL.'));};});});
+}
+function horaLocalMinutosMGP(fecha){return fecha.getHours()*60+fecha.getMinutes();}
+function resolverEstadoPersonalOfflineMGP(id, fecha){
+  return leerCachePersonalOfflineMGP().then(function(cache){
+    if(!cache)throw new Error('No existe caché válida de PERSONAL. Conéctese antes de registrar OFFLINE.');
+    const dni=String(id||'').replace(/\D/g,''); const persona=cache.personas[dni];
+    if(!persona||!persona.idPersonal)throw new Error('El DNI no está en la caché oficial de PERSONAL.');
+    const fechaLocal=new Date(fecha.getTime());
+    const fechaISO=fechaLocal.getFullYear()+'-'+String(fechaLocal.getMonth()+1).padStart(2,'0')+'-'+String(fechaLocal.getDate()).padStart(2,'0');
+    if(cache.fechaServidor!==fechaISO)throw new Error('La caché de asistencia corresponde a otra fecha. Conéctese para actualizarla.');
+    const dias=['DOMINGO','LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO'];
+    const horario=persona.horarioPorDia&&persona.horarioPorDia[dias[fechaLocal.getDay()]];
+    if(!persona.administrativo&&!horario)throw new Error('No existe horario verificable para este docente hoy. Registro cancelado.');
+    const storeName=OFFLINE_STORE_MGP;
+    return abrirDBOfflineMGP().then(function(db){return new Promise(function(resolve,reject){const tx=db.transaction([storeName],'readonly');const req=tx.objectStore(storeName).getAll();req.onsuccess=function(){
+      const eventos=(req.result||[]).filter(function(r){return String(r.tipo||'').toLowerCase()==='personal'&&String(r.id||'').replace(/\D/g,'')===dni&&(function(){var f=new Date(r.fechaHoraCliente);return !isNaN(f.getTime())&&f.getFullYear()+'-'+String(f.getMonth()+1).padStart(2,'0')+'-'+String(f.getDate()).padStart(2,'0')===fechaISO;})()&&['INGRESO','SALIDA'].includes(String(r.estado||'').toUpperCase())&&r.estadoSincronizacion!=='ERROR'&&!(cache.offlineIdsHoy||[]).includes(String(r.idOffline||''));}).sort(function(a,b){return String(a.fechaHoraCliente).localeCompare(String(b.fechaHoraCliente));});
+      let ultimo=persona.estadoHoy||''; const eventosServidor=persona.eventosHoy||[]; if(eventosServidor.length) ultimo=eventosServidor[eventosServidor.length-1].estado;
+      eventos.forEach(function(e){ultimo=String(e.estado).toUpperCase();});
+      if(ultimo==='SALIDA') {reject(new Error('La jornada de PERSONAL ya tiene SALIDA registrada.'));return;}
+      let estado=ultimo==='INGRESO'?'SALIDA':'INGRESO';
+      if(estado==='SALIDA'){
+        let ingreso=null;
+        for(let i=eventos.length-1;i>=0;i--){if(String(eventos[i].estado).toUpperCase()==='INGRESO'){ingreso=new Date(eventos[i].fechaHoraCliente);break;}}
+        if(!ingreso && eventosServidor.length){const e=eventosServidor.filter(x=>x.estado==='INGRESO').slice(-1)[0];if(e&&e.hora){const m=String(e.hora).match(/(\d{1,2}):(\d{2})/);if(m){ingreso=new Date(fechaISO+'T'+String(m[1]).padStart(2,'0')+':'+m[2]+':00');}}}
+        if(!ingreso)throw new Error('No se puede verificar el INGRESO previo; no se registrará SALIDA.');
+        if(fecha.getTime()-ingreso.getTime()<180000)throw new Error('Deben transcurrir al menos 3 minutos entre INGRESO y SALIDA.');
+      }
+      let puntualidad=''; const actual=horaLocalMinutosMGP(fecha);
+      if(!persona.administrativo&&horario){puntualidad=estado==='INGRESO'?(actual<=Number(horario.inicio)?'PUNTUAL':'TARDE'):(actual<Number(horario.fin)?'ANTES DE LA HORA':'DESPUÉS DE LA HORA');}
+      resolve({estado:estado,puntualidad:puntualidad,idPersonal:persona.idPersonal,nombre:persona.nombre||''});
+    };req.onerror=function(){reject(req.error||new Error('No se pudo leer historial offline.'));};});});
+  });
+}
+
 function guardarRegistroOfflineMGP(id, metodoRegistro) {
 
   return new Promise(function(resolve, reject) {
@@ -295,10 +351,10 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
     // PERSONAL ONLINE usa el nuevo motor automático del servidor.
-    // PERSONAL usa el mismo motor de resolución ONLINE/OFFLINE.
-    // AUTO_PERSONAL se resuelve en el servidor al sincronizar; estudiantes no cambian.
+    // ESTUDIANTE y el modo OFFLINE conservan su comportamiento actual.
     const esPersonalAuto =
-      String(tipo || '').trim().toLowerCase() === 'personal';
+      String(tipo || '').trim().toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
@@ -324,6 +380,8 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       id: idLimpio,
       tipo: tipo,
       estado: estado,
+      puntualidadLocal: tipo.toLowerCase() === 'personal' ? String(state._personalOfflinePuntualidad || '') : '',
+      personalOfflineV2: tipo.toLowerCase() === 'personal' && state.registroModo === 'OFFLINE',
       metodo: metodo,
       usuario: state.usuario && state.usuario.usuario
         ? String(state.usuario.usuario)
@@ -715,6 +773,8 @@ function enviarRegistroOfflineAlServidorMGP(registro) {
       '&token=' + encodeURIComponent(state.token || '') +
       '&fechaHoraCliente=' + encodeURIComponent(fechaHoraCliente) +
       '&idOffline=' + encodeURIComponent(idOffline) +
+      '&personalOfflineV2=' + encodeURIComponent(String(registro.personalOfflineV2 === true)) +
+      '&puntualidadLocal=' + encodeURIComponent(String(registro.puntualidadLocal || '')) +
       '&metodo=' + encodeURIComponent(metodo) +
       '&callback=' + encodeURIComponent(nombreCallback);
 
@@ -1562,36 +1622,44 @@ function actualizarModoRegistroMGP() {
 
 function alternarModoRegistroMGP() {
 
-  state.registroModo =
-    state.registroModo === 'ONLINE'
-      ? 'OFFLINE'
-      : 'ONLINE';
+  const siguiente = state.registroModo === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
+  const esPersonal = String(state.tipo || '').toLowerCase() === 'personal';
+  const mensaje = document.getElementById('regMsg');
 
-  actualizarModoRegistroMGP();
-
-  if (state.registroModo === 'ONLINE') {
-    sincronizarRegistrosOfflineMGP();
+  function aplicarModo() {
+    state.registroModo = siguiente;
+    actualizarModoRegistroMGP();
+    if (state.registroModo === 'ONLINE') {
+      sincronizarRegistrosOfflineMGP();
+      if (esPersonal && state.token) {
+        solicitarCachePersonalOfflineMGP().catch(function(e){console.warn('Caché PERSONAL no actualizada:',e);});
+      }
+    }
+    if (mensaje) {
+      mensaje.innerHTML = state.registroModo === 'OFFLINE'
+        ? '<strong>🟠 MODO OFFLINE ACTIVO</strong><br>Los próximos registros se guardarán en este equipo.<br>No se enviarán al servidor durante el escaneo.'
+        : '<strong>🟢 MODO ONLINE ACTIVO</strong><br>Los próximos registros se enviarán al servidor.';
+    }
   }
 
-  const mensaje =
-    document.getElementById('regMsg');
-
-  if (mensaje) {
-
-    if (state.registroModo === 'OFFLINE') {
-      mensaje.innerHTML =
-        '<strong>🟠 MODO OFFLINE ACTIVO</strong><br>' +
-        'Los próximos registros se guardarán en este equipo.<br>' +
-        'No se enviarán al servidor durante el escaneo.';
-    }
-    else {
-      mensaje.innerHTML =
-        '<strong>🟢 MODO ONLINE ACTIVO</strong><br>' +
-        'Los próximos registros se enviarán al servidor.';
-    }
-
+  // Antes de pasar PERSONAL a OFFLINE, preparar la instantánea mientras
+  // aún hay conexión. Si no hay conexión, se conserva la caché existente;
+  // el registro fallará de forma segura si no existe o corresponde a otra fecha.
+  if (siguiente === 'OFFLINE' && esPersonal && navigator.onLine && state.token) {
+    if (mensaje) mensaje.innerHTML = '<strong>⏳ PREPARANDO PERSONAL OFFLINE...</strong><br>Actualizando horario e historial del día.';
+    solicitarCachePersonalOfflineMGP().then(aplicarModo).catch(function(error){
+      leerCachePersonalOfflineMGP().then(function(cache){
+        const hoy = new Date();
+        const fechaLocal = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+        if (cache && cache.fechaServidor === fechaLocal) aplicarModo();
+        else if (mensaje) mensaje.innerHTML = '<strong>❌ NO SE ACTIVÓ OFFLINE</strong><br>No se pudo preparar una caché válida de PERSONAL. ' + String(error && error.message || '');
+      }).catch(function(){
+        if (mensaje) mensaje.innerHTML = '<strong>❌ NO SE ACTIVÓ OFFLINE</strong><br>No existe una caché válida de PERSONAL.';
+      });
+    });
+    return;
   }
-
+  aplicarModo();
 }
 
 function crearControlModoRegistroMGP() {
@@ -2536,8 +2604,12 @@ document
         const estadoBotones =
           document.querySelectorAll('[data-e], [data-estado]');
 
+        if (esPersonal && state.registroModo !== 'OFFLINE' && state.token) {
+          solicitarCachePersonalOfflineMGP().catch(function(e){console.warn('Caché PERSONAL no actualizada:',e);});
+        }
+
         estadoBotones.forEach(function(estadoBoton) {
-          if (esPersonal && state.registroModo !== 'OFFLINE') {
+          if (esPersonal) {
             estadoBoton.style.display = 'none';
           } else {
             estadoBoton.style.display = '';
@@ -3307,9 +3379,9 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
     const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
-    // PERSONAL usa el mismo evento automático también en OFFLINE.
     const esPersonalAuto =
-      tipo.toLowerCase() === 'personal';
+      tipo.toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
@@ -3367,15 +3439,17 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
     }
 
-    if (mensaje) {
-      mensaje.innerHTML =
-        '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
-        'DNI: ' + idLimpio + '<br>' +
-        'Tipo: ' + tipo + '<br>' +
-        'Estado: ' + estado;
-    }
+    const prepararEstado = tipo.toLowerCase() === 'personal'
+      ? resolverEstadoPersonalOfflineMGP(idLimpio, new Date()).then(function(res){ state._personalOfflinePuntualidad = res.puntualidad; return res.estado; })
+      : Promise.resolve(estado);
 
-    guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
+    prepararEstado.then(function(estadoResuelto) {
+      if (tipo.toLowerCase() === 'personal') state.estado = estadoResuelto;
+      if (mensaje) {
+        mensaje.innerHTML = '<strong>💾 GUARDANDO OFFLINE...</strong><br>' + 'DNI: ' + idLimpio + '<br>' + 'Tipo: ' + tipo + '<br>' + 'Estado: ' + estadoResuelto;
+      }
+      return guardarRegistroOfflineMGP(idLimpio, metodoRegistro);
+    })
       .then(function(registro) {
 
         reproducirPitidoRegistroMGP();
@@ -3530,6 +3604,12 @@ function registrarAsistenciaBackend(id, metodoRegistro) {
             tipo,
             { datos: datos }
           );
+
+          // Tras un registro ONLINE de PERSONAL, refrescar la instantánea
+          // para que el siguiente evento OFFLINE conozca el estado del día.
+          if (String(tipo).toLowerCase() === 'personal' && state.token) {
+            solicitarCachePersonalOfflineMGP().catch(function(e){console.warn('No se pudo actualizar instantánea PERSONAL:',e);});
+          }
 
           const esPersonalRespuesta =
             tipo.toLowerCase() === 'personal';
