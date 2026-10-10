@@ -285,6 +285,19 @@ function generarIdOfflineMGP() {
 
 }
 
+// === SIMULADOR TEMPORAL DEV PERSONAL OFFLINE ===
+// SOLO PARA LA PRUEBA CONTROLADA del lunes 12/10/2026.
+// RETIRAR estas líneas al terminar la prueba. No usar en producción.
+const PERSONAL_OFFLINE_SIMULACION_DEV_MGP = true;
+const PERSONAL_OFFLINE_FECHA_SIMULADA_MGP = '2026-10-12';
+function fechaEfectivaPersonalOfflineMGP(fechaBase) {
+  const f = new Date((fechaBase || new Date()).getTime());
+  if (!PERSONAL_OFFLINE_SIMULACION_DEV_MGP) return f;
+  const p = PERSONAL_OFFLINE_FECHA_SIMULADA_MGP.split('-').map(Number);
+  f.setFullYear(p[0], p[1] - 1, p[2]);
+  return f;
+}
+
 function solicitarCachePersonalOfflineMGP() {
   return new Promise(function(resolve,reject){
     if(!navigator.onLine || !state.token){reject(new Error('Se requiere conexión y sesión activa para preparar la caché personal.'));return;}
@@ -294,7 +307,7 @@ function solicitarCachePersonalOfflineMGP() {
     function fin(err,data){if(terminado)return;terminado=true;clearTimeout(timer);if(script.parentNode)script.parentNode.removeChild(script);try{delete window[cb];}catch(e){} if(err)reject(err);else resolve(data);}
     window[cb]=function(data){if(!data||data.exito!==true){fin(new Error(data&&data.mensaje?data.mensaje:'API no entregó caché válida.'));return;} if(!data.personas||!data.fechaServidor){fin(new Error('La respuesta de caché está incompleta.'));return;} guardarCachePersonalOfflineMGP(data).then(function(){fin(null,data);}).catch(function(e){fin(e);});};
     script.onerror=function(){fin(new Error('No se pudo descargar la caché de PERSONAL.'));};
-    script.src=CONFIG.API_URL+'?action=apiPersonalOfflineCache&token='+encodeURIComponent(state.token)+'&callback='+encodeURIComponent(cb)+'&_t='+Date.now();
+    script.src=CONFIG.API_URL+'?action=apiPersonalOfflineCache&token='+encodeURIComponent(state.token)+(PERSONAL_OFFLINE_SIMULACION_DEV_MGP?'&fechaPrueba='+encodeURIComponent(PERSONAL_OFFLINE_FECHA_SIMULADA_MGP)+'&modoPrueba=DEV_PERSONAL_OFFLINE_20261012':'')+'&callback='+encodeURIComponent(cb)+'&_t='+Date.now();
     document.head.appendChild(script);
   });
 }
@@ -306,6 +319,7 @@ function leerCachePersonalOfflineMGP(){
 }
 function horaLocalMinutosMGP(fecha){return fecha.getHours()*60+fecha.getMinutes();}
 function resolverEstadoPersonalOfflineMGP(id, fecha){
+  fecha = fechaEfectivaPersonalOfflineMGP(fecha || new Date());
   return leerCachePersonalOfflineMGP().then(function(cache){
     if(!cache)throw new Error('No existe caché válida de PERSONAL. Conéctese antes de registrar OFFLINE.');
     const dni=String(id||'').replace(/\D/g,''); const persona=cache.personas[dni];
@@ -371,11 +385,14 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       return;
     }
 
-    const fechaHoraCliente =
-      new Date().toISOString();
+    const fechaEventoOffline = (tipo.toLowerCase() === 'personal' && state.registroModo === 'OFFLINE')
+      ? fechaEfectivaPersonalOfflineMGP(new Date()) : new Date();
+    const fechaHoraCliente = fechaEventoOffline.toISOString();
+    const idOfflineGenerado = generarIdOfflineMGP();
 
     const registro = {
-      idOffline: generarIdOfflineMGP(),
+      idOffline: (tipo.toLowerCase() === 'personal' && state.registroModo === 'OFFLINE' && PERSONAL_OFFLINE_SIMULACION_DEV_MGP)
+        ? 'DEVTEST-' + idOfflineGenerado : idOfflineGenerado,
       fechaHoraCliente: fechaHoraCliente,
       id: idLimpio,
       tipo: tipo,
@@ -1649,7 +1666,7 @@ function alternarModoRegistroMGP() {
     if (mensaje) mensaje.innerHTML = '<strong>⏳ PREPARANDO PERSONAL OFFLINE...</strong><br>Actualizando horario e historial del día.';
     solicitarCachePersonalOfflineMGP().then(aplicarModo).catch(function(error){
       leerCachePersonalOfflineMGP().then(function(cache){
-        const hoy = new Date();
+        const hoy = fechaEfectivaPersonalOfflineMGP(new Date());
         const fechaLocal = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
         if (cache && cache.fechaServidor === fechaLocal) aplicarModo();
         else if (mensaje) mensaje.innerHTML = '<strong>❌ NO SE ACTIVÓ OFFLINE</strong><br>No se pudo preparar una caché válida de PERSONAL. ' + String(error && error.message || '');
