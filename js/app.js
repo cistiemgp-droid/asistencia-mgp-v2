@@ -281,7 +281,197 @@ function generarIdOfflineMGP() {
 
 }
 
-function guardarRegistroOfflineMGP(id, metodoRegistro) {
+// =====================================================
+// REGISTRO DE PERSONAL — HORARIO REDUCIDO Y CONTROL LOCAL
+// El horario se descarga ONLINE y se conserva en localStorage.
+// Nunca se modifica ni elimina la cola IndexedDB existente.
+// =====================================================
+const HORARIO_REDUCIDO_PERSONAL_KEY_MGP = 'ASISTENCIA_MGP_V2_HORARIO_REDUCIDO_PERSONAL';
+const MARCACIONES_PERSONAL_LOCAL_KEY_MGP = 'ASISTENCIA_MGP_V2_MARCACIONES_PERSONAL_LOCAL';
+let horarioReducidoPersonalSolicitudMGP = null;
+
+function dniPersonalMarcacionMGP(valor) {
+  const primero = String(valor || '').trim().split(/[\n,;|]+/)[0];
+  const digitos = primero.replace(/\D/g, '');
+  return /^\d{8}$/.test(digitos) ? digitos : '';
+}
+
+function fechaLocalPersonalMGP(fecha) {
+  const d = fecha instanceof Date ? fecha : new Date(fecha || Date.now());
+  if (isNaN(d.getTime())) return '';
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(d);
+  const mapa = {};
+  partes.forEach(function(p) { mapa[p.type] = p.value; });
+  return mapa.year + '-' + mapa.month + '-' + mapa.day;
+}
+
+function diaSemanaPersonalMGP(fecha) {
+  const d = fecha instanceof Date ? fecha : new Date(fecha || Date.now());
+  const n = Number(new Intl.DateTimeFormat('en-US', { timeZone:'America/Lima', weekday:'short' }).format(d) === 'Mon' ? 1 :
+    new Intl.DateTimeFormat('en-US', { timeZone:'America/Lima', weekday:'short' }).format(d) === 'Tue' ? 2 :
+    new Intl.DateTimeFormat('en-US', { timeZone:'America/Lima', weekday:'short' }).format(d) === 'Wed' ? 3 :
+    new Intl.DateTimeFormat('en-US', { timeZone:'America/Lima', weekday:'short' }).format(d) === 'Thu' ? 4 :
+    new Intl.DateTimeFormat('en-US', { timeZone:'America/Lima', weekday:'short' }).format(d) === 'Fri' ? 5 : 0);
+  return ({1:'LUNES',2:'MARTES',3:'MIERCOLES',4:'JUEVES',5:'VIERNES'})[n] || '';
+}
+
+function leerHorarioReducidoPersonalCacheMGP() {
+  try {
+    const c = JSON.parse(localStorage.getItem(HORARIO_REDUCIDO_PERSONAL_KEY_MGP) || 'null');
+    if (!c || !Array.isArray(c.horarios) || !Array.isArray(c.personasSinHorario)) return null;
+    const edad = Date.now() - new Date(c.cacheadoEn || c.actualizadoEn || 0).getTime();
+    if (!Number.isFinite(edad) || edad < 0 || edad > 7 * 24 * 60 * 60 * 1000) return null;
+    return c;
+  } catch (e) { return null; }
+}
+
+function solicitarHorarioReducidoPersonalMGP() {
+  if (state.registroModo === 'OFFLINE' || !state.token) return Promise.resolve(leerHorarioReducidoPersonalCacheMGP());
+  const cacheActual = leerHorarioReducidoPersonalCacheMGP();
+  if (cacheActual) {
+    const edadCache = Date.now() - new Date(cacheActual.cacheadoEn || cacheActual.actualizadoEn || 0).getTime();
+    if (Number.isFinite(edadCache) && edadCache >= 0 && edadCache < 5 * 60 * 1000) return Promise.resolve(cacheActual);
+  }
+  if (horarioReducidoPersonalSolicitudMGP) return horarioReducidoPersonalSolicitudMGP;
+  horarioReducidoPersonalSolicitudMGP = new Promise(function(resolve, reject) {
+    const callbackName = 'mgpHorarioReducidoPersonal_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const script = document.createElement('script');
+    let done = false;
+    const timeout = setTimeout(function() { finishError(new Error('Tiempo agotado al actualizar el horario reducido.')); }, 12000);
+    function clean() {
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try { delete window[callbackName]; } catch (e) {}
+      horarioReducidoPersonalSolicitudMGP = null;
+    }
+    function finishError(err) { if (done) return; done = true; clean(); reject(err); }
+    window[callbackName] = function(data) {
+      if (done) return;
+      done = true; clean();
+      if (!data || data.exito !== true || !Array.isArray(data.horarios) || !Array.isArray(data.personasSinHorario)) {
+        reject(new Error(data && data.mensaje || 'El servidor no devolvió un horario reducido válido.'));
+        return;
+      }
+      data.cacheadoEn = new Date().toISOString();
+      try { localStorage.setItem(HORARIO_REDUCIDO_PERSONAL_KEY_MGP, JSON.stringify(data)); }
+      catch (e) { reject(new Error('No se pudo guardar el horario reducido en este navegador.')); return; }
+      resolve(data);
+    };
+    script.onerror = function() { finishError(new Error('No se pudo descargar el horario reducido.')); };
+    script.src = CONFIG.API_URL + '?action=apiHorarioReducidoPersonal&token=' + encodeURIComponent(state.token || '') + '&callback=' + encodeURIComponent(callbackName) + '&_t=' + Date.now();
+    document.head.appendChild(script);
+  });
+  return horarioReducidoPersonalSolicitudMGP;
+}
+
+function obtenerHorarioPersonalCacheMGP(id, fecha) {
+  const cache = leerHorarioReducidoPersonalCacheMGP();
+  if (!cache) return { valido:false, motivo:'HORARIO_NO_DISPONIBLE' };
+  const dni = dniPersonalMarcacionMGP(id) || String(id || '').trim();
+  const dia = diaSemanaPersonalMGP(fecha || new Date());
+  const horario = cache.horarios.find(function(h) {
+    return (String(h.dni || '') === dni || String(h.idPersonal || '') === String(id || '').trim().toUpperCase()) && h.dia === dia;
+  });
+  if (horario) return { valido:true, tipo:'DOCENTE', horario:horario, cache:cache };
+  const sinHorario = cache.personasSinHorario.some(function(p) {
+    return (typeof p === 'string' ? p : String(p.dni || '')) === dni ||
+      (typeof p === 'object' && String(p.idPersonal || '') === String(id || '').trim().toUpperCase());
+  });
+  if (sinHorario) return { valido:true, tipo:'ADMINISTRATIVO', horario:null, cache:cache };
+  const tieneHorarioOtroDia = cache.horarios.some(function(h) {
+    return String(h.dni || '') === dni || String(h.idPersonal || '') === String(id || '').trim().toUpperCase();
+  });
+  // Si figura como docente en otros días, no debe confundirse con personal administrativo
+  // ni permitirse una marcación sin horario del día. Fallo seguro.
+  if (tieneHorarioOtroDia) return { valido:false, motivo:'SIN_HORARIO_HOY' };
+  return { valido:false, motivo:'PERSONAL_NO_ENCONTRADO_EN_CACHE' };
+}
+
+function minutosHoraPersonalLocalMGP(hora) {
+  const m = String(hora || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  let h = Number(m[1]); const min = Number(m[2]);
+  if (h >= 1 && h <= 6) h += 12;
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function guardarMarcacionPersonalLocalMGP(id, estado, fechaHora, idOffline) {
+  const dni = dniPersonalMarcacionMGP(id) || String(id || '').trim();
+  if (!dni || !estado) return;
+  try {
+    const lista = JSON.parse(localStorage.getItem(MARCACIONES_PERSONAL_LOCAL_KEY_MGP) || '[]');
+    const uid = String(idOffline || ('ONLINE:' + dni + ':' + String(fechaHora || Date.now())));
+    if (!lista.some(function(x) { return x.uid === uid; })) {
+      lista.push({uid:uid, dni:dni, estado:String(estado).toUpperCase(), fechaHora:fechaHora || new Date().toISOString()});
+    }
+    const limite = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    const depurada = lista.filter(function(x) { return new Date(x.fechaHora).getTime() >= limite; }).slice(-500);
+    localStorage.setItem(MARCACIONES_PERSONAL_LOCAL_KEY_MGP, JSON.stringify(depurada));
+  } catch (e) { console.warn('No se pudo conservar estado local de personal:', e); }
+}
+
+async function resolverEstadoPersonalOfflineMGP(id) {
+  const dni = dniPersonalMarcacionMGP(id) || String(id || '').trim();
+  const ahora = new Date();
+  const horarioInfo = obtenerHorarioPersonalCacheMGP(dni, ahora);
+  if (!horarioInfo.valido) {
+    const mensajes = {
+      HORARIO_NO_DISPONIBLE:'No hay una copia vigente del horario reducido. Conéctese a internet y seleccione PERSONAL para actualizarlo; no se registró la marcación.',
+      SIN_HORARIO_HOY:'Este docente no tiene clases asignadas hoy. No se registró la marcación.',
+      PERSONAL_NO_ENCONTRADO_EN_CACHE:'El personal no está en la copia local de horarios. Conéctese para actualizarla; no se registró la marcación.'
+    };
+    throw new Error(mensajes[horarioInfo.motivo] || 'No se pudo validar el horario local.');
+  }
+
+  const fechaHoy = fechaLocalPersonalMGP(ahora);
+  const eventos = [];
+  try {
+    const lista = JSON.parse(localStorage.getItem(MARCACIONES_PERSONAL_LOCAL_KEY_MGP) || '[]');
+    lista.forEach(function(x) {
+      if (x.dni === dni && fechaLocalPersonalMGP(x.fechaHora) === fechaHoy) eventos.push({estado:x.estado, fechaHora:x.fechaHora, uid:x.uid});
+    });
+  } catch (e) {}
+
+  // Incorpora pendientes creados offline en este navegador; evita contar dos veces el mismo idOffline.
+  const pendientes = await obtenerRegistrosOfflinePendientesMGP().catch(function() { return []; });
+  pendientes.forEach(function(x) {
+    if (String(x.tipo || '').toLowerCase() !== 'personal') return;
+    if ((dniPersonalMarcacionMGP(x.id) || String(x.id || '').trim()) !== dni) return;
+    if (fechaLocalPersonalMGP(x.fechaHoraCliente) !== fechaHoy) return;
+    if (eventos.some(function(e) { return e.uid && e.uid === x.idOffline; })) return;
+    eventos.push({estado:x.estadoLocal || '', fechaHora:x.fechaHoraCliente, uid:x.idOffline});
+  });
+  eventos.sort(function(a,b) { return new Date(a.fechaHora).getTime() - new Date(b.fechaHora).getTime(); });
+  const ultimo = eventos.length ? eventos[eventos.length - 1] : null;
+  if (ultimo && String(ultimo.estado).toUpperCase() === 'SALIDA') throw new Error('JORNADA YA CERRADA. Ya existe INGRESO y SALIDA en este navegador.');
+  let estado = 'INGRESO';
+  if (ultimo) {
+    if (String(ultimo.estado).toUpperCase() !== 'INGRESO') throw new Error('No se puede determinar la última marcación local. Conéctese para validar el estado.');
+    const transcurrido = (ahora.getTime() - new Date(ultimo.fechaHora).getTime()) / 60000;
+    if (transcurrido < 3) throw new Error('INGRESO YA REGISTRADO. La SALIDA se habilita después de transcurridos tres minutos completos.');
+    estado = 'SALIDA';
+  }
+
+  const horaActual = new Intl.DateTimeFormat('en-GB', {timeZone:'America/Lima',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(ahora);
+  let puntualidad = 'N/A';
+  let evaluacionSalida = 'NO_EVALUADA';
+  if (horarioInfo.tipo === 'DOCENTE' && horarioInfo.horario) {
+    const actualMin = minutosHoraPersonalLocalMGP(horaActual);
+    if (estado === 'INGRESO') {
+      const inicioMin = minutosHoraPersonalLocalMGP(horarioInfo.horario.horaInicio);
+      puntualidad = actualMin != null && inicioMin != null && actualMin <= inicioMin ? 'PUNTUAL' : 'TARDE';
+    } else {
+      const finMin = minutosHoraPersonalLocalMGP(horarioInfo.horario.horaFin);
+      if (actualMin != null && finMin != null) evaluacionSalida = actualMin < finMin ? 'ANTES_DE_HORA' : actualMin === finMin ? 'EN_HORA' : 'DESPUES_DE_HORA';
+    }
+  }
+  return {estado:estado, puntualidad:puntualidad, evaluacionSalida:evaluacionSalida, horarioInfo:horarioInfo, fechaHoraCliente:ahora.toISOString()};
+}
+
+function guardarRegistroOfflineMGP(id, metodoRegistro, estadoPersonalLocal) {
 
   return new Promise(function(resolve, reject) {
 
@@ -294,11 +484,9 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
     const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
-    // PERSONAL ONLINE usa el nuevo motor automático del servidor.
-    // ESTUDIANTE y el modo OFFLINE conservan su comportamiento actual.
-    const esPersonalAuto =
-      String(tipo || '').trim().toLowerCase() === 'personal' &&
-      state.registroModo !== 'OFFLINE';
+    // PERSONAL usa el motor automático del servidor tanto ONLINE como OFFLINE.
+    // La cola conserva estadoLocal solo para secuencia local; al sincronizar se envía AUTO_PERSONAL.
+    const esPersonalAuto = String(tipo || '').trim().toLowerCase() === 'personal';
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
@@ -334,6 +522,9 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       estadoSincronizacion: 'PENDIENTE',
       creadoEn: fechaHoraCliente
     };
+
+    // Metadato local exclusivo de personal; no cambia el objeto de estudiante.
+    if (esPersonalAuto) registro.estadoLocal = String(estadoPersonalLocal || '').toUpperCase();
 
     abrirDBOfflineMGP()
       .then(function(db) {
@@ -1570,6 +1761,11 @@ function alternarModoRegistroMGP() {
   actualizarModoRegistroMGP();
 
   if (state.registroModo === 'ONLINE') {
+    if (String(state.tipo || '').toLowerCase() === 'personal') {
+      solicitarHorarioReducidoPersonalMGP().catch(function(error) {
+        console.warn('No se pudo actualizar el horario reducido para OFFLINE:', error);
+      });
+    }
     sincronizarRegistrosOfflineMGP();
   }
 
@@ -2537,12 +2733,18 @@ document
           document.querySelectorAll('[data-e], [data-estado]');
 
         estadoBotones.forEach(function(estadoBoton) {
-          if (esPersonal && state.registroModo !== 'OFFLINE') {
+          if (esPersonal) {
             estadoBoton.style.display = 'none';
           } else {
             estadoBoton.style.display = '';
           }
         });
+
+        if (esPersonal && state.registroModo !== 'OFFLINE') {
+          solicitarHorarioReducidoPersonalMGP().catch(function(error) {
+            console.warn('No se pudo actualizar el horario reducido para OFFLINE:', error);
+          });
+        }
 
       }
     );
@@ -3367,40 +3569,39 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
     }
 
-    if (mensaje) {
-      mensaje.innerHTML =
-        '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
-        'DNI: ' + idLimpio + '<br>' +
-        'Tipo: ' + tipo + '<br>' +
-        'Estado: ' + estado;
-    }
+    const esPersonal = tipo.toLowerCase() === 'personal';
+    const prepararRegistro = esPersonal
+      ? resolverEstadoPersonalOfflineMGP(idLimpio)
+      : Promise.resolve({estado:estado, puntualidad:'N/A', evaluacionSalida:'NO_EVALUADA', fechaHoraCliente:new Date().toISOString()});
 
-    guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
-      .then(function(registro) {
-
+    prepararRegistro.then(function(decision) {
+      if (mensaje) {
+        mensaje.innerHTML = '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
+          'DNI: ' + idLimpio + '<br>Tipo: ' + tipo + '<br>' +
+          'Estado: ' + (esPersonal ? decision.estado : estado);
+      }
+      return guardarRegistroOfflineMGP(idLimpio, metodoRegistro, esPersonal ? decision.estado : '')
+        .then(function(registro) { return {registro:registro, decision:decision}; });
+    })
+      .then(function(resultado) {
+        const registro = resultado.registro;
+        const decision = resultado.decision;
         reproducirPitidoRegistroMGP();
+        if (esPersonal) guardarMarcacionPersonalLocalMGP(idLimpio, decision.estado, registro.fechaHoraCliente, registro.idOffline);
 
         if (mensaje) {
-          mensaje.innerHTML =
-            '<strong>✅ GUARDADO OFFLINE</strong><br>' +
+          mensaje.innerHTML = '<strong>✅ GUARDADO OFFLINE</strong><br>' +
             'DNI: ' + idLimpio + '<br>' +
-            'Estado: ' + estado + '<br>' +
-            'Hora: ' +
-            new Date(registro.fechaHoraCliente)
-              .toLocaleTimeString('es-PE') + '<br>' +
-            'ID local: ' + registro.idOffline + '<br>' +
-            '<strong>⏳ Pendiente de sincronización</strong>';
+            'Estado: ' + (esPersonal ? decision.estado : estado) + '<br>' +
+            'Hora: ' + new Date(registro.fechaHoraCliente).toLocaleTimeString('es-PE') + '<br>' +
+            (esPersonal ? 'Puntualidad: ' + decision.puntualidad + '<br>' +
+              (decision.evaluacionSalida !== 'NO_EVALUADA' ? 'Evaluación de salida: ' + decision.evaluacionSalida + '<br>' : '') : '') +
+            'ID local: ' + registro.idOffline + '<br><strong>⏳ Pendiente de sincronización</strong>';
         }
-
-        resolve({
-          exito: true,
-          offline: true,
-          pendiente: true,
-          idOffline: registro.idOffline,
-          fechaHoraCliente: registro.fechaHoraCliente,
-          hora: new Date(registro.fechaHoraCliente)
-            .toLocaleTimeString('es-PE')
-        });
+        resolve({exito:true, offline:true, pendiente:true, idOffline:registro.idOffline,
+          estado:esPersonal ? decision.estado : estado, puntualidad:decision.puntualidad,
+          evaluacionSalida:decision.evaluacionSalida, fechaHoraCliente:registro.fechaHoraCliente,
+          hora:new Date(registro.fechaHoraCliente).toLocaleTimeString('es-PE')});
 
       })
       .catch(function(error) {
@@ -3531,6 +3732,13 @@ function registrarAsistenciaBackend(id, metodoRegistro) {
             { datos: datos }
           );
 
+          if (String(tipo).toLowerCase() === 'personal') {
+            const estadoPersonalConfirmado = String(data.estado || '').toUpperCase();
+            if (estadoPersonalConfirmado === 'INGRESO' || estadoPersonalConfirmado === 'SALIDA') {
+              guardarMarcacionPersonalLocalMGP(idLimpio, estadoPersonalConfirmado, new Date().toISOString(), data.idRegistro || '');
+            }
+          }
+
           const esPersonalRespuesta =
             tipo.toLowerCase() === 'personal';
 
@@ -3580,7 +3788,10 @@ function registrarAsistenciaBackend(id, metodoRegistro) {
                 : (detalleEstudiante ? 'Grado: ' + detalleEstudiante + '<br>' : '')) +
               'Estado: ' + estadoFinal + '<br>' +
               'Hora: ' + (data.hora || '--:--:--') + '<br>' +
-              'Puntualidad: ' + (data.puntualidad || 'N/A');
+              'Puntualidad: ' + (data.puntualidad || 'N/A') +
+              (esPersonalRespuesta && data.evaluacionSalida && data.evaluacionSalida !== 'NO_EVALUADA'
+                ? '<br>Evaluación de salida: ' + escaparHtmlHorarioDocentesMGP(data.evaluacionSalida)
+                : '');
           }
 
           resolve(data);
