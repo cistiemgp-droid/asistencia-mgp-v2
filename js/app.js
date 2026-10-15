@@ -121,6 +121,119 @@ const OFFLINE_DB_MGP = 'ASISTENCIA_MGP_V2_OFFLINE';
 const OFFLINE_STORE_MGP = 'pendientes';
 const OFFLINE_DB_VERSION_MGP = 2;
 
+
+// =====================================================
+// HORARIO LOCAL EXCLUSIVO DE PERSONAL — ALMACENAMIENTO AISLADO
+// Esta base solo contiene una copia de consulta del horario.
+// No comparte base, versión ni almacén con la cola de asistencia.
+// =====================================================
+const HORARIO_PERSONAL_DB_LOCAL_MGP = 'ASISTENCIA_MGP_V2_HORARIO_PERSONAL_LOCAL';
+const HORARIO_PERSONAL_STORE_LOCAL_MGP = 'horario';
+const HORARIO_PERSONAL_DB_VERSION_LOCAL_MGP = 1;
+let horarioPersonalDBPromiseLocalMGP = null;
+let horarioPersonalSolicitudLocalMGP = null;
+
+function abrirDBHorarioPersonalLocalMGP() {
+  if (horarioPersonalDBPromiseLocalMGP) return horarioPersonalDBPromiseLocalMGP;
+  horarioPersonalDBPromiseLocalMGP = new Promise(function(resolve, reject) {
+    if (!window.indexedDB) { reject(new Error('Este navegador no soporta almacenamiento local de horario.')); return; }
+    const req = indexedDB.open(HORARIO_PERSONAL_DB_LOCAL_MGP, HORARIO_PERSONAL_DB_VERSION_LOCAL_MGP);
+    req.onupgradeneeded = function(evento) {
+      const db = evento.target.result;
+      if (!db.objectStoreNames.contains(HORARIO_PERSONAL_STORE_LOCAL_MGP)) {
+        db.createObjectStore(HORARIO_PERSONAL_STORE_LOCAL_MGP, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = function(evento) { resolve(evento.target.result); };
+    req.onerror = function() { reject(req.error || new Error('No se pudo abrir el almacenamiento local del horario.')); };
+    req.onblocked = function() { reject(new Error('El almacenamiento local del horario está bloqueado por otra pestaña.')); };
+  });
+  return horarioPersonalDBPromiseLocalMGP;
+}
+
+function guardarHorarioPersonalLocalMGP(datos) {
+  if (!datos || datos.exito !== true || !Array.isArray(datos.horarios) || !Array.isArray(datos.personal)) {
+    return Promise.reject(new Error('El servidor devolvió una copia de horario no válida.'));
+  }
+  const copia = {
+    id: 'actual', version: Number(datos.version || 1), actualizadoEn: String(datos.actualizadoEn || new Date().toISOString()),
+    horarios: datos.horarios, personal: datos.personal
+  };
+  return abrirDBHorarioPersonalLocalMGP().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction(HORARIO_PERSONAL_STORE_LOCAL_MGP, 'readwrite');
+      tx.objectStore(HORARIO_PERSONAL_STORE_LOCAL_MGP).put(copia);
+      tx.oncomplete = function() { resolve(copia); };
+      tx.onerror = function() { reject(tx.error || new Error('No se pudo guardar la copia local del horario.')); };
+      tx.onabort = function() { reject(tx.error || new Error('Se canceló el guardado del horario local.')); };
+    });
+  });
+}
+
+function leerHorarioPersonalLocalMGP() {
+  return abrirDBHorarioPersonalLocalMGP().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction(HORARIO_PERSONAL_STORE_LOCAL_MGP, 'readonly');
+      const req = tx.objectStore(HORARIO_PERSONAL_STORE_LOCAL_MGP).get('actual');
+      req.onsuccess = function() {
+        const copia = req.result || null;
+        if (!copia || !Array.isArray(copia.horarios) || !Array.isArray(copia.personal)) { resolve(null); return; }
+        const fecha = new Date(copia.actualizadoEn || 0).getTime();
+        if (!Number.isFinite(fecha) || fecha <= 0 || Date.now() - fecha > 7 * 24 * 60 * 60 * 1000) { resolve(null); return; }
+        resolve(copia);
+      };
+      req.onerror = function() { reject(req.error || new Error('No se pudo leer la copia local del horario.')); };
+    });
+  });
+}
+
+function solicitarHorarioPersonalLocalMGP() {
+  if (state.registroModo === 'OFFLINE' || !state.token) return leerHorarioPersonalLocalMGP();
+  if (horarioPersonalSolicitudLocalMGP) return horarioPersonalSolicitudLocalMGP;
+  horarioPersonalSolicitudLocalMGP = new Promise(function(resolve, reject) {
+    const callbackName = 'mgpHorarioPersonalLocal_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const script = document.createElement('script');
+    let terminado = false;
+    const timeout = setTimeout(function() { finalizarError(new Error('Tiempo agotado al descargar el horario del personal.')); }, 12000);
+    function limpiar() {
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try { delete window[callbackName]; } catch (e) {}
+      horarioPersonalSolicitudLocalMGP = null;
+    }
+    function finalizarError(error) { if (terminado) return; terminado = true; limpiar(); reject(error); }
+    window[callbackName] = function(datos) {
+      if (terminado) return;
+      terminado = true; limpiar();
+      guardarHorarioPersonalLocalMGP(datos).then(resolve).catch(reject);
+    };
+    script.onerror = function() { finalizarError(new Error('No se pudo descargar el horario del personal.')); };
+    script.src = CONFIG.API_URL + '?action=apiHorarioReducidoPersonal&token=' + encodeURIComponent(state.token || '') + '&callback=' + encodeURIComponent(callbackName) + '&_t=' + Date.now();
+    document.head.appendChild(script);
+  });
+  return horarioPersonalSolicitudLocalMGP;
+}
+
+function consultarHorarioPersonalLocalMGP(id, fecha) {
+  return leerHorarioPersonalLocalMGP().then(function(copia) {
+    if (!copia) return { disponible: false, motivo: 'COPIA_NO_DISPONIBLE' };
+    const valor = String(id || '').trim();
+    const soloDni = valor.replace(/\D/g, '');
+    const dia = (function(d) {
+      const nombre = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', weekday: 'long' }).format(new Date(d || Date.now())).toUpperCase();
+      return ({SUNDAY:'DOMINGO',MONDAY:'LUNES',TUESDAY:'MARTES',WEDNESDAY:'MIERCOLES',THURSDAY:'JUEVES',FRIDAY:'VIERNES',SATURDAY:'SABADO'})[nombre] || '';
+    })(fecha);
+    const persona = copia.personal.find(function(p) {
+      return String(p.idPersonal || '').toUpperCase() === valor.toUpperCase() || String(p.dni || '') === soloDni;
+    });
+    if (!persona) return { disponible: false, motivo: 'PERSONAL_NO_ENCONTRADO' };
+    const horario = copia.horarios.find(function(h) {
+      return String(h.idPersonal || '').toUpperCase() === String(persona.idPersonal || '').toUpperCase() && h.dia === dia;
+    });
+    return { disponible: true, persona: persona, horario: horario || null, actualizadoEn: copia.actualizadoEn };
+  });
+}
+
 // Caché local de identidad: permite validar, cuando estamos OFFLINE,
 // que un DNI previamente identificado ONLINE pertenece al tipo correcto.
 const OFFLINE_IDENTIDAD_CACHE_MGP = 'ASISTENCIA_MGP_V2_IDENTIDAD_OFFLINE';
@@ -1570,6 +1683,11 @@ function alternarModoRegistroMGP() {
   actualizarModoRegistroMGP();
 
   if (state.registroModo === 'ONLINE') {
+    if (String(state.tipo || '').trim().toLowerCase() === 'personal') {
+      solicitarHorarioPersonalLocalMGP().catch(function(error) {
+        console.warn('No se pudo actualizar la copia local del horario de personal:', error);
+      });
+    }
     sincronizarRegistrosOfflineMGP();
   }
 
@@ -2533,6 +2651,12 @@ document
         const esPersonal =
           String(state.tipo).trim().toLowerCase() === 'personal';
 
+        if (esPersonal && state.registroModo !== 'OFFLINE') {
+          solicitarHorarioPersonalLocalMGP().catch(function(error) {
+            console.warn('No se pudo actualizar la copia local del horario de personal:', error);
+          });
+        }
+
         const estadoBotones =
           document.querySelectorAll('[data-e], [data-estado]');
 
@@ -3390,6 +3514,18 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
               .toLocaleTimeString('es-PE') + '<br>' +
             'ID local: ' + registro.idOffline + '<br>' +
             '<strong>⏳ Pendiente de sincronización</strong>';
+        }
+
+        if (tipo.toLowerCase() === 'personal') {
+          consultarHorarioPersonalLocalMGP(idLimpio, registro.fechaHoraCliente)
+            .then(function(info) {
+              if (!mensaje || !info || !info.disponible) return;
+              const lineaHorario = info.horario
+                ? ('<br>Horario de hoy: ' + info.horario.horaInicio + ' - ' + info.horario.horaFin)
+                : '<br>Horario de hoy: sin clases asignadas';
+              mensaje.innerHTML += lineaHorario;
+            })
+            .catch(function(error) { console.warn('No se pudo consultar la copia local del horario:', error); });
         }
 
         resolve({
