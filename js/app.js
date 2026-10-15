@@ -3413,13 +3413,35 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         if (mensaje) {
           if (esPersonalOffline) {
             const identidad = obtenerIdentidadOfflineMGP(idLimpio) || {};
-            mensaje.textContent =
-              'REGISTRO OFFLINE EXITOSO\n' +
-              'DNI: ' + idLimpio + '\n' +
-              (identidad.nombre ? identidad.nombre + '\n' : '') +
-              (identidad.cargo ? 'Cargo: ' + identidad.cargo + '\n' : '') +
-              'Hora: ' + new Date(registro.fechaHoraCliente).toLocaleTimeString('es-PE') + '\n' +
-              'Guardado localmente; pendiente de sincronización.';
+            const horaLocal = new Date(registro.fechaHoraCliente)
+              .toLocaleTimeString('es-PE');
+            const escaparHTML = function(valor) {
+              return String(valor == null ? '' : valor)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+            };
+
+            mensaje.innerHTML =
+              '<div style="background:#edf5ff;border-radius:8px;padding:10px;color:#174a8b;line-height:1.35;">' +
+                '<div style="font-weight:800;margin-bottom:2px;">' +
+                  '<span style="color:#16803d;">☑</span> REGISTRO OFFLINE EXITOSO' +
+                '</div>' +
+                '<div>DNI: ' + escaparHTML(idLimpio) + '</div>' +
+                (identidad.nombre
+                  ? '<div>' + escaparHTML(identidad.nombre) + '</div>'
+                  : '') +
+                (identidad.cargo
+                  ? '<div>Cargo: ' + escaparHTML(identidad.cargo) + '</div>'
+                  : '') +
+                '<div>Hora: ' + escaparHTML(horaLocal) + '</div>' +
+                '<div>ID local: ' + escaparHTML(registro.idOffline) + '</div>' +
+                '<div style="font-weight:800;margin-top:3px;">' +
+                  '<span style="color:#b7791f;">⌛</span> Pendiente de sincronización' +
+                '</div>' +
+              '</div>';
           } else {
             mensaje.innerHTML =
               '<strong>✅ GUARDADO OFFLINE</strong><br>' +
