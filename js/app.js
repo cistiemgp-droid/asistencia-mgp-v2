@@ -119,124 +119,38 @@ const cameraState = {
 
 const OFFLINE_DB_MGP = 'ASISTENCIA_MGP_V2_OFFLINE';
 const OFFLINE_STORE_MGP = 'pendientes';
-const OFFLINE_DB_VERSION_MGP = 2;
-
-
-// =====================================================
-// HORARIO LOCAL EXCLUSIVO DE PERSONAL — ALMACENAMIENTO AISLADO
-// Esta base solo contiene una copia de consulta del horario.
-// No comparte base, versión ni almacén con la cola de asistencia.
-// =====================================================
-const HORARIO_PERSONAL_DB_LOCAL_MGP = 'ASISTENCIA_MGP_V2_HORARIO_PERSONAL_LOCAL';
-const HORARIO_PERSONAL_STORE_LOCAL_MGP = 'horario';
-const HORARIO_PERSONAL_DB_VERSION_LOCAL_MGP = 1;
-let horarioPersonalDBPromiseLocalMGP = null;
-let horarioPersonalSolicitudLocalMGP = null;
-
-function abrirDBHorarioPersonalLocalMGP() {
-  if (horarioPersonalDBPromiseLocalMGP) return horarioPersonalDBPromiseLocalMGP;
-  horarioPersonalDBPromiseLocalMGP = new Promise(function(resolve, reject) {
-    if (!window.indexedDB) { reject(new Error('Este navegador no soporta almacenamiento local de horario.')); return; }
-    const req = indexedDB.open(HORARIO_PERSONAL_DB_LOCAL_MGP, HORARIO_PERSONAL_DB_VERSION_LOCAL_MGP);
-    req.onupgradeneeded = function(evento) {
-      const db = evento.target.result;
-      if (!db.objectStoreNames.contains(HORARIO_PERSONAL_STORE_LOCAL_MGP)) {
-        db.createObjectStore(HORARIO_PERSONAL_STORE_LOCAL_MGP, { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = function(evento) { resolve(evento.target.result); };
-    req.onerror = function() { reject(req.error || new Error('No se pudo abrir el almacenamiento local del horario.')); };
-    req.onblocked = function() { reject(new Error('El almacenamiento local del horario está bloqueado por otra pestaña.')); };
-  });
-  return horarioPersonalDBPromiseLocalMGP;
-}
-
-function guardarHorarioPersonalLocalMGP(datos) {
-  if (!datos || datos.exito !== true || !Array.isArray(datos.horarios) || !Array.isArray(datos.personal)) {
-    return Promise.reject(new Error('El servidor devolvió una copia de horario no válida.'));
-  }
-  const copia = {
-    id: 'actual', version: Number(datos.version || 1), actualizadoEn: String(datos.actualizadoEn || new Date().toISOString()),
-    horarios: datos.horarios, personal: datos.personal
-  };
-  return abrirDBHorarioPersonalLocalMGP().then(function(db) {
-    return new Promise(function(resolve, reject) {
-      const tx = db.transaction(HORARIO_PERSONAL_STORE_LOCAL_MGP, 'readwrite');
-      tx.objectStore(HORARIO_PERSONAL_STORE_LOCAL_MGP).put(copia);
-      tx.oncomplete = function() { resolve(copia); };
-      tx.onerror = function() { reject(tx.error || new Error('No se pudo guardar la copia local del horario.')); };
-      tx.onabort = function() { reject(tx.error || new Error('Se canceló el guardado del horario local.')); };
-    });
-  });
-}
-
-function leerHorarioPersonalLocalMGP() {
-  return abrirDBHorarioPersonalLocalMGP().then(function(db) {
-    return new Promise(function(resolve, reject) {
-      const tx = db.transaction(HORARIO_PERSONAL_STORE_LOCAL_MGP, 'readonly');
-      const req = tx.objectStore(HORARIO_PERSONAL_STORE_LOCAL_MGP).get('actual');
-      req.onsuccess = function() {
-        const copia = req.result || null;
-        if (!copia || !Array.isArray(copia.horarios) || !Array.isArray(copia.personal)) { resolve(null); return; }
-        const fecha = new Date(copia.actualizadoEn || 0).getTime();
-        if (!Number.isFinite(fecha) || fecha <= 0 || Date.now() - fecha > 7 * 24 * 60 * 60 * 1000) { resolve(null); return; }
-        resolve(copia);
-      };
-      req.onerror = function() { reject(req.error || new Error('No se pudo leer la copia local del horario.')); };
-    });
-  });
-}
-
-function solicitarHorarioPersonalLocalMGP() {
-  if (state.registroModo === 'OFFLINE' || !state.token) return leerHorarioPersonalLocalMGP();
-  if (horarioPersonalSolicitudLocalMGP) return horarioPersonalSolicitudLocalMGP;
-  horarioPersonalSolicitudLocalMGP = new Promise(function(resolve, reject) {
-    const callbackName = 'mgpHorarioPersonalLocal_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    const script = document.createElement('script');
-    let terminado = false;
-    const timeout = setTimeout(function() { finalizarError(new Error('Tiempo agotado al descargar el horario del personal.')); }, 12000);
-    function limpiar() {
-      clearTimeout(timeout);
-      if (script.parentNode) script.parentNode.removeChild(script);
-      try { delete window[callbackName]; } catch (e) {}
-      horarioPersonalSolicitudLocalMGP = null;
-    }
-    function finalizarError(error) { if (terminado) return; terminado = true; limpiar(); reject(error); }
-    window[callbackName] = function(datos) {
-      if (terminado) return;
-      terminado = true; limpiar();
-      guardarHorarioPersonalLocalMGP(datos).then(resolve).catch(reject);
-    };
-    script.onerror = function() { finalizarError(new Error('No se pudo descargar el horario del personal.')); };
-    script.src = CONFIG.API_URL + '?action=apiHorarioReducidoPersonal&token=' + encodeURIComponent(state.token || '') + '&callback=' + encodeURIComponent(callbackName) + '&_t=' + Date.now();
-    document.head.appendChild(script);
-  });
-  return horarioPersonalSolicitudLocalMGP;
-}
-
-function consultarHorarioPersonalLocalMGP(id, fecha) {
-  return leerHorarioPersonalLocalMGP().then(function(copia) {
-    if (!copia) return { disponible: false, motivo: 'COPIA_NO_DISPONIBLE' };
-    const valor = String(id || '').trim();
-    const soloDni = valor.replace(/\D/g, '');
-    const dia = (function(d) {
-      const nombre = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', weekday: 'long' }).format(new Date(d || Date.now())).toUpperCase();
-      return ({SUNDAY:'DOMINGO',MONDAY:'LUNES',TUESDAY:'MARTES',WEDNESDAY:'MIERCOLES',THURSDAY:'JUEVES',FRIDAY:'VIERNES',SATURDAY:'SABADO'})[nombre] || '';
-    })(fecha);
-    const persona = copia.personal.find(function(p) {
-      return String(p.idPersonal || '').toUpperCase() === valor.toUpperCase() || String(p.dni || '') === soloDni;
-    });
-    if (!persona) return { disponible: false, motivo: 'PERSONAL_NO_ENCONTRADO' };
-    const horario = copia.horarios.find(function(h) {
-      return String(h.idPersonal || '').toUpperCase() === String(persona.idPersonal || '').toUpperCase() && h.dia === dia;
-    });
-    return { disponible: true, persona: persona, horario: horario || null, actualizadoEn: copia.actualizadoEn };
-  });
-}
+const OFFLINE_DB_VERSION_MGP = 1;
 
 // Caché local de identidad: permite validar, cuando estamos OFFLINE,
 // que un DNI previamente identificado ONLINE pertenece al tipo correcto.
 const OFFLINE_IDENTIDAD_CACHE_MGP = 'ASISTENCIA_MGP_V2_IDENTIDAD_OFFLINE';
+
+// Antiduplicidad local exclusiva para marcaciones OFFLINE de personal.
+// Ventana: 3 minutos; no clasifica INGRESO/SALIDA ni afecta estudiantes.
+const OFFLINE_PERSONAL_ANTIDUP_CACHE_MGP = 'ASISTENCIA_MGP_V2_ANTIDUP_PERSONAL_OFFLINE';
+const OFFLINE_PERSONAL_ANTIDUP_VENTANA_MS_MGP = 3 * 60 * 1000;
+const OFFLINE_PERSONAL_ANTIDUP_EN_CURSO_MGP = new Set();
+
+function obtenerUltimaMarcaPersonalOfflineMGP(id) {
+  try {
+    const datos = JSON.parse(localStorage.getItem(OFFLINE_PERSONAL_ANTIDUP_CACHE_MGP) || '{}');
+    const valor = datos[String(id || '').trim()];
+    const marca = valor ? Number(valor.timestamp) : 0;
+    return Number.isFinite(marca) ? marca : 0;
+  } catch (error) {
+    return 0;
+  }
+}
+
+function guardarUltimaMarcaPersonalOfflineMGP(id, timestamp) {
+  try {
+    const datos = JSON.parse(localStorage.getItem(OFFLINE_PERSONAL_ANTIDUP_CACHE_MGP) || '{}');
+    datos[String(id || '').trim()] = { timestamp: Number(timestamp) };
+    localStorage.setItem(OFFLINE_PERSONAL_ANTIDUP_CACHE_MGP, JSON.stringify(datos));
+  } catch (error) {
+    console.warn('No fue posible persistir la protección ant duplicidad offline:', error);
+  }
+}
 
 let offlineDBPromiseMGP = null;
 
@@ -428,6 +342,34 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       return;
     }
 
+    const esPersonalOffline =
+      String(tipo || '').toLowerCase() === 'personal' &&
+      String(state.registroModo || '').toUpperCase() === 'OFFLINE';
+
+    // Protección persistente entre recargas, exclusiva de personal OFFLINE.
+    // Se permite una nueva marcación cuando transcurren 3 minutos.
+    if (esPersonalOffline) {
+      const ahoraMs = Date.now();
+      const ultimaMarcaMs = obtenerUltimaMarcaPersonalOfflineMGP(idLimpio);
+      if (OFFLINE_PERSONAL_ANTIDUP_EN_CURSO_MGP.has(idLimpio) ||
+          (ultimaMarcaMs > 0 && (ahoraMs - ultimaMarcaMs) >= 0 &&
+          (ahoraMs - ultimaMarcaMs) < OFFLINE_PERSONAL_ANTIDUP_VENTANA_MS_MGP)) {
+        const restante = ultimaMarcaMs > 0
+          ? Math.max(1, Math.ceil(
+              (OFFLINE_PERSONAL_ANTIDUP_VENTANA_MS_MGP - (ahoraMs - ultimaMarcaMs)) / 1000
+            ))
+          : 3;
+        const errorDuplicado = new Error(
+          'Marcación duplicada: este personal ya fue registrado o está siendo guardado en este equipo. ' +
+          'Intente nuevamente en ' + restante + ' s.'
+        );
+        errorDuplicado.code = 'DUPLICADO_OFFLINE_PERSONAL';
+        reject(errorDuplicado);
+        return;
+      }
+      OFFLINE_PERSONAL_ANTIDUP_EN_CURSO_MGP.add(idLimpio);
+    }
+
     const fechaHoraCliente =
       new Date().toISOString();
 
@@ -487,11 +429,22 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
       })
       .then(function(registroGuardado) {
 
+        if (esPersonalOffline) {
+          guardarUltimaMarcaPersonalOfflineMGP(
+            idLimpio,
+            new Date(registroGuardado.fechaHoraCliente).getTime()
+          );
+          OFFLINE_PERSONAL_ANTIDUP_EN_CURSO_MGP.delete(idLimpio);
+        }
+
         actualizarContadorOfflineMGP();
         resolve(registroGuardado);
 
       })
       .catch(function(error) {
+        if (esPersonalOffline) {
+          OFFLINE_PERSONAL_ANTIDUP_EN_CURSO_MGP.delete(idLimpio);
+        }
         reject(error);
       });
 
@@ -1683,11 +1636,6 @@ function alternarModoRegistroMGP() {
   actualizarModoRegistroMGP();
 
   if (state.registroModo === 'ONLINE') {
-    if (String(state.tipo || '').trim().toLowerCase() === 'personal') {
-      solicitarHorarioPersonalLocalMGP().catch(function(error) {
-        console.warn('No se pudo actualizar la copia local del horario de personal:', error);
-      });
-    }
     sincronizarRegistrosOfflineMGP();
   }
 
@@ -2651,12 +2599,6 @@ document
         const esPersonal =
           String(state.tipo).trim().toLowerCase() === 'personal';
 
-        if (esPersonal && state.registroModo !== 'OFFLINE') {
-          solicitarHorarioPersonalLocalMGP().catch(function(error) {
-            console.warn('No se pudo actualizar la copia local del horario de personal:', error);
-          });
-        }
-
         const estadoBotones =
           document.querySelectorAll('[data-e], [data-estado]');
 
@@ -3516,18 +3458,6 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
             '<strong>⏳ Pendiente de sincronización</strong>';
         }
 
-        if (tipo.toLowerCase() === 'personal') {
-          consultarHorarioPersonalLocalMGP(idLimpio, registro.fechaHoraCliente)
-            .then(function(info) {
-              if (!mensaje || !info || !info.disponible) return;
-              const lineaHorario = info.horario
-                ? ('<br>Horario de hoy: ' + info.horario.horaInicio + ' - ' + info.horario.horaFin)
-                : '<br>Horario de hoy: sin clases asignadas';
-              mensaje.innerHTML += lineaHorario;
-            })
-            .catch(function(error) { console.warn('No se pudo consultar la copia local del horario:', error); });
-        }
-
         resolve({
           exito: true,
           offline: true,
@@ -3547,9 +3477,16 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         );
 
         if (mensaje) {
-          mensaje.innerHTML =
-            '<strong>❌ NO SE GUARDÓ OFFLINE</strong><br>' +
-            error.message;
+          if (error && error.code === 'DUPLICADO_OFFLINE_PERSONAL') {
+            mensaje.innerHTML =
+              '<strong>⚠️ MARCACIÓN DUPLICADA BLOQUEADA</strong><br>' +
+              'DNI: ' + idLimpio + '<br>' +
+              (error.message || 'Espere 3 minutos antes de registrar nuevamente.');
+          } else {
+            mensaje.innerHTML =
+              '<strong>❌ NO SE GUARDÓ OFFLINE</strong><br>' +
+              error.message;
+          }
         }
 
         resolve({
