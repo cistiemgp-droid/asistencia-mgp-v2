@@ -119,7 +119,7 @@ const cameraState = {
 
 const OFFLINE_DB_MGP = 'ASISTENCIA_MGP_V2_OFFLINE';
 const OFFLINE_STORE_MGP = 'pendientes';
-const OFFLINE_DB_VERSION_MGP = 2;
+const OFFLINE_DB_VERSION_MGP = 1;
 
 // Caché local de identidad: permite validar, cuando estamos OFFLINE,
 // que un DNI previamente identificado ONLINE pertenece al tipo correcto.
@@ -222,9 +222,6 @@ function guardarIdentidadOfflineMGP(id, tipo, resultado) {
       nombre: resultado && resultado.datos && resultado.datos.nombre
         ? String(resultado.datos.nombre)
         : '',
-      cargo: resultado && resultado.datos && (resultado.datos.cargo || resultado.datos.perfil)
-        ? String(resultado.datos.cargo || resultado.datos.perfil)
-        : '',
       actualizadoEn: new Date().toISOString()
     };
 
@@ -297,11 +294,11 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
     const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
-    // PERSONAL ONLINE y OFFLINE deben recorrer el mismo motor del servidor.
-    // OFFLINE solo captura la marcación; AUTO_PERSONAL se resuelve al sincronizar.
-    // Estudiantes conservan el estado seleccionado y su flujo actual.
+    // PERSONAL ONLINE usa el nuevo motor automático del servidor.
+    // ESTUDIANTE y el modo OFFLINE conservan su comportamiento actual.
     const esPersonalAuto =
-      String(tipo || '').trim().toLowerCase() === 'personal';
+      String(tipo || '').trim().toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
@@ -3294,34 +3291,6 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function analizarQRLegacyPersonalOfflineMGP(codigoQR) {
-
-  const bruto = String(codigoQR || '').trim();
-  const partes = bruto.split(/[\n,;|-]+/).map(function(p) {
-    return String(p || '').trim();
-  }).filter(Boolean);
-  const dni = String(partes[0] || '').replace(/\s+/g, '');
-
-  if (!/^\d{8}$/.test(dni)) {
-    return { valido: false, dni: '', nombre: '', cargo: '' };
-  }
-
-  let nombre = '';
-  let cargo = '';
-  if (partes.length >= 4) {
-    nombre = partes.slice(1, -1).join(' ').trim();
-    cargo = String(partes[partes.length - 1] || '').trim();
-  } else if (partes.length === 3) {
-    nombre = String(partes[1] || '').trim();
-    cargo = String(partes[2] || '').trim();
-  } else if (partes.length === 2) {
-    nombre = String(partes[1] || '').trim();
-  }
-
-  return { valido: true, dni: dni, nombre: nombre, cargo: cargo };
-
-}
-
 function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
   return new Promise(function(resolve) {
@@ -3338,12 +3307,12 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
     const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
-    const esPersonalOffline = tipo.toLowerCase() === 'personal';
-    const esPersonalAuto = esPersonalOffline && state.registroModo !== 'OFFLINE';
+    const esPersonalAuto =
+      tipo.toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
 
-    const estado = esPersonalOffline
-      ? 'AUTO_PERSONAL'
-      : estadoSeleccionado;
+    const estado =
+      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
 
     if (!idLimpio) {
 
@@ -3399,15 +3368,11 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
     }
 
     if (mensaje) {
-      if (esPersonalOffline) {
-        mensaje.textContent = 'GUARDANDO REGISTRO OFFLINE...\nDNI: ' + idLimpio;
-      } else {
-        mensaje.innerHTML =
-          '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
-          'DNI: ' + idLimpio + '<br>' +
-          'Tipo: ' + tipo + '<br>' +
-          'Estado: ' + estado;
-      }
+      mensaje.innerHTML =
+        '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
+        'DNI: ' + idLimpio + '<br>' +
+        'Tipo: ' + tipo + '<br>' +
+        'Estado: ' + estado;
     }
 
     guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
@@ -3416,26 +3381,15 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         reproducirPitidoRegistroMGP();
 
         if (mensaje) {
-          if (esPersonalOffline) {
-            const identidad = obtenerIdentidadOfflineMGP(idLimpio) || {};
-            mensaje.textContent =
-              'REGISTRO OFFLINE EXITOSO\n' +
-              'DNI: ' + idLimpio + '\n' +
-              (identidad.nombre ? identidad.nombre + '\n' : '') +
-              (identidad.cargo ? 'Cargo: ' + identidad.cargo + '\n' : '') +
-              'Hora: ' + new Date(registro.fechaHoraCliente).toLocaleTimeString('es-PE') + '\n' +
-              'Guardado localmente; pendiente de sincronización.';
-          } else {
-            mensaje.innerHTML =
-              '<strong>✅ GUARDADO OFFLINE</strong><br>' +
-              'DNI: ' + idLimpio + '<br>' +
-              'Estado: ' + estado + '<br>' +
-              'Hora: ' +
-              new Date(registro.fechaHoraCliente)
-                .toLocaleTimeString('es-PE') + '<br>' +
-              'ID local: ' + registro.idOffline + '<br>' +
-              '<strong>⏳ Pendiente de sincronización</strong>';
-          }
+          mensaje.innerHTML =
+            '<strong>✅ GUARDADO OFFLINE</strong><br>' +
+            'DNI: ' + idLimpio + '<br>' +
+            'Estado: ' + estado + '<br>' +
+            'Hora: ' +
+            new Date(registro.fechaHoraCliente)
+              .toLocaleTimeString('es-PE') + '<br>' +
+            'ID local: ' + registro.idOffline + '<br>' +
+            '<strong>⏳ Pendiente de sincronización</strong>';
         }
 
         resolve({
@@ -4149,32 +4103,7 @@ async function iniciarCamara() {
         let registroPromise;
 
         if (state.registroModo === 'OFFLINE') {
-          if (String(state.tipo || '').trim().toLowerCase() === 'personal') {
-            const qrPersonal = analizarQRLegacyPersonalOfflineMGP(decodedText);
-            if (!qrPersonal.valido) {
-              const msgQR = document.getElementById('regMsg');
-              if (msgQR) msgQR.textContent = 'QR LEGACY DE PERSONAL INVÁLIDO: no se encontró un DNI válido de 8 dígitos. No se guardó el registro.';
-              registroPromise = Promise.resolve({ exito: false, offline: true });
-            } else {
-              const identidadCache = obtenerIdentidadOfflineMGP(qrPersonal.dni) || {};
-              const nombreQR = qrPersonal.nombre || identidadCache.nombre || '';
-              const cargoQR = qrPersonal.cargo || identidadCache.cargo || '';
-              guardarIdentidadOfflineMGP(qrPersonal.dni, 'personal', {
-                datos: { nombre: nombreQR, cargo: cargoQR }
-              });
-              const msgQR = document.getElementById('regMsg');
-              if (msgQR) {
-                msgQR.textContent = 'PERSONAL IDENTIFICADO OFFLINE\nDNI: ' + qrPersonal.dni + '\n' +
-                  (nombreQR ? nombreQR + '\n' : '') +
-                  (cargoQR ? 'Cargo: ' + cargoQR + '\n' : '') +
-                  'Guardando marcación...';
-              }
-              registroPromise = registrarAsistenciaSegunModoMGP(qrPersonal.dni, 'QR');
-            }
-          } else {
-            // El flujo OFFLINE de estudiantes queda expresamente intacto.
-            registroPromise = registrarAsistenciaSegunModoMGP(decodedText, 'QR');
-          }
+          registroPromise = registrarAsistenciaSegunModoMGP(decodedText, 'QR');
         } else {
           registroPromise = identificacionPromise.then(function(resultadoIdentificacion) {
             if (!resultadoIdentificacion || !resultadoIdentificacion.ok) {
