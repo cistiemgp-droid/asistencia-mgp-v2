@@ -5497,7 +5497,7 @@ const usaFiltroMensual =
 
       if (cabeceraPersonal) {
         if (tipoReporte === 'mensual_personal') {
-          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Días evaluados</th><th>Presentes</th><th>Faltas</th><th>Puntuales</th><th>Tardanzas</th><th>% Asistencia</th><th>Salidas</th></tr>';
+          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Días evaluados</th><th>Presentes</th><th>Faltas</th><th>Puntuales</th><th>Tardanzas</th><th>% Asistencia</th><th>Salidas</th><th>Detalle</th></tr>';
         } else {
           cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>Puntualidad ingreso</th><th>Clasificación salida</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
         }
@@ -5514,7 +5514,49 @@ const usaFiltroMensual =
             ? [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.diasEvaluados || 0, persona.presentes || 0, persona.faltas || 0, persona.puntuales || 0, persona.tardanzas || 0, (persona.porcentajeAsistencia || 0) + '%', persona.conSalida || 0]
             : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.clasificacionSalida || 'N/A', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
           valores.forEach(function(valor) { const celda = document.createElement('td'); celda.textContent = String(valor); fila.appendChild(celda); });
-          tabla.appendChild(fila);
+          if (tipoReporte === 'mensual_personal') {
+            const celdaAccion = document.createElement('td');
+            const botonDetalle = document.createElement('button');
+            botonDetalle.type = 'button';
+            botonDetalle.textContent = 'Ver detalle';
+            botonDetalle.setAttribute('aria-expanded', 'false');
+            const filaDetalle = document.createElement('tr');
+            filaDetalle.hidden = true;
+            const celdaDetalle = document.createElement('td');
+            celdaDetalle.colSpan = 12;
+            celdaDetalle.style.padding = '8px';
+            celdaDetalle.style.background = '#f8fafc';
+            const tituloDetalle = document.createElement('strong');
+            tituloDetalle.textContent = 'Detalle diario de ' + (persona.nombre || 'personal');
+            celdaDetalle.appendChild(tituloDetalle);
+            const tablaDetalle = document.createElement('table');
+            tablaDetalle.style.width = '100%';
+            tablaDetalle.style.marginTop = '8px';
+            tablaDetalle.style.borderCollapse = 'collapse';
+            tablaDetalle.style.fontSize = '12px';
+            const cabeceraDetalle = document.createElement('tr');
+            ['Fecha','Estado','Ingreso','Puntualidad ingreso','Salida','Clasificación salida','Método','Observación'].forEach(function(texto) {
+              const th = document.createElement('th'); th.textContent = texto; th.style.textAlign = 'left'; th.style.padding = '5px'; th.style.borderBottom = '1px solid #cbd5e1'; cabeceraDetalle.appendChild(th);
+            });
+            tablaDetalle.appendChild(cabeceraDetalle);
+            const detalleDias = Array.isArray(persona.detalleDias) ? persona.detalleDias : [];
+            if (!detalleDias.length) {
+              const trVacio = document.createElement('tr'); const tdVacio = document.createElement('td'); tdVacio.colSpan = 8; tdVacio.textContent = 'No hay detalle diario disponible.'; tdVacio.style.padding = '6px'; trVacio.appendChild(tdVacio); tablaDetalle.appendChild(trVacio);
+            } else {
+              detalleDias.forEach(function(dia) {
+                const trDia = document.createElement('tr');
+                [dia.fecha || '', dia.estado || '', dia.horaIngreso || '', dia.puntualidad || 'N/A', dia.horaSalida || '', dia.clasificacionSalida || 'N/A', dia.metodo || '', [dia.observacion || '', dia.observacionSalida || ''].filter(Boolean).join(' | ')].forEach(function(valor) {
+                  const td = document.createElement('td'); td.textContent = String(valor); td.style.padding = '5px'; td.style.borderBottom = '1px solid #e5e7eb'; trDia.appendChild(td);
+                });
+                tablaDetalle.appendChild(trDia);
+              });
+            }
+            celdaDetalle.appendChild(tablaDetalle); filaDetalle.appendChild(celdaDetalle);
+            botonDetalle.addEventListener('click', function() { const mostrar = filaDetalle.hidden; filaDetalle.hidden = !mostrar; botonDetalle.textContent = mostrar ? 'Ocultar detalle' : 'Ver detalle'; botonDetalle.setAttribute('aria-expanded', mostrar ? 'true' : 'false'); });
+            celdaAccion.appendChild(botonDetalle); fila.appendChild(celdaAccion); tabla.appendChild(fila); tabla.appendChild(filaDetalle);
+          } else {
+            tabla.appendChild(fila);
+          }
         });
       }
 
@@ -8055,23 +8097,43 @@ function descargarReportePDF() {
       );
     }
 
+    const esReporteDiarioPersonal = datos.reporte.tipoReporte === 'personal';
     doc.autoTable({
       head: [datos.encabezados],
       body: datos.filas,
       startY: 30,
       theme: 'grid',
       styles: {
-        fontSize: datos.esMensual ? 6.5 : 8,
-        cellPadding: 2,
-        overflow: 'linebreak'
+        fontSize: esReporteDiarioPersonal ? 6.2 : (datos.esMensual ? 6.5 : 8),
+        cellPadding: esReporteDiarioPersonal ? 1.25 : 2,
+        overflow: 'linebreak',
+        valign: 'middle',
+        lineWidth: 0.15
       },
       headStyles: {
-        fontSize: datos.esMensual ? 6.5 : 8
+        fontSize: esReporteDiarioPersonal ? 6.2 : (datos.esMensual ? 6.5 : 8),
+        valign: 'middle'
       },
+      columnStyles: esReporteDiarioPersonal ? {
+        0: {cellWidth: 17},
+        1: {cellWidth: 30},
+        2: {cellWidth: 18},
+        3: {cellWidth: 22},
+        4: {cellWidth: 18},
+        5: {cellWidth: 15},
+        6: {cellWidth: 15},
+        7: {cellWidth: 19},
+        8: {cellWidth: 25},
+        9: {cellWidth: 12},
+        10: {cellWidth: 15},
+        11: {cellWidth: 'auto'}
+      } : {},
       margin: {
-        left: 10,
-        right: 10
-      }
+        left: esReporteDiarioPersonal ? 7 : 10,
+        right: esReporteDiarioPersonal ? 7 : 10
+      },
+      horizontalPageBreak: false,
+      showHead: 'everyPage'
     });
 
     if (datos.esMensual) {
