@@ -119,7 +119,7 @@ const cameraState = {
 
 const OFFLINE_DB_MGP = 'ASISTENCIA_MGP_V2_OFFLINE';
 const OFFLINE_STORE_MGP = 'pendientes';
-const OFFLINE_DB_VERSION_MGP = 2;
+const OFFLINE_DB_VERSION_MGP = 1;
 
 // Caché local de identidad: permite validar, cuando estamos OFFLINE,
 // que un DNI previamente identificado ONLINE pertenece al tipo correcto.
@@ -222,9 +222,6 @@ function guardarIdentidadOfflineMGP(id, tipo, resultado) {
       nombre: resultado && resultado.datos && resultado.datos.nombre
         ? String(resultado.datos.nombre)
         : '',
-      cargo: resultado && resultado.datos && (resultado.datos.cargo || resultado.datos.perfil)
-        ? String(resultado.datos.cargo || resultado.datos.perfil)
-        : '',
       actualizadoEn: new Date().toISOString()
     };
 
@@ -297,11 +294,11 @@ function guardarRegistroOfflineMGP(id, metodoRegistro) {
     const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
-    // PERSONAL ONLINE y OFFLINE deben recorrer el mismo motor del servidor.
-    // OFFLINE solo captura la marcación; AUTO_PERSONAL se resuelve al sincronizar.
-    // Estudiantes conservan el estado seleccionado y su flujo actual.
+    // PERSONAL ONLINE usa el nuevo motor automático del servidor.
+    // ESTUDIANTE y el modo OFFLINE conservan su comportamiento actual.
     const esPersonalAuto =
-      String(tipo || '').trim().toLowerCase() === 'personal';
+      String(tipo || '').trim().toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
 
     const estado =
       esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
@@ -2529,9 +2526,10 @@ document
           boton.dataset.tipo ||
           'estudiante';
 
-        // PERSONAL usa AUTO_PERSONAL tanto ONLINE como OFFLINE.
-        // INGRESO/SALIDA los determina el servidor al procesar la marca;
-        // por eso los botones manuales son exclusivos de ESTUDIANTES.
+        // PERSONAL ONLINE funciona en modo automático.
+        // No mostramos INGRESO/SALIDA para evitar que el usuario
+        // intente seleccionar manualmente una operación que decide
+        // el servidor. El modo OFFLINE conserva sus controles.
         const esPersonal =
           String(state.tipo).trim().toLowerCase() === 'personal';
 
@@ -2539,7 +2537,11 @@ document
           document.querySelectorAll('[data-e], [data-estado]');
 
         estadoBotones.forEach(function(estadoBoton) {
-          estadoBoton.style.display = esPersonal ? 'none' : '';
+          if (esPersonal && state.registroModo !== 'OFFLINE') {
+            estadoBoton.style.display = 'none';
+          } else {
+            estadoBoton.style.display = '';
+          }
         });
 
       }
@@ -3289,34 +3291,6 @@ function reproducirPitidoRegistroMGP() {
 
 }
 
-function analizarQRLegacyPersonalOfflineMGP(codigoQR) {
-
-  const bruto = String(codigoQR || '').trim();
-  const partes = bruto.split(/[\n,;|-]+/).map(function(p) {
-    return String(p || '').trim();
-  }).filter(Boolean);
-  const dni = String(partes[0] || '').replace(/\s+/g, '');
-
-  if (!/^\d{8}$/.test(dni)) {
-    return { valido: false, dni: '', nombre: '', cargo: '' };
-  }
-
-  let nombre = '';
-  let cargo = '';
-  if (partes.length >= 4) {
-    nombre = partes.slice(1, -1).join(' ').trim();
-    cargo = String(partes[partes.length - 1] || '').trim();
-  } else if (partes.length === 3) {
-    nombre = String(partes[1] || '').trim();
-    cargo = String(partes[2] || '').trim();
-  } else if (partes.length === 2) {
-    nombre = String(partes[1] || '').trim();
-  }
-
-  return { valido: true, dni: dni, nombre: nombre, cargo: cargo };
-
-}
-
 function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
 
   return new Promise(function(resolve) {
@@ -3333,12 +3307,12 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
     const estadoSeleccionado =
       String(state.estado || 'INGRESO').trim().toUpperCase();
 
-    const esPersonalOffline = tipo.toLowerCase() === 'personal';
-    const esPersonalAuto = esPersonalOffline && state.registroModo !== 'OFFLINE';
+    const esPersonalAuto =
+      tipo.toLowerCase() === 'personal' &&
+      state.registroModo !== 'OFFLINE';
 
-    const estado = esPersonalOffline
-      ? 'AUTO_PERSONAL'
-      : estadoSeleccionado;
+    const estado =
+      esPersonalAuto ? 'AUTO_PERSONAL' : estadoSeleccionado;
 
     if (!idLimpio) {
 
@@ -3394,15 +3368,11 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
     }
 
     if (mensaje) {
-      if (esPersonalOffline) {
-        mensaje.textContent = 'GUARDANDO REGISTRO OFFLINE...\nDNI: ' + idLimpio;
-      } else {
-        mensaje.innerHTML =
-          '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
-          'DNI: ' + idLimpio + '<br>' +
-          'Tipo: ' + tipo + '<br>' +
-          'Estado: ' + estado;
-      }
+      mensaje.innerHTML =
+        '<strong>💾 GUARDANDO OFFLINE...</strong><br>' +
+        'DNI: ' + idLimpio + '<br>' +
+        'Tipo: ' + tipo + '<br>' +
+        'Estado: ' + estado;
     }
 
     guardarRegistroOfflineMGP(idLimpio, metodoRegistro)
@@ -3411,48 +3381,15 @@ function registrarAsistenciaOfflineMGP(id, metodoRegistro) {
         reproducirPitidoRegistroMGP();
 
         if (mensaje) {
-          if (esPersonalOffline) {
-            const identidad = obtenerIdentidadOfflineMGP(idLimpio) || {};
-            const horaLocal = new Date(registro.fechaHoraCliente)
-              .toLocaleTimeString('es-PE');
-            const escaparHTML = function(valor) {
-              return String(valor == null ? '' : valor)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-            };
-
-            mensaje.innerHTML =
-              '<div style="background:#edf5ff;border-radius:8px;padding:10px;color:#174a8b;line-height:1.35;">' +
-                '<div style="font-weight:800;margin-bottom:2px;">' +
-                  '<span style="color:#16803d;">☑</span> REGISTRO OFFLINE EXITOSO' +
-                '</div>' +
-                '<div>DNI: ' + escaparHTML(idLimpio) + '</div>' +
-                (identidad.nombre
-                  ? '<div>' + escaparHTML(identidad.nombre) + '</div>'
-                  : '') +
-                (identidad.cargo
-                  ? '<div>Cargo: ' + escaparHTML(identidad.cargo) + '</div>'
-                  : '') +
-                '<div>Hora: ' + escaparHTML(horaLocal) + '</div>' +
-                '<div>ID local: ' + escaparHTML(registro.idOffline) + '</div>' +
-                '<div style="font-weight:800;margin-top:3px;">' +
-                  '<span style="color:#b7791f;">⌛</span> Pendiente de sincronización' +
-                '</div>' +
-              '</div>';
-          } else {
-            mensaje.innerHTML =
-              '<strong>✅ GUARDADO OFFLINE</strong><br>' +
-              'DNI: ' + idLimpio + '<br>' +
-              'Estado: ' + estado + '<br>' +
-              'Hora: ' +
-              new Date(registro.fechaHoraCliente)
-                .toLocaleTimeString('es-PE') + '<br>' +
-              'ID local: ' + registro.idOffline + '<br>' +
-              '<strong>⏳ Pendiente de sincronización</strong>';
-          }
+          mensaje.innerHTML =
+            '<strong>✅ GUARDADO OFFLINE</strong><br>' +
+            'DNI: ' + idLimpio + '<br>' +
+            'Estado: ' + estado + '<br>' +
+            'Hora: ' +
+            new Date(registro.fechaHoraCliente)
+              .toLocaleTimeString('es-PE') + '<br>' +
+            'ID local: ' + registro.idOffline + '<br>' +
+            '<strong>⏳ Pendiente de sincronización</strong>';
         }
 
         resolve({
@@ -4166,32 +4103,7 @@ async function iniciarCamara() {
         let registroPromise;
 
         if (state.registroModo === 'OFFLINE') {
-          if (String(state.tipo || '').trim().toLowerCase() === 'personal') {
-            const qrPersonal = analizarQRLegacyPersonalOfflineMGP(decodedText);
-            if (!qrPersonal.valido) {
-              const msgQR = document.getElementById('regMsg');
-              if (msgQR) msgQR.textContent = 'QR LEGACY DE PERSONAL INVÁLIDO: no se encontró un DNI válido de 8 dígitos. No se guardó el registro.';
-              registroPromise = Promise.resolve({ exito: false, offline: true });
-            } else {
-              const identidadCache = obtenerIdentidadOfflineMGP(qrPersonal.dni) || {};
-              const nombreQR = qrPersonal.nombre || identidadCache.nombre || '';
-              const cargoQR = qrPersonal.cargo || identidadCache.cargo || '';
-              guardarIdentidadOfflineMGP(qrPersonal.dni, 'personal', {
-                datos: { nombre: nombreQR, cargo: cargoQR }
-              });
-              const msgQR = document.getElementById('regMsg');
-              if (msgQR) {
-                msgQR.textContent = 'PERSONAL IDENTIFICADO OFFLINE\nDNI: ' + qrPersonal.dni + '\n' +
-                  (nombreQR ? nombreQR + '\n' : '') +
-                  (cargoQR ? 'Cargo: ' + cargoQR + '\n' : '') +
-                  'Guardando marcación...';
-              }
-              registroPromise = registrarAsistenciaSegunModoMGP(qrPersonal.dni, 'QR');
-            }
-          } else {
-            // El flujo OFFLINE de estudiantes queda expresamente intacto.
-            registroPromise = registrarAsistenciaSegunModoMGP(decodedText, 'QR');
-          }
+          registroPromise = registrarAsistenciaSegunModoMGP(decodedText, 'QR');
         } else {
           registroPromise = identificacionPromise.then(function(resultadoIdentificacion) {
             if (!resultadoIdentificacion || !resultadoIdentificacion.ok) {
@@ -5587,7 +5499,7 @@ const usaFiltroMensual =
         if (tipoReporte === 'mensual_personal') {
           cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Días evaluados</th><th>Presentes</th><th>Faltas</th><th>Puntuales</th><th>Tardanzas</th><th>% Asistencia</th><th>Salidas</th></tr>';
         } else {
-          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>Puntualidad</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
+          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>Puntualidad ingreso</th><th>Clasificación salida</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
         }
       }
 
@@ -5600,7 +5512,7 @@ const usaFiltroMensual =
           const fila = document.createElement('tr');
           const valores = tipoReporte === 'mensual_personal'
             ? [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.diasEvaluados || 0, persona.presentes || 0, persona.faltas || 0, persona.puntuales || 0, persona.tardanzas || 0, (persona.porcentajeAsistencia || 0) + '%', persona.conSalida || 0]
-            : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+            : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.clasificacionSalida || 'N/A', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
           valores.forEach(function(valor) { const celda = document.createElement('td'); celda.textContent = String(valor); fila.appendChild(celda); });
           tabla.appendChild(fila);
         });
@@ -7595,9 +7507,9 @@ function obtenerDatosExportacionReporte() {
 
   if (reporte.tipoReporte === 'personal') {
 
-    encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','Puntualidad','Método','Usuario','Observación'];
+    encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','Puntualidad ingreso','Clasificación salida','Método','Usuario','Observación'];
     filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
-      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.clasificacionSalida || 'N/A', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
     });
 
   } else if (reporte.tipoReporte === 'mensual_personal') {
