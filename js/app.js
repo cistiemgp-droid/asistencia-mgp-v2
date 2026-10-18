@@ -5529,14 +5529,27 @@ const usaFiltroMensual =
             const tituloDetalle = document.createElement('strong');
             tituloDetalle.textContent = 'Detalle diario de ' + (persona.nombre || 'personal');
             celdaDetalle.appendChild(tituloDetalle);
+            // El detalle debe desplazarse horizontalmente cuando el ancho disponible
+            // no permite mostrar las ocho columnas sin superposición.
+            const contenedorDetalle = document.createElement('div');
+            contenedorDetalle.style.width = '100%';
+            contenedorDetalle.style.maxWidth = '100%';
+            contenedorDetalle.style.overflowX = 'auto';
+            contenedorDetalle.style.overflowY = 'hidden';
+            contenedorDetalle.style.boxSizing = 'border-box';
+            contenedorDetalle.style.marginTop = '8px';
             const tablaDetalle = document.createElement('table');
             tablaDetalle.style.width = '100%';
-            tablaDetalle.style.marginTop = '8px';
+            tablaDetalle.style.minWidth = '900px';
+            tablaDetalle.style.tableLayout = 'fixed';
+            tablaDetalle.style.marginTop = '0';
             tablaDetalle.style.borderCollapse = 'collapse';
             tablaDetalle.style.fontSize = '12px';
+            tablaDetalle.style.boxSizing = 'border-box';
+            const anchosDetalle = ['90px','115px','85px','125px','85px','145px','70px','220px'];
             const cabeceraDetalle = document.createElement('tr');
-            ['Fecha','Estado','Ingreso','Puntualidad ingreso','Salida','Clasificación salida','Método','Observación'].forEach(function(texto) {
-              const th = document.createElement('th'); th.textContent = texto; th.style.textAlign = 'left'; th.style.padding = '5px'; th.style.borderBottom = '1px solid #cbd5e1'; cabeceraDetalle.appendChild(th);
+            ['Fecha','Estado','Ingreso','Puntualidad ingreso','Salida','Clasificación salida','Método','Observación'].forEach(function(texto, indiceColumna) {
+              const th = document.createElement('th'); th.textContent = texto; th.style.textAlign = 'left'; th.style.padding = '5px'; th.style.borderBottom = '1px solid #cbd5e1'; th.style.boxSizing = 'border-box'; th.style.width = anchosDetalle[indiceColumna]; th.style.whiteSpace = 'normal'; th.style.overflowWrap = 'anywhere'; cabeceraDetalle.appendChild(th);
             });
             tablaDetalle.appendChild(cabeceraDetalle);
             const detalleDias = Array.isArray(persona.detalleDias) ? persona.detalleDias : [];
@@ -5546,12 +5559,13 @@ const usaFiltroMensual =
               detalleDias.forEach(function(dia) {
                 const trDia = document.createElement('tr');
                 [dia.fecha || '', dia.estado || '', dia.horaIngreso || '', dia.puntualidad || 'N/A', dia.horaSalida || '', dia.clasificacionSalida || 'N/A', dia.metodo || '', [dia.observacion || '', dia.observacionSalida || ''].filter(Boolean).join(' | ')].forEach(function(valor) {
-                  const td = document.createElement('td'); td.textContent = String(valor); td.style.padding = '5px'; td.style.borderBottom = '1px solid #e5e7eb'; trDia.appendChild(td);
+                  const td = document.createElement('td'); td.textContent = String(valor); td.style.padding = '5px'; td.style.borderBottom = '1px solid #e5e7eb'; td.style.boxSizing = 'border-box'; td.style.whiteSpace = 'normal'; td.style.overflowWrap = 'anywhere'; td.style.verticalAlign = 'top'; trDia.appendChild(td);
                 });
                 tablaDetalle.appendChild(trDia);
               });
             }
-            celdaDetalle.appendChild(tablaDetalle); filaDetalle.appendChild(celdaDetalle);
+            contenedorDetalle.appendChild(tablaDetalle);
+            celdaDetalle.appendChild(contenedorDetalle); filaDetalle.appendChild(celdaDetalle);
             botonDetalle.addEventListener('click', function() { const mostrar = filaDetalle.hidden; filaDetalle.hidden = !mostrar; botonDetalle.textContent = mostrar ? 'Ocultar detalle' : 'Ver detalle'; botonDetalle.setAttribute('aria-expanded', mostrar ? 'true' : 'false'); });
             celdaAccion.appendChild(botonDetalle); fila.appendChild(celdaAccion); tabla.appendChild(fila); tabla.appendChild(filaDetalle);
           } else {
