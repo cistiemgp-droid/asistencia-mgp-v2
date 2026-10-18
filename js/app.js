@@ -5504,6 +5504,19 @@ const usaFiltroMensual =
       }
 
       if (tabla) {
+        // Evitar que una tabla ancha quede recortada por estilos globales o por un scroll heredado.
+        const tablaContenedor = tablaElementoPersonal ? tablaElementoPersonal.parentElement : null;
+        if (tablaContenedor) {
+          tablaContenedor.style.maxWidth = '100%';
+          tablaContenedor.style.width = '100%';
+          tablaContenedor.style.overflowX = 'auto';
+          tablaContenedor.style.overflowY = 'visible';
+          tablaContenedor.scrollLeft = 0;
+        }
+        tablaElementoPersonal.style.width = '100%';
+        tablaElementoPersonal.style.minWidth = tipoReporte === 'mensual_personal' ? '1080px' : '1120px';
+        tablaElementoPersonal.style.tableLayout = 'auto';
+        tablaElementoPersonal.style.borderCollapse = 'collapse';
         tabla.style.display = 'table-row-group';
         tabla.hidden = false;
         tabla.innerHTML = '';
@@ -5529,27 +5542,25 @@ const usaFiltroMensual =
             const tituloDetalle = document.createElement('strong');
             tituloDetalle.textContent = 'Detalle diario de ' + (persona.nombre || 'personal');
             celdaDetalle.appendChild(tituloDetalle);
-            // El detalle debe desplazarse horizontalmente cuando el ancho disponible
-            // no permite mostrar las ocho columnas sin superposición.
+            // La tabla interna necesita su propio scroll: no debe heredar el recorte de la tabla principal.
             const contenedorDetalle = document.createElement('div');
             contenedorDetalle.style.width = '100%';
             contenedorDetalle.style.maxWidth = '100%';
             contenedorDetalle.style.overflowX = 'auto';
-            contenedorDetalle.style.overflowY = 'hidden';
-            contenedorDetalle.style.boxSizing = 'border-box';
+            contenedorDetalle.style.overflowY = 'visible';
             contenedorDetalle.style.marginTop = '8px';
             const tablaDetalle = document.createElement('table');
             tablaDetalle.style.width = '100%';
-            tablaDetalle.style.minWidth = '900px';
+            tablaDetalle.style.minWidth = '1120px';
             tablaDetalle.style.tableLayout = 'fixed';
             tablaDetalle.style.marginTop = '0';
             tablaDetalle.style.borderCollapse = 'collapse';
             tablaDetalle.style.fontSize = '12px';
-            tablaDetalle.style.boxSizing = 'border-box';
-            const anchosDetalle = ['90px','115px','85px','125px','85px','145px','70px','220px'];
+            tablaDetalle.style.background = '#ffffff';
             const cabeceraDetalle = document.createElement('tr');
-            ['Fecha','Estado','Ingreso','Puntualidad ingreso','Salida','Clasificación salida','Método','Observación'].forEach(function(texto, indiceColumna) {
-              const th = document.createElement('th'); th.textContent = texto; th.style.textAlign = 'left'; th.style.padding = '5px'; th.style.borderBottom = '1px solid #cbd5e1'; th.style.boxSizing = 'border-box'; th.style.width = anchosDetalle[indiceColumna]; th.style.whiteSpace = 'normal'; th.style.overflowWrap = 'anywhere'; cabeceraDetalle.appendChild(th);
+            const anchosDetalle = ['105px','125px','95px','150px','95px','170px','90px','260px'];
+            ['Fecha','Estado','Ingreso','Puntualidad ingreso','Salida','Clasificación salida','Método','Observación'].forEach(function(texto, indice) {
+              const th = document.createElement('th'); th.textContent = texto; th.style.textAlign = 'left'; th.style.padding = '7px 6px'; th.style.borderBottom = '1px solid #cbd5e1'; th.style.background = '#eef2f7'; th.style.whiteSpace = 'normal'; th.style.width = anchosDetalle[indice]; th.style.minWidth = anchosDetalle[indice]; cabeceraDetalle.appendChild(th);
             });
             tablaDetalle.appendChild(cabeceraDetalle);
             const detalleDias = Array.isArray(persona.detalleDias) ? persona.detalleDias : [];
@@ -5559,13 +5570,14 @@ const usaFiltroMensual =
               detalleDias.forEach(function(dia) {
                 const trDia = document.createElement('tr');
                 [dia.fecha || '', dia.estado || '', dia.horaIngreso || '', dia.puntualidad || 'N/A', dia.horaSalida || '', dia.clasificacionSalida || 'N/A', dia.metodo || '', [dia.observacion || '', dia.observacionSalida || ''].filter(Boolean).join(' | ')].forEach(function(valor) {
-                  const td = document.createElement('td'); td.textContent = String(valor); td.style.padding = '5px'; td.style.borderBottom = '1px solid #e5e7eb'; td.style.boxSizing = 'border-box'; td.style.whiteSpace = 'normal'; td.style.overflowWrap = 'anywhere'; td.style.verticalAlign = 'top'; trDia.appendChild(td);
+                  const td = document.createElement('td'); td.textContent = String(valor); td.style.padding = '6px'; td.style.borderBottom = '1px solid #e5e7eb'; td.style.verticalAlign = 'top'; td.style.whiteSpace = 'normal'; td.style.overflowWrap = 'anywhere'; trDia.appendChild(td);
                 });
                 tablaDetalle.appendChild(trDia);
               });
             }
             contenedorDetalle.appendChild(tablaDetalle);
-            celdaDetalle.appendChild(contenedorDetalle); filaDetalle.appendChild(celdaDetalle);
+            celdaDetalle.appendChild(contenedorDetalle);
+            filaDetalle.appendChild(celdaDetalle);
             botonDetalle.addEventListener('click', function() { const mostrar = filaDetalle.hidden; filaDetalle.hidden = !mostrar; botonDetalle.textContent = mostrar ? 'Ocultar detalle' : 'Ver detalle'; botonDetalle.setAttribute('aria-expanded', mostrar ? 'true' : 'false'); });
             celdaAccion.appendChild(botonDetalle); fila.appendChild(celdaAccion); tabla.appendChild(fila); tabla.appendChild(filaDetalle);
           } else {
@@ -8121,8 +8133,10 @@ function descargarReportePDF() {
         fontSize: esReporteDiarioPersonal ? 6.2 : (datos.esMensual ? 6.5 : 8),
         cellPadding: esReporteDiarioPersonal ? 1.25 : 2,
         overflow: 'linebreak',
+        cellWidth: 'wrap',
         valign: 'middle',
-        lineWidth: 0.15
+        lineWidth: 0.15,
+        minCellHeight: 5
       },
       headStyles: {
         fontSize: esReporteDiarioPersonal ? 6.2 : (datos.esMensual ? 6.5 : 8),
@@ -8130,17 +8144,17 @@ function descargarReportePDF() {
       },
       columnStyles: esReporteDiarioPersonal ? {
         0: {cellWidth: 17},
-        1: {cellWidth: 30},
+        1: {cellWidth: 32},
         2: {cellWidth: 18},
-        3: {cellWidth: 22},
-        4: {cellWidth: 18},
-        5: {cellWidth: 15},
-        6: {cellWidth: 15},
-        7: {cellWidth: 19},
+        3: {cellWidth: 23},
+        4: {cellWidth: 17},
+        5: {cellWidth: 14},
+        6: {cellWidth: 14},
+        7: {cellWidth: 20},
         8: {cellWidth: 25},
         9: {cellWidth: 12},
         10: {cellWidth: 15},
-        11: {cellWidth: 'auto'}
+        11: {cellWidth: 65}
       } : {},
       margin: {
         left: esReporteDiarioPersonal ? 7 : 10,
