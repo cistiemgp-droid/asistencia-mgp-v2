@@ -5109,15 +5109,19 @@ async function consultarReporte() {
       tabla.closest('table');
 
     if (tablaReporteBase) {
-      tablaReporteBase.style.width = 'max-content';
+      // No usar max-content: provoca que las primeras columnas queden fuera
+      // del área visible cuando el contenedor conserva un scroll horizontal.
+      tablaReporteBase.style.width = '100%';
       tablaReporteBase.style.maxWidth = 'none';
       tablaReporteBase.style.minWidth =
         (tipoReporte === 'mensual' || tipoReporte === 'mensual_personal')
-          ? '1050px'
+          ? (tipoReporte === 'mensual_personal' ? '1080px' : '1050px')
           : '720px';
       tablaReporteBase.style.tableLayout = 'auto';
       tablaReporteBase.style.borderCollapse = 'collapse';
       tablaReporteBase.style.fontSize = '12px';
+      tablaReporteBase.style.marginLeft = '0';
+      tablaReporteBase.style.marginRight = '0';
     }
 
     const contenedorTablaReporte =
@@ -5126,10 +5130,23 @@ async function consultarReporte() {
         : null;
 
     if (contenedorTablaReporte) {
+      contenedorTablaReporte.style.width = '100%';
       contenedorTablaReporte.style.maxWidth = '100%';
       contenedorTablaReporte.style.overflowX = 'auto';
       contenedorTablaReporte.style.overflowY = 'visible';
       contenedorTablaReporte.style.webkitOverflowScrolling = 'touch';
+      contenedorTablaReporte.scrollLeft = 0;
+    }
+
+    // Restablecer desplazamiento de ancestros desplazables: el defecto visto
+    // en DEV oculta DNI/Personal al dejar la tabla desplazada hacia la derecha.
+    let ancestroReporte = contenedorTablaReporte ? contenedorTablaReporte.parentElement : null;
+    while (ancestroReporte && ancestroReporte !== document.body) {
+      const estiloAncestro = window.getComputedStyle(ancestroReporte);
+      if (/(auto|scroll)/.test(estiloAncestro.overflowX) && ancestroReporte.scrollLeft) {
+        ancestroReporte.scrollLeft = 0;
+      }
+      ancestroReporte = ancestroReporte.parentElement;
     }
   }
 
