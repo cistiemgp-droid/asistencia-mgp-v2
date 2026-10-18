@@ -5587,7 +5587,7 @@ const usaFiltroMensual =
         if (tipoReporte === 'mensual_personal') {
           cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Días evaluados</th><th>Presentes</th><th>Faltas</th><th>Puntuales</th><th>Tardanzas</th><th>% Asistencia</th><th>Salidas</th></tr>';
         } else {
-          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>CLASIFICACION SALIDA</th><th>Puntualidad</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
+          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>Puntualidad</th><th>CLASIFICACIÓN SALIDA</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
         }
       }
 
@@ -5600,7 +5600,7 @@ const usaFiltroMensual =
           const fila = document.createElement('tr');
           const valores = tipoReporte === 'mensual_personal'
             ? [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.diasEvaluados || 0, persona.presentes || 0, persona.faltas || 0, persona.puntuales || 0, persona.tardanzas || 0, (persona.porcentajeAsistencia || 0) + '%', persona.conSalida || 0]
-            : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.clasificacionSalida || '', persona.puntualidad || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+            : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.clasificacionSalida || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
           valores.forEach(function(valor) { const celda = document.createElement('td'); celda.textContent = String(valor); fila.appendChild(celda); });
           tabla.appendChild(fila);
         });
@@ -7595,9 +7595,9 @@ function obtenerDatosExportacionReporte() {
 
   if (reporte.tipoReporte === 'personal') {
 
-    encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','CLASIFICACION SALIDA','Puntualidad','Método','Usuario','Observación'];
+    encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','Puntualidad','CLASIFICACIÓN SALIDA','Método','Usuario','Observación'];
     filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
-      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.clasificacionSalida || '', persona.puntualidad || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.clasificacionSalida || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
     });
 
   } else if (reporte.tipoReporte === 'mensual_personal') {
