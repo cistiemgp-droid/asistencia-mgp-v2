@@ -5587,7 +5587,7 @@ const usaFiltroMensual =
         if (tipoReporte === 'mensual_personal') {
           cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Días evaluados</th><th>Presentes</th><th>Faltas</th><th>Puntuales</th><th>Tardanzas</th><th>% Asistencia</th><th>Salidas</th></tr>';
         } else {
-          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>Puntualidad</th><th>CLASIFICACIÓN SALIDA</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
+          cabeceraPersonal.innerHTML = '<tr><th>DNI</th><th>Personal</th><th>Cargo</th><th>Área</th><th>Estado</th><th>Ingreso</th><th>Salida</th><th>Puntualidad</th><th>Clasificación Salida</th><th>Método</th><th>Usuario</th><th>Observación</th></tr>';
         }
       }
 
@@ -7595,7 +7595,7 @@ function obtenerDatosExportacionReporte() {
 
   if (reporte.tipoReporte === 'personal') {
 
-    encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','Puntualidad','CLASIFICACIÓN SALIDA','Método','Usuario','Observación'];
+    encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','Puntualidad','Clasificación Salida','Método','Usuario','Observación'];
     filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
       return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', (String(persona.cargo || '').trim().toUpperCase() === 'DOCENTE' ? (persona.puntualidad || '') : ''), (String(persona.cargo || '').trim().toUpperCase() === 'DOCENTE' ? (persona.clasificacionSalida || '') : ''), persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
     });
