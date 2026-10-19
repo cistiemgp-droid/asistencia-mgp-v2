@@ -5600,7 +5600,7 @@ const usaFiltroMensual =
           const fila = document.createElement('tr');
           const valores = tipoReporte === 'mensual_personal'
             ? [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.diasEvaluados || 0, persona.presentes || 0, persona.faltas || 0, persona.puntuales || 0, persona.tardanzas || 0, (persona.porcentajeAsistencia || 0) + '%', persona.conSalida || 0]
-            : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.clasificacionSalida || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+            : [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', (String(persona.cargo || '').trim().toUpperCase() === 'DOCENTE' ? (persona.puntualidad || '') : ''), (String(persona.cargo || '').trim().toUpperCase() === 'DOCENTE' ? (persona.clasificacionSalida || '') : ''), persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
           valores.forEach(function(valor) { const celda = document.createElement('td'); celda.textContent = String(valor); fila.appendChild(celda); });
           tabla.appendChild(fila);
         });
@@ -7597,7 +7597,7 @@ function obtenerDatosExportacionReporte() {
 
     encabezados = ['DNI','Personal','Cargo','Área','Estado','Ingreso','Salida','Puntualidad','CLASIFICACIÓN SALIDA','Método','Usuario','Observación'];
     filas = (Array.isArray(reporte.personal) ? reporte.personal : []).map(function(persona) {
-      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', persona.puntualidad || '', persona.clasificacionSalida || '', persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
+      return [persona.dni || '', persona.nombre || '', persona.cargo || '', persona.area || '', persona.estado || '', persona.horaIngreso || '', persona.horaSalida || '', (String(persona.cargo || '').trim().toUpperCase() === 'DOCENTE' ? (persona.puntualidad || '') : ''), (String(persona.cargo || '').trim().toUpperCase() === 'DOCENTE' ? (persona.clasificacionSalida || '') : ''), persona.metodo || '', persona.usuarioRegistro || '', persona.observacion || ''];
     });
 
   } else if (reporte.tipoReporte === 'mensual_personal') {
